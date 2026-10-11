@@ -1,0 +1,260 @@
+{
+  "name": "LLM RAG service patterns no notebook sprawl",
+  "item_id": "py-ai-service-boundary",
+  "cluster": "interop",
+  "short_definition": "Production AI lives in FastAPI (or worker) services with versioned HTTP contracts, not Jupyter notebooks or ad-hoc scripts. Python owns LLM/RAG orchestration: retrieve → filter → rerank → generate, with SSE streams, cost/auth gates, and typed Pydantic I/O. Next/TS is the product shell/BFF; Python is the AI peer service. As of 2026-07-13: FastAPI 0.139.x + httpx + optional LiteLLM gateway + Temporal for multi-step agents.",
+  "scope_in": [
+    "FastAPI AI service layout (chat, RAG search/ingest, embeddings, tools)",
+    "Production RAG pipeline layers (chunk, embed, store, retrieve, filter, rerank, generate)",
+    "Request/response contracts, streaming (SSE), auth, rate limits, cost metering",
+    "Service boundary vs Next BFF vs workers vs durable workflows",
+    "Observability for LLM calls (trace ids, token usage, latency)",
+    "Anti-notebook / no-colab-as-product rule for shippable systems"
+  ],
+  "scope_out": [
+    "LiteLLM multi-provider gateway ops deep-dive (py-llm-gateway)",
+    "MCP tool protocol auth/timeouts (py-mcp-tool-boundary)",
+    "Temporal durable multi-step agent design (py-durable-workflows)",
+    "SSE framework details (py-streaming-sse)",
+    "Jupyter research notebooks for offline eval only (not deploy path)",
+    "Fine-tuning / training pipelines"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "surface": "Dedicated FastAPI AI service (or clearly named package under monorepo services/ai)",
+    "api": "Versioned routes: POST /v1/chat, /v1/chat/stream, /v1/rag/query, /v1/ingest; OpenAPI is contract",
+    "schemas": "Pydantic v2 request/response; never raw dict bodies for public AI routes",
+    "stream": "SSE via fastapi.sse EventSourceResponse for tokens (py-streaming-sse)",
+    "llm_access": "Call via internal LiteLLM proxy or thin provider client with timeouts; no keys in frontend",
+    "rag": "Process→chunk→embed→store; query→filter→(rerank)→generate; cite sources in response schema",
+    "workers": "Heavy ingest/embed on queue workers; API stays thin and cancelable",
+    "state": "Conversation/message rows in Postgres/Supabase; vectors in pgvector or managed vector store",
+    "deploy": "Container + ASGI (uvicorn/granian); health /readyz; never notebook server"
+  },
+  "decision_gates": {
+    "use_python_ai_service_when": [
+      "Product needs RAG, multi-step tool use, or provider-agnostic LLM orchestration",
+      "Secrets and spend must stay server-side",
+      "Same team already owns Python workers/data stack"
+    ],
+    "keep_in_next_only_when": [
+      "Trivial one-shot completion with Vercel AI SDK and no private corpus",
+      "No server-side retrieval or tool sandbox required"
+    ],
+    "split_service_when": [
+      "AI latency/cost isolation from main API",
+      "Different scale profile (GPU/embed workers vs CRUD API)"
+    ],
+    "do_not": [
+      "Ship notebooks, Gradio demos, or Streamlit as the production AI surface",
+      "Put provider API keys in browser or Next public env",
+      "Block API event loop with sync embedding of large corpora"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Auth + rate limit + max_tokens/max_duration on every AI route",
+      "Propagate request_id/traceparent into LLM and vector calls",
+      "Return structured citations (doc_id, chunk_id, score) for RAG answers",
+      "Cancel upstream generation on client disconnect",
+      "Version prompts and model names in config (settings), not hardcode in handlers",
+      "Separate ingest pipeline from online query path"
+    ],
+    "dont": [
+      "Don't use notebooks as long-running product servers",
+      "Don't dump entire vector DB into the prompt",
+      "Don't share one global AsyncClient without timeouts",
+      "Don't log full prompts/completions with PII at info level",
+      "Don't treat LangChain graphs as a substitute for HTTP auth/quotas",
+      "Don't run unbounded agent loops on the request thread without timeouts"
+    ]
+  },
+  "code_skeleton": "from collections.abc import AsyncIterator\nfrom typing import Annotated\n\nfrom fastapi import Depends, FastAPI, HTTPException\nfrom fastapi.sse import EventSourceResponse, ServerSentEvent\nfrom pydantic import BaseModel, Field\nfrom pydantic_settings import BaseSettings\n\nclass Settings(BaseSettings):\n    llm_base_url: str = \"http://litellm:4000\"\n    llm_api_key: str\n    max_prompt_chars: int = 8000\n    model: str = \"gpt-4o-mini\"\n\nsettings = Settings()  # type: ignore[call-arg]\napp = FastAPI(title=\"ai-service\")\n\nclass ChatIn(BaseModel):\n    conversation_id: str | None = None\n    message: str = Field(min_length=1, max_length=8000)\n\nclass RagHit(BaseModel):\n    doc_id: str\n    chunk_id: str\n    score: float\n    text: str\n\nclass RagAnswer(BaseModel):\n    answer: str\n    citations: list[RagHit]\n\nasync def current_user() -> str:\n    return \"user_123\"  # real JWT dep\n\nUser = Annotated[str, Depends(current_user)]\n\nasync def retrieve(q: str, user: str) -> list[RagHit]:\n    # vector search + tenant filter; mock\n    return [RagHit(doc_id=\"d1\", chunk_id=\"c1\", score=0.9, text=\"...\")]\n\n@app.post(\"/v1/rag/query\", response_model=RagAnswer)\nasync def rag_query(body: ChatIn, user: User) -> RagAnswer:\n    if len(body.message) > settings.max_prompt_chars:\n        raise HTTPException(400, \"prompt too large\")\n    hits = await retrieve(body.message, user)\n    # call LLM with context + hits; return answer + citations\n    return RagAnswer(answer=\"...\", citations=hits)\n\n@app.post(\"/v1/chat/stream\", response_class=EventSourceResponse)\nasync def chat_stream(body: ChatIn, user: User) -> AsyncIterator[ServerSentEvent]:\n    # stream tokens from gateway; yield token/error/done events\n    yield ServerSentEvent(data={\"token\": \"hi\"}, event=\"token\")\n    yield ServerSentEvent(raw_data=\"[DONE]\", event=\"done\")\n",
+  "failure_modes": [
+    "Notebook or Streamlit demo promoted to prod without auth/quotas",
+    "Prompt injection exfiltrating tools or other tenants' chunks",
+    "Unscoped vector search leaking cross-tenant documents",
+    "Cost runaway: no max tokens, no concurrency cap, no disconnect cancel",
+    "Stale embeddings after content updates without reindex job",
+    "Blocking sync SDK on event loop → API latency collapse",
+    "Oversized context window stuffing → OOM or provider 413",
+    "Missing citations → untrustworthy answers in product UX"
+  ],
+  "anti_patterns": [
+    "Architecture centered on .ipynb files as the service",
+    "Monolithic 'god agent' route with unbounded tool recursion",
+    "Frontend holding OPENAI_API_KEY",
+    "RAG = embed query + top-k only, no ACL filter on chunks",
+    "Ingest on the request path for multi-MB docs without a job",
+    "Copy-paste Colab secrets into committed configs",
+    "Using BackgroundTasks alone for critical multi-step agents"
+  ],
+
+  "tools": {
+    "primary": ["FastAPI", "Pydantic v2", "httpx", "uvicorn/granian"],
+    "llm": ["LiteLLM proxy or provider SDK", "openai-compatible clients"],
+    "rag": ["pgvector / managed vector DB", "optional rerankers"],
+    "optional_orch": ["pydantic-ai", "LangGraph only when graph state is justified", "Temporal for durable agents"],
+    "obs": ["OpenTelemetry", "Langfuse or equivalent LLM traces"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "fastapi": "0.139.0",
+    "httpx": "0.28.1",
+    "litellm": "1.92.0",
+    "openai": "2.45.0",
+    "pydantic-ai": "2.9.0",
+    "langchain": "1.3.13",
+    "langgraph": "1.2.9",
+    "temporalio": "1.30.0"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\nname = \"ai-service\"\nrequires-python = \">=3.12\"\ndependencies = [\n  \"fastapi>=0.139,<0.140\",\n  \"uvicorn[standard]>=0.51,<0.52\",\n  \"httpx>=0.28,<0.29\",\n  \"pydantic-settings>=2.0\",\n  # optional: \"litellm>=1.92,<2\",\n]\n",
+    "env": "# AI_SERVICE\nLLM_BASE_URL=http://litellm:4000\nLLM_API_KEY=sk-...\nMODEL=gpt-4o-mini\nMAX_PROMPT_CHARS=8000\nDATABASE_URL=postgresql+asyncpg://...\nVECTOR_DSN=...\n",
+    "compose": "# services:\n#   ai-api:\n#     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000\n#   ai-worker:  # ingest/embed\n#     command: uv run taskiq worker app.broker:broker\n"
+  },
+  "deprecation_watch": [
+    "Notebooks / Streamlit / Gradio as production AI architecture",
+    "LangChain as mandatory framework for every chat endpoint",
+    "Sync OpenAI SDK without to_thread in async FastAPI handlers",
+    "Client-side RAG over private corpora",
+    "Unbounded agent while True loops on request workers"
+  ],
+
+  "ts_boundary": "Next.js owns UI, session cookies, and product BFF. Call Python AI over internal network with user JWT or service token; stream via fetch ReadableStream → browser. Do not reimplement RAG in Route Handlers when corpus/ACL lives in Python. Share OpenAPI types (orogen/openapi-ts). Vercel AI SDK ok for thin public demos; production private data stays on Python.",
+  "rust_boundary": "Stay in Python for orchestration, RAG, and provider SDKs. Hand off to Rust only for ultra-hot non-LLM gateways, binary protocol edges, or measured CPU bottlenecks — not default for AI product logic.",
+  "supabase_boundary": "Store conversations, message audit, doc metadata, and pgvector chunks with tenant_id. Online path uses service_role in Python with explicit tenant filters — never trust client-supplied tenant alone. RLS for user-facing reads of chat history; workers use service role. Prefer DB-backed citations over ephemeral notebook state.",
+  "boundary_contracts": [
+    "OpenAPI for all AI HTTP routes (chat, stream events, RAG)",
+    "SSE event schema: token|error|done (+ citation events optional)",
+    "Env: LLM_BASE_URL, LLM_API_KEY, MODEL, DATABASE_URL, VECTOR_*",
+    "Ingest job payload schema versioned when async",
+    "Auth: Bearer JWT; document scopes for ai:chat vs ai:ingest"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Product LLM/RAG capability",
+    "python": "FastAPI AI service + workers; gateway for providers",
+    "ts": "Next UI/BFF, stream consumer, session — not private RAG core",
+    "rust": "Optional edge proxy only when measured"
+  },
+
+  "threats": [
+    "Prompt injection → tool abuse or data exfiltration",
+    "Cross-tenant retrieval leakage",
+    "Cost DoS via unauthenticated or unlimited generation",
+    "Secret leakage in logs, traces, or error messages",
+    "Supply-chain risk from heavy AI dependency trees",
+    "Indirect prompt injection via retrieved documents"
+  ],
+  "mitigations": [
+    "AuthN/Z + per-user rate limits and concurrency caps",
+    "Tenant-scoped retrieval filters mandatory before prompt assembly",
+    "Output/tool allowlists; human confirm for destructive tools",
+    "Redact PII in LLM observability backends",
+    "Pin deps with uv.lock; audit new AI packages",
+    "Treat retrieved text as untrusted input to the model"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "FastAPI service with Pydantic I/O and auth deps",
+      "SSE stream pattern for chat tokens when streaming UX required",
+      "Timeouts on outbound LLM/httpx calls",
+      "Tenant filter on any vector/SQL retrieval",
+      "OpenAPI-documented routes — no notebook deploy path"
+    ],
+    "must_not_generate": [
+      "Jupyter/Streamlit/Gradio as the production server",
+      "OPENAI_API_KEY in frontend or NEXT_PUBLIC_*",
+      "Unscoped similarity search across all tenants",
+      "Agent loops without max steps/time budget",
+      "Ingest of large files entirely inside request handler without queue"
+    ]
+  },
+
+  "tests_required": [
+    "Contract tests for chat/RAG request schemas",
+    "Auth 401/403 on AI routes",
+    "Retrieval filter unit test (tenant isolation)",
+    "Stream multi-event test (token + done)",
+    "Prompt size limit rejection",
+    "Mocked LLM failure → error event or 502 mapping"
+  ],
+  "ci_gates": [
+    "pytest + ruff + basedpyright",
+    "OpenAPI export artifact",
+    "Grep ban for notebook deploy / hardcoded sk- keys in src",
+    "uv.lock present for ai-service"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "FastAPI app under services/ai or similar",
+      "Pydantic chat/RAG schemas",
+      "EventSourceResponse / SSE stream routes",
+      "tenant_id filter in retrieve path",
+      "settings-driven model name"
+    ],
+    "negative": [
+      "jupyter notebook as main deployable",
+      "streamlit run / gradio launch as prod entry",
+      "NEXT_PUBLIC_OPENAI_API_KEY",
+      "vector search without tenant predicate",
+      "while True agent without max_steps"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "AI = FastAPI peer service, not notebooks or Streamlit product surface",
+    "Python owns RAG + LLM orchestration; Next owns UI/BFF/session",
+    "RAG prod path: chunk→embed→store; query→filter→rerank→generate + citations",
+    "Auth, rate limits, max tokens, disconnect cancel on every AI route",
+    "Stream tokens with fastapi.sse; persist final messages to Postgres",
+    "Heavy ingest/embed on workers; thin cancelable API",
+    "Cross-link py-llm-gateway, py-mcp-tool-boundary, py-durable-workflows, py-streaming-sse"
+  ],
+  "action_items": [
+    "Add AI service boundary section to references/python.md",
+    "Scan signals for notebook/streamlit prod entrypoints",
+    "Template FastAPI ai-service skeleton with chat + RAG stubs",
+    "Document tenant-scoped retrieval requirement",
+    "Link gateway/MCP/Temporal items"
+  ],
+  "checklist": [
+    "No notebook/Streamlit prod architecture",
+    "OpenAPI published for AI routes",
+    "Auth + rate limit + cost caps",
+    "SSE cancel on disconnect",
+    "Tenant filters on retrieval",
+    "Citations in RAG responses",
+    "LLM keys only server-side",
+    "Workers for heavy ingest",
+    "Traces include request_id and token usage",
+    "Tests for auth and stream"
+  ],
+
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Some teams put all AI in Next + Vercel AI SDK — fine for thin public chat, wrong for private RAG/ACL-heavy systems",
+    "LangChain/LangGraph marketing vs pydantic-ai/raw httpx simplicity — prefer thin stack unless graph state is real",
+    "Vector DB vendor blogs oversell 'just embed' — production needs filter/rerank/eval layers"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2027-01-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/",
+    "https://fastapi.tiangolo.com/tutorial/server-sent-events/",
+    "https://docs.litellm.ai/",
+    "https://thenewstack.io/how-to-build-production-ready-ai-agents-with-rag-and-fastapi/",
+    "https://learn.temporal.io/tutorials/ai/durable-ai-agent/",
+    "https://pypi.org/project/litellm/",
+    "https://pypi.org/project/pydantic-ai/"
+  ],
+  "local_sources": [
+    "./research/python/outline.yaml",
+    "./research/python/results/py_streaming_sse.json",
+    "./research/python/results/py_background_jobs.json",
+    "./references/api-data-flows.md",
+    "./references/backend-api.md"
+  ]
+}

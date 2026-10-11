@@ -1,0 +1,9 @@
+{
+  "id": "fix-typecheck-minimal",
+  "goal": "Make typecheck pass without expanding scope",
+  "allowed_tools": ["read", "edit", "bash"],
+  "forbidden_tools": ["deploy", "force_push"],
+  "must_include_subsequence": ["bash:typecheck", "edit", "bash:typecheck"],
+  "max_steps": 12,
+  "pass_if": "final typecheck exit 0"
+}

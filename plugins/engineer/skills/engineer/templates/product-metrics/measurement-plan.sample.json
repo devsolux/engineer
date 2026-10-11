@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "product": "example-ai-workspace",
+  "as_of": "2026-07-15",
+  "north_star": {
+    "metric_id": "activated_accounts_weekly",
+    "value_moment": "An account completes a useful workflow and saves the result."
+  },
+  "metrics": [
+    {
+      "id": "activated_accounts_weekly",
+      "name": "Weekly activated accounts",
+      "kind": "north_star",
+      "question": "How many accounts experienced the core value this week?",
+      "formula": "count_distinct(account_id where project_created and result_saved within 7d)",
+      "grain": "account",
+      "source": "analytics.events",
+      "segments": ["plan", "acquisition_source", "account_age_band"],
+      "owner": "product",
+      "cadence": "weekly",
+      "freshness_slo": "24h",
+      "decision_rule": "If growth is flat for two weekly cohorts, inspect activation steps before increasing acquisition.",
+      "guardrails": ["gross_margin_percent", "error_free_sessions_percent"]
+    },
+    {
+      "id": "activation_rate",
+      "name": "Signup-to-activation rate",
+      "kind": "input",
+      "question": "What share of new accounts reaches the value moment?",
+      "formula": "activated_new_accounts_7d / eligible_new_accounts",
+      "grain": "account",
+      "source": "analytics.account_activation_daily",
+      "segments": ["plan", "acquisition_source", "device_class"],
+      "owner": "growth-engineering",
+      "cadence": "daily",
+      "freshness_slo": "6h",
+      "decision_rule": "Investigate any segment falling more than 15% below its four-week baseline.",
+      "guardrails": ["error_free_sessions_percent"]
+    },
+    {
+      "id": "gross_margin_percent",
+      "name": "Gross margin percent",
+      "kind": "guardrail",
+      "question": "Does usage remain economically sustainable?",
+      "formula": "(revenue - direct_compute_cost - direct_provider_cost) / revenue",
+      "grain": "subscription",
+      "source": "finance.account_margin_daily",
+      "segments": ["plan", "usage_decile", "model_provider"],
+      "owner": "finance-engineering",
+      "cadence": "daily",
+      "freshness_slo": "24h",
+      "decision_rule": "Freeze scale-up when any paid plan is negative at the 90th usage percentile.",
+      "guardrails": []
+    },
+    {
+      "id": "error_free_sessions_percent",
+      "name": "Error-free sessions",
+      "kind": "guardrail",
+      "question": "Can users complete work without an application error?",
+      "formula": "sessions_without_uncaught_error / eligible_sessions",
+      "grain": "session",
+      "source": "observability.session_quality_daily",
+      "segments": ["release", "device_class", "browser_family"],
+      "owner": "engineering",
+      "cadence": "daily",
+      "freshness_slo": "1h",
+      "decision_rule": "Stop rollout when the current release regresses by more than 1 percentage point.",
+      "guardrails": []
+    }
+  ],
+  "events": [
+    {
+      "name": "signup_completed",
+      "description": "The server created the user and initial account.",
+      "version": 1,
+      "source": "server",
+      "criticality": "durable",
+      "owner": "auth",
+      "identities": ["event_id", "user_id", "account_id"],
+      "dedupe_key": "event_id",
+      "properties": [
+        { "name": "account_id", "type": "string", "required": true, "classification": "none" },
+        { "name": "acquisition_source", "type": "string", "required": false, "classification": "none" }
+      ]
+    },
+    {
+      "name": "project_created",
+      "description": "The server persisted the account's first useful project.",
+      "version": 1,
+      "source": "server",
+      "criticality": "durable",
+      "owner": "product",
+      "identities": ["event_id", "user_id", "account_id"],
+      "dedupe_key": "event_id",
+      "properties": [
+        { "name": "account_id", "type": "string", "required": true, "classification": "none" },
+        { "name": "project_type", "type": "enum", "required": true, "classification": "none", "enum_values": ["api", "document", "automation"] }
+      ]
+    },
+    {
+      "name": "result_saved",
+      "description": "The server persisted a generated result selected by the user.",
+      "version": 1,
+      "source": "server",
+      "criticality": "durable",
+      "owner": "product",
+      "identities": ["event_id", "user_id", "account_id"],
+      "dedupe_key": "event_id",
+      "properties": [
+        { "name": "account_id", "type": "string", "required": true, "classification": "none" },
+        { "name": "model_provider", "type": "string", "required": false, "classification": "none" }
+      ]
+    },
+    {
+      "name": "experiment_exposed",
+      "description": "The assignment service exposed an eligible account to a variant.",
+      "version": 1,
+      "source": "server",
+      "criticality": "durable",
+      "owner": "growth-engineering",
+      "identities": ["event_id", "account_id"],
+      "dedupe_key": "event_id",
+      "properties": [
+        { "name": "experiment_id", "type": "string", "required": true, "classification": "none" },
+        { "name": "variant", "type": "string", "required": true, "classification": "none" }
+      ]
+    }
+  ],
+  "experiments": [
+    {
+      "id": "guided_activation_v1",
+      "hypothesis": "A shorter guided first workflow increases seven-day activation without reducing reliability or margin.",
+      "randomization_unit": "account",
+      "eligible_cohort": "New self-serve accounts with no completed project",
+      "exposure_event": "experiment_exposed",
+      "primary_metric": "activation_rate",
+      "guardrails": ["gross_margin_percent", "error_free_sessions_percent"],
+      "decision_rule": "Ship only after the planned analysis window when activation improves and neither guardrail crosses its stop threshold.",
+      "owner": "growth-engineering"
+    }
+  ]
+}

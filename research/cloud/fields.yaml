@@ -1,0 +1,161 @@
+# Field definitions — engineer cloud platform deep research
+# 2026-08-29 · modeled on research/python/fields.yaml (identity → practice → tooling → security → quality → actionability → evidence)
+
+version: 1
+generated: 2026-08-29
+
+field_categories:
+  - category: identity
+    fields:
+      - name: name
+        description: Canonical item name
+        detail_level: brief
+        required: true
+      - name: item_id
+        description: Outline item id
+        detail_level: brief
+        required: true
+      - name: cluster
+        description: aws | gcp | vercel | platforms
+        detail_level: brief
+        required: true
+      - name: short_definition
+        description: One-paragraph definition of the capability and where it sits in a TS/Next + Python + Supabase stack
+        detail_level: moderate
+        required: true
+      - name: scope_in
+        description: What this item covers
+        detail_level: moderate
+        required: true
+      - name: scope_out
+        description: Explicit non-goals and adjacent items that own them
+        detail_level: moderate
+        required: true
+      - name: priority
+        description: P0 | P1 | P2
+        detail_level: brief
+        required: true
+
+  - category: practice
+    fields:
+      - name: defaults
+        description: Opinionated greenfield defaults for 2026 (what to pick without deliberation)
+        detail_level: detailed
+        required: true
+      - name: decision_gates
+        description: When to use / when not / which alternative (incl. the Supabase, Vercel, and VPS alternatives)
+        detail_level: detailed
+        required: true
+      - name: do_dont
+        description: Concrete do and don't lists
+        detail_level: detailed
+        required: true
+      - name: config_skeleton
+        description: Minimal correct config or IaC skeleton with placeholder identifiers only (English comments ok)
+        detail_level: detailed
+        required: true
+      - name: failure_modes
+        description: Top production failure modes and outage classes
+        detail_level: detailed
+        required: true
+      - name: anti_patterns
+        description: Patterns agents must not generate (static keys in CI, public buckets, open security groups, etc.)
+        detail_level: detailed
+        required: true
+
+  - category: tooling
+    fields:
+      - name: tools
+        description: Primary CLIs/SDKs/consoles and alternatives
+        detail_level: moderate
+        required: true
+      - name: versions_as_of
+        description: Version and runtime pins as of research date (labeled as_of)
+        detail_level: moderate
+        required: true
+      - name: limits_quotas_pricing
+        description: Hard limits, quotas, free-tier cliffs, and pricing units with as_of dates and primary URLs; estimates marked [uncertain]
+        detail_level: detailed
+        required: true
+      - name: deprecation_watch
+        description: Services, runtimes, or plans to avoid for greenfield (sunset dates)
+        detail_level: moderate
+        required: true
+
+  - category: security
+    fields:
+      - name: identity_model
+        description: How identity and authorization work for this surface (roles, OIDC/WIF, service accounts, tokens) and the no-long-lived-key rule
+        detail_level: detailed
+        required: true
+      - name: threats
+        description: Security threats for this surface
+        detail_level: detailed
+        required: true
+      - name: mitigations
+        description: Required mitigations and guardrails
+        detail_level: detailed
+        required: true
+      - name: agent_codegen_policy
+        description: Must-generate / must-not for coding agents touching this surface
+        detail_level: detailed
+        required: true
+
+  - category: quality
+    fields:
+      - name: ci_gates
+        description: CI checks and deploy gates (plan/apply review, policy, drift, smoke)
+        detail_level: moderate
+        required: true
+      - name: observability
+        description: Logs, metrics, traces, alerts; OTel export path; what to alert on
+        detail_level: moderate
+        required: true
+      - name: cost_guardrails
+        description: Budgets, alerts, egress/NAT/bandwidth traps, spend caps, and the first three cost surprises teams hit
+        detail_level: detailed
+        required: true
+      - name: skill_scan_signals
+        description: Positive/negative signals engineer-scan and check-oss-leaks should flag for this surface (identifier shapes, config smells)
+        detail_level: detailed
+        required: true
+
+  - category: actionability
+    fields:
+      - name: skill_module_bullets
+        description: Bullets that must land in the target references module
+        detail_level: detailed
+        required: true
+      - name: checklist
+        description: Pre-ship checklist for this surface
+        detail_level: detailed
+        required: true
+
+  - category: evidence
+    fields:
+      - name: source_tier
+        description: official | primary OSS | secondary | community | anecdote
+        detail_level: brief
+        required: true
+      - name: confidence
+        description: high | medium | low
+        detail_level: brief
+        required: true
+      - name: conflicts_noted
+        description: Where sources disagree or pricing/limits moved recently
+        detail_level: moderate
+        required: true
+      - name: as_of
+        description: YYYY-MM-DD
+        detail_level: brief
+        required: true
+      - name: review_by
+        description: "Re-verify by date (pricing/limits: 3 months)"
+        detail_level: brief
+        required: true
+      - name: primary_sources
+        description: Key URLs (official docs first)
+        detail_level: brief
+        required: true
+
+uncertain: []

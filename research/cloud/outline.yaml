@@ -1,0 +1,119 @@
+# Cloud platform knowledge research for engineer
+# Generated: 2026-08-29 · engineer research (outline) + web supplement
+# Scope: provider-specific deploy/identity/data/network/cost guidance that deploy-ops.md and
+#        infra-security.md only gesture at: AWS, GCP, Vercel, and the edge/PaaS tier
+#        (Cloudflare, Fly, Railway, Render, Netlify, Azure-minimal), plus IaC and multi-cloud glue.
+# Window: 2025-01 → 2026-08
+
+meta:
+  project: engineer-cloud-knowledge
+  skill: engineer
+  mode: research-deep
+  generated: 2026-08-29
+  scope_window: 2025-01 → 2026-08
+  batch_size: 4
+  items_per_agent: 4
+  output_dir: ./results
+  deep_md_dir: ./deep
+  report_path: ./report.md
+  skill_targets:
+    aws: ./references/cloud-aws.md
+    gcp: ./references/cloud-gcp.md
+    vercel: ./references/cloud-vercel.md
+    platforms: ./references/cloud-platforms-iac.md
+  constraints:
+    - opinionated greenfield defaults for a TS/Next + Python-services + Supabase stack; not a provider catalog
+    - identity first: OIDC/workload identity from GitHub Actions and between services; no long-lived keys in CI
+    - every quota, limit, price, and version pin carries as_of 2026-08-29 and a primary URL; estimates marked [uncertain]
+    - no account ids, project ids, hostnames, or tokens in examples — placeholders only (example, my-app, 123456789012)
+    - feed machine-checkable scan signals (what engineer-scan / check-oss-leaks should flag) into the module
+    - cost guardrails are a required output (budgets, alerts, egress traps, free-tier cliffs)
+
+items:
+  # ── aws ──
+  - id: aws-identity-iam-oidc
+    cluster: aws
+    priority: P0
+    title: AWS identity for apps and CI — IAM roles, OIDC from GitHub Actions, least privilege, SSO/Identity Center, no static keys
+    name: AWS identity for apps and CI — IAM roles, OIDC from GitHub Actions, least privilege, SSO/Identity Center, no static keys
+  - id: aws-compute-serverless
+    cluster: aws
+    priority: P0
+    title: AWS compute for web/services — Lambda (Node/Python), ECS Fargate, App Runner; when each; cold starts, packaging, env/secrets
+    name: AWS compute for web/services — Lambda (Node/Python), ECS Fargate, App Runner; when each; cold starts, packaging, env/secrets
+  - id: aws-data-storage
+    cluster: aws
+    priority: P0
+    title: AWS data layer — S3 (buckets, presigned, lifecycle), RDS/Aurora Postgres vs Supabase, DynamoDB fit, Secrets Manager/Parameter Store, SQS/EventBridge
+    name: AWS data layer — S3 (buckets, presigned, lifecycle), RDS/Aurora Postgres vs Supabase, DynamoDB fit, Secrets Manager/Parameter Store, SQS/EventBridge
+  - id: aws-edge-network-cost
+    cluster: aws
+    priority: P1
+    title: AWS edge, network, and cost — CloudFront, API Gateway vs ALB, VPC basics for Fargate/RDS, egress and NAT traps, budgets/alerts, free-tier cliffs
+    name: AWS edge, network, and cost — CloudFront, API Gateway vs ALB, VPC basics for Fargate/RDS, egress and NAT traps, budgets/alerts, free-tier cliffs
+
+  # ── gcp ──
+  - id: gcp-identity-wif
+    cluster: gcp
+    priority: P0
+    title: GCP identity — projects/folders, service accounts, Workload Identity Federation from GitHub Actions, IAM conditions, no JSON keys
+    name: GCP identity — projects/folders, service accounts, Workload Identity Federation from GitHub Actions, IAM conditions, no JSON keys
+  - id: gcp-cloud-run-functions
+    cluster: gcp
+    priority: P0
+    title: GCP compute — Cloud Run (services/jobs), Cloud Run functions, container packaging, concurrency/scale-to-zero, env/secrets, min instances
+    name: GCP compute — Cloud Run (services/jobs), Cloud Run functions, container packaging, concurrency/scale-to-zero, env/secrets, min instances
+  - id: gcp-data-storage
+    cluster: gcp
+    priority: P0
+    title: GCP data layer — GCS, Cloud SQL Postgres vs Supabase/AlloyDB, Firestore fit, Pub/Sub, Secret Manager, Cloud Tasks/Scheduler
+    name: GCP data layer — GCS, Cloud SQL Postgres vs Supabase/AlloyDB, Firestore fit, Pub/Sub, Secret Manager, Cloud Tasks/Scheduler
+  - id: gcp-network-cost
+    cluster: gcp
+    priority: P1
+    title: GCP edge, network, and cost — Cloud Load Balancing/CDN, Cloud Armor, VPC connectors, egress traps, budgets/alerts, free tier
+    name: GCP edge, network, and cost — Cloud Load Balancing/CDN, Cloud Armor, VPC connectors, egress traps, budgets/alerts, free tier
+
+  # ── vercel ──
+  - id: vercel-deploy-env-preview
+    cluster: vercel
+    priority: P0
+    title: Vercel deploy model — Git integration, preview/production, environment variables and sensitive env, deployment protection, rollbacks, monorepos
+    name: Vercel deploy model — Git integration, preview/production, environment variables and sensitive env, deployment protection, rollbacks, monorepos
+  - id: vercel-runtime-functions-edge
+    cluster: vercel
+    priority: P0
+    title: Vercel runtime — Fluid compute, serverless vs edge runtime, regions, ISR/cache, cron, queues/workflows, streaming, Next.js 16 specifics, limits
+    name: Vercel runtime — Fluid compute, serverless vs edge runtime, regions, ISR/cache, cron, queues/workflows, streaming, Next.js 16 specifics, limits
+  - id: vercel-domains-security-observability
+    cluster: vercel
+    priority: P1
+    title: Vercel domains, security, observability — DNS/domains, WAF/firewall, bot management, headers, logs/drains, OTel, Speed Insights
+    name: Vercel domains, security, observability — DNS/domains, WAF/firewall, bot management, headers, logs/drains, OTel, Speed Insights
+  - id: vercel-cost-limits
+    cluster: vercel
+    priority: P1
+    title: Vercel plans, pricing units, spend management, hard limits, and the Hobby→Pro→Enterprise cliffs; when to move a workload off Vercel
+    name: Vercel plans, pricing units, spend management, hard limits, and the Hobby→Pro→Enterprise cliffs; when to move a workload off Vercel
+
+  # ── platforms / iac ──
+  - id: cloudflare-workers-pages-storage
+    cluster: platforms
+    priority: P0
+    title: Cloudflare — Workers, Pages, R2 (S3-compatible, zero egress), D1, KV, Durable Objects, Queues, Zero Trust; Wrangler; where it beats and loses to Vercel
+    name: Cloudflare — Workers, Pages, R2 (S3-compatible, zero egress), D1, KV, Durable Objects, Queues, Zero Trust; Wrangler; where it beats and loses to Vercel
+  - id: paas-selection-fly-railway-render-netlify
+    cluster: platforms
+    priority: P0
+    title: PaaS selection — Fly.io, Railway, Render, Netlify (plus Hetzner/VPS baseline) for Python services, workers, and Postgres; deploy, secrets, scaling, pricing
+    name: PaaS selection — Fly.io, Railway, Render, Netlify (plus Hetzner/VPS baseline) for Python services, workers, and Postgres; deploy, secrets, scaling, pricing
+  - id: iac-and-provisioning
+    cluster: platforms
+    priority: P1
+    title: Infrastructure as code — Terraform/OpenTofu, Pulumi, SST v3, AWS CDK; state, drift, review gates, and when a PaaS dashboard is enough
+    name: Infrastructure as code — Terraform/OpenTofu, Pulumi, SST v3, AWS CDK; state, drift, review gates, and when a PaaS dashboard is enough
+  - id: multicloud-secrets-observability-cost
+    cluster: platforms
+    priority: P1
+    title: Cross-provider glue — secret managers vs env vars, OIDC everywhere, OTel export targets, FinOps guardrails, egress/bandwidth traps, exit and lock-in
+    name: Cross-provider glue — secret managers vs env vars, OIDC everywhere, OTel export targets, FinOps guardrails, egress/bandwidth traps, exit and lock-in

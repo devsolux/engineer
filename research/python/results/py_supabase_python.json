@@ -1,0 +1,233 @@
+{
+  "name": "supabase-py vs direct Postgres",
+  "item_id": "py-supabase-python",
+  "cluster": "data",
+  "short_definition": "When Python should use the official supabase-py SDK (PostgREST, Auth, Storage, Realtime via HTTP) versus SQLAlchemy/asyncpg direct to Supabase Postgres: prefer direct SQL for transactional service logic and performance; use supabase-py (especially AsyncClient) when you need Auth/Storage/Realtime parity or intentional RLS-as-user access through PostgREST.",
+  "scope_in": [
+    "supabase package create_client / AsyncClient.create",
+    "PostgREST table/rpc builders vs SQL",
+    "anon vs service_role keys and JWT user context",
+    "Auth, Storage, Realtime Python surfaces",
+    "Decision matrix: SDK vs SQLAlchemy async vs raw asyncpg",
+    "Security: service role never in browser; server-only",
+    "Alignment with backend-supabase.md / backend-database.md RLS rules"
+  ],
+  "scope_out": [
+    "Next.js SSR auth cookie patterns (TS skill modules)",
+    "SQLAlchemy session patterns detail (py-sqlalchemy-async)",
+    "Pooler/asyncpg prepared statements (py-db-pool-lifecycle)",
+    "Edge Functions Deno runtime",
+    "Full Supabase dashboard product ops"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "user_scoped_crud_from_python": "Optional supabase AsyncClient with user JWT + anon key so RLS applies — or direct SQL with set_config JWT claims if standardized",
+    "service_jobs_transactions": "Direct Postgres via SQLAlchemy async + service role DB password; enforce authz in code; audit",
+    "auth_storage_realtime": "supabase-py (async) for those product APIs",
+    "client_lifecycle": "Lifespan-managed client; aclose on shutdown; timeouts set",
+    "keys": "SUPABASE_URL + SUPABASE_ANON_KEY for RLS paths; SUPABASE_SERVICE_ROLE_KEY server-only; never commit",
+    "schema_truth": "supabase/migrations SQL + RLS policies remain source of truth regardless of client"
+  },
+  "decision_gates": {
+    "use_supabase_py_when": [
+      "Need Storage signed URLs, Auth admin, Realtime from Python",
+      "Want PostgREST + RLS without writing SQL",
+      "Mirroring patterns from TS Supabase client in a Python worker"
+    ],
+    "use_direct_postgres_when": [
+      "Multi-table transactions, complex joins, batch inserts, COPY",
+      "Performance-sensitive query paths",
+      "Alembic-managed schema and heavy ORM graphs",
+      "Avoiding PostgREST limitations (awkward filters, large analytics SQL)"
+    ],
+    "do_not_use_supabase_py_when": [
+      "Only need SQL and already have SQLAlchemy stack — extra hop adds latency/complexity",
+      "Holding service_role in any client-exposed surface"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Prefer create_async_client / AsyncClient.create in FastAPI async routes",
+      "Pass user JWT for RLS-bound operations; service_role only for privileged jobs",
+      "Keep migrations + RLS in SQL; test with impersonation matrix from backend-database.md",
+      "Validate inputs before .insert/.update; don't trust client field lists",
+      "Handle APIError / empty data explicitly; use maybe_single/single carefully",
+      "Timeouts on HTTP client; close clients in lifespan"
+    ],
+    "dont": [
+      "Don't put service_role key in frontend, mobile, or logs",
+      "Don't assume supabase-py is fully async if calling sync Client on the event loop — use async client or to_thread",
+      "Don't disable RLS 'temporarily' for SDK convenience",
+      "Don't use service_role for normal per-user reads",
+      "Don't dual-write schema via dashboard clicks without migration files",
+      "Don't select('*') on wide sensitive tables for hot paths"
+    ]
+  },
+  "code_skeleton": "import os\nfrom contextlib import asynccontextmanager\nfrom typing import AsyncIterator\n\nfrom fastapi import Depends, FastAPI, Header, HTTPException\nfrom supabase import AsyncClient, acreate_client  # package exposes async factory\nfrom supabase.lib.client_options import AsyncClientOptions\n\nURL = os.environ[\"SUPABASE_URL\"]\nANON = os.environ[\"SUPABASE_ANON_KEY\"]\nSERVICE = os.environ[\"SUPABASE_SERVICE_ROLE_KEY\"]  # server only\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    # service client for privileged jobs (bypass RLS) — guard all call sites\n    app.state.sb_service = await acreate_client(URL, SERVICE)\n    yield\n    await app.state.sb_service.auth.close()\n    # close underlying http clients as library version requires\n\napp = FastAPI(lifespan=lifespan)\n\nasync def user_client(authorization: str | None = Header(default=None)) -> AsyncClient:\n    if not authorization or not authorization.lower().startswith(\"bearer \"):\n        raise HTTPException(status_code=401, detail=\"missing bearer token\")\n    token = authorization.split(\" \", 1)[1]\n    client = await acreate_client(URL, ANON)\n    client.postgrest.auth(token)  # RLS as this user\n    return client\n\n@app.get(\"/v1/projects\")\nasync def list_projects(sb: AsyncClient = Depends(user_client)) -> list:\n    resp = await sb.table(\"projects\").select(\"id,name,status\").execute()\n    return resp.data or []\n\n# Direct Postgres path (preferred for transactions) lives in sqlalchemy module:\n# create_async_engine(os.environ[\"DATABASE_URL\"])  # service DB URL\n",
+  "failure_modes": [
+    "Sync supabase client inside async route blocks event loop",
+    "service_role used for everything → RLS never tested; data leaks by app bug",
+    "JWT not forwarded → empty results or anon policies only",
+    "PostgREST row limits / silent truncation surprises",
+    "Schema drift: SDK calls vs migrations out of sync",
+    "Storage policies missing while table RLS exists",
+    "Connection pool exhaustion when combining SDK HTTP + direct SQL pools poorly sized"
+  ],
+  "anti_patterns": [
+    "service_role in NEXT_PUBLIC_ or mobile apps",
+    "Dashboard-only tables without migrations/RLS",
+    "SELECT * via SDK returning secrets columns",
+    "Reimplementing Auth in Python when Supabase Auth already used by TS app without shared JWT validation",
+    "Agent generating only supabase-py for complex multi-table money transactions"
+  ],
+
+  "tools": {
+    "primary": ["supabase (supabase-py monorepo client)", "postgrest-py", "storage3", "realtime", "auth/gotrue client"],
+    "direct_sql": ["SQLAlchemy 2 async", "asyncpg"],
+    "cli": ["supabase CLI migrations", "gen types for TS"],
+    "testing": ["local supabase start", "pgTAP / RLS matrix", "pytest async"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "supabase": "2.31.0",
+    "postgrest": "2.31.0",
+    "realtime": "2.31.0",
+    "storage3": "2.31.0",
+    "gotrue": "2.12.4",
+    "httpx": "0.28.1"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"supabase>=2.31,<3\",\n  # direct SQL services also:\n  \"sqlalchemy[asyncio]>=2.0.51,<2.1\",\n  \"asyncpg>=0.31,<0.32\",\n]\n",
+    "env": "SUPABASE_URL=https://xxxx.supabase.co\nSUPABASE_ANON_KEY=...\nSUPABASE_SERVICE_ROLE_KEY=...  # server secret\nDATABASE_URL=postgresql+asyncpg://...  # direct or pooler — see py-db-pool-lifecycle\n",
+    "note": "supabase 2.31 exports: create_client (sync), acreate_client + create_async_client (async aliases), AsyncClient.create. Prefer create_async_client/acreate_client in FastAPI."
+  },
+  "deprecation_watch": [
+    "from_table deprecated in postgrest — use from_/table",
+    "Sync-only patterns in new async services",
+    "Legacy gotrue package name confusion — use current supabase auth exports",
+    "Storing service_role in .env committed to git"
+  ],
+
+  "ts_boundary": "Next.js remains primary SSR auth + cookie session shell (backend-auth.md). Python validates Supabase JWTs or uses service role for jobs. Share table contracts via migrations; TS types from supabase gen types; Python uses Pydantic models mirroring public columns. Prefer not to fork business rules across Server Actions and Python without single DB constraint source.",
+  "rust_boundary": "Rust services typically use direct Postgres (sqlx) with service credentials. Use supabase-py only in Python. For Storage/Auth from Rust, prefer HTTP APIs or keep those flows in TS/Python.",
+  "supabase_boundary": "RLS is mandatory on public tables (backend-database.md). SDK user path must use authenticated JWT. Service role bypasses RLS — treat as root. Views need security_invoker. Storage buckets need policies too. Migrations in supabase/migrations are source of truth.",
+  "boundary_contracts": [
+    "SUPABASE_URL / keys via env",
+    "Bearer JWT for user-scoped PostgREST",
+    "OpenAPI for Python HTTP; PostgREST for SDK paths",
+    "One migration writer",
+    "Error shape mapped to app AppError"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Accessing Supabase-hosted product APIs and Postgres from Python",
+    "python": "supabase-py for Auth/Storage/Realtime/RLS-HTTP; SQLAlchemy async for transactions/SQL",
+    "ts": "Default product path: @supabase/ssr + client for app UI",
+    "rust": "Direct Postgres for service mesh; avoid embedding service_role in many places"
+  },
+
+  "threats": [
+    "service_role exfiltration → full DB bypass",
+    "Confused deputy: Python service uses service_role for attacker-controlled IDs",
+    "Missing WITH CHECK on UPDATE policies while using SDK updates",
+    "Realtime subscription auth gaps",
+    "SSRF if Storage URLs or webhooks user-controlled without allowlist"
+  ],
+  "mitigations": [
+    "service_role only in server secret store; rotate on leak",
+    "Explicit ownership checks even on service paths; prefer user JWT+RLS when possible",
+    "RLS policies with USING+WITH CHECK; test matrix",
+    "Auth on Realtime channels",
+    "Signed URLs short-lived; validate content types"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Env-based URL/keys; no hardcoded secrets",
+      "Async client for async apps",
+      "Clear separation service vs user client",
+      "Column lists on select for sensitive tables",
+      "RLS assumed on; migrations for schema"
+    ],
+    "must_not_generate": [
+      "service_role in client code or NEXT_PUBLIC_",
+      "RLS disabled",
+      "Sync supabase calls in async def without offload",
+      "Schema changes only via dashboard instructions without SQL migration files"
+    ]
+  },
+
+  "tests_required": [
+    "RLS matrix: anon deny, owner allow, other deny",
+    "service_role path unit-tested and code-reviewed",
+    "Async route does not block (async client)",
+    "Optional: local supabase integration tests"
+  ],
+  "ci_gates": [
+    "Secret scanning for service_role patterns",
+    "pytest + ruff + basedpyright",
+    "Migration files present for schema PRs"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "acreate_client or AsyncClient",
+      "SERVICE_ROLE only in server modules",
+      "table().select with explicit columns",
+      "postgrest.auth(user_jwt)",
+      "parallel SQLAlchemy for transactions"
+    ],
+    "negative": [
+      "service_role in frontend",
+      "create_client sync inside async def hot path",
+      "enable row level security missing in migrations",
+      "select(\"*\") on profiles/users hot path",
+      "service role for every query"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "supabase-py 2.31.x as_of 2026-07-13 for Auth/Storage/Realtime/PostgREST",
+    "Direct SQLAlchemy+asyncpg for transactions and heavy SQL",
+    "Async client in FastAPI; don't block loop with sync SDK",
+    "anon+user JWT for RLS; service_role server-only and rare",
+    "Migrations + RLS remain source of truth (backend-database.md)",
+    "Never expose service_role; test RLS matrix before ship"
+  ],
+  "action_items": [
+    "Document decision gate in references/python.md",
+    "Scan for service_role misuse and sync client in async routes",
+    "Link backend-supabase.md router and database RLS checklist",
+    "Clarify async factory name against pinned supabase version in templates"
+  ],
+  "checklist": [
+    "Chosen SDK vs SQL per feature deliberately",
+    "Keys only in server env",
+    "RLS enabled + policies tested",
+    "Async client lifecycle OK",
+    "No select * on sensitive tables",
+    "Storage policies if files used",
+    "service_role call sites listed and audited",
+    "Migrations in repo for schema"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Some teams use only supabase-py for all Python DB access — skill rejects that for multi-table transactions",
+    "Async factory naming has shifted across 2.x minors — pin version and verify imports",
+    "Whether to set JWT claims on direct SQL for RLS vs app-level authz — prefer app authz + least privilege DB role for services unless standardized claim injection exists"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://github.com/supabase/supabase-py",
+    "https://supabase.com/docs/reference/python/introduction",
+    "https://supabase.com/docs/guides/troubleshooting/using-sqlalchemy-with-supabase-FUqebT",
+    "https://supabase.com/docs/guides/database/postgres/row-level-security",
+    "https://pypi.org/project/supabase/"
+  ],
+  "local_sources": [
+    "./references/backend-supabase.md",
+    "./references/backend-database.md",
+    "./research/python/outline.yaml"
+  ]
+}

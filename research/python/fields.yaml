@@ -1,0 +1,184 @@
+# Field definitions — engineer Python knowledge deep research
+# 2026-07-13
+
+version: 1
+generated: 2026-07-13
+
+field_categories:
+  - category: identity
+    fields:
+      - name: name
+        description: Canonical item name
+        detail_level: brief
+        required: true
+      - name: item_id
+        description: Outline item id
+        detail_level: brief
+        required: true
+      - name: cluster
+        description: tooling | language | web | data | workers | quality | interop | synthesis
+        detail_level: brief
+        required: true
+      - name: short_definition
+        description: One-paragraph definition
+        detail_level: moderate
+        required: true
+      - name: scope_in
+        description: What this item covers
+        detail_level: moderate
+        required: true
+      - name: scope_out
+        description: Explicit non-goals
+        detail_level: moderate
+        required: true
+      - name: priority
+        description: P0 | P1 | P2
+        detail_level: brief
+        required: true
+
+  - category: practice
+    fields:
+      - name: defaults
+        description: Opinionated defaults for greenfield 2026
+        detail_level: detailed
+        required: true
+      - name: decision_gates
+        description: When to use / when not / choose alternatives
+        detail_level: detailed
+        required: true
+      - name: do_dont
+        description: Concrete do and don't lists
+        detail_level: detailed
+        required: true
+      - name: code_skeleton
+        description: Minimal correct code or config skeleton (English comments ok)
+        detail_level: detailed
+        required: true
+      - name: failure_modes
+        description: Top production failure modes
+        detail_level: detailed
+        required: true
+      - name: anti_patterns
+        description: Patterns agents must not generate
+        detail_level: detailed
+        required: true
+
+  - category: tooling
+    fields:
+      - name: tools
+        description: Primary tools and alternatives
+        detail_level: moderate
+        required: true
+      - name: versions_as_of
+        description: Version pins as of research date (labeled)
+        detail_level: moderate
+        required: true
+      - name: config_snippets
+        description: pyproject.toml / ruff / CI snippets
+        detail_level: detailed
+        required: true
+      - name: deprecation_watch
+        description: Tools to avoid for greenfield
+        detail_level: moderate
+        required: true
+
+  - category: interop
+    fields:
+      - name: ts_boundary
+        description: How this relates to Next/TS BFF
+        detail_level: moderate
+        required: true
+      - name: rust_boundary
+        description: When to hand off to Rust instead
+        detail_level: moderate
+        required: true
+      - name: supabase_boundary
+        description: Supabase/Postgres interaction notes
+        detail_level: moderate
+        required: true
+      - name: boundary_contracts
+        description: OpenAPI JSON Schema env vars migrations MCP
+        detail_level: moderate
+        required: true
+      - name: decision_matrix_row
+        description: Problem class → Python | TS | Rust recommendation
+        detail_level: detailed
+        required: true
+
+  - category: security
+    fields:
+      - name: threats
+        description: Security threats for this surface
+        detail_level: detailed
+        required: true
+      - name: mitigations
+        description: Required mitigations
+        detail_level: detailed
+        required: true
+      - name: agent_codegen_policy
+        description: Must-generate / must-not for agents
+        detail_level: detailed
+        required: true
+
+  - category: quality
+    fields:
+      - name: tests_required
+        description: Required test types
+        detail_level: moderate
+        required: true
+      - name: ci_gates
+        description: CI checks
+        detail_level: moderate
+        required: true
+      - name: skill_scan_signals
+        description: Positive/negative signals for engineer-scan / review
+        detail_level: detailed
+        required: true
+
+  - category: actionability
+    fields:
+      - name: skill_module_bullets
+        description: Bullets that must land in references/python.md
+        detail_level: detailed
+        required: true
+      - name: action_items
+        description: Implementation actions for skill/repo
+        detail_level: detailed
+        required: true
+      - name: checklist
+        description: Pre-ship checklist for Python services
+        detail_level: detailed
+        required: true
+
+  - category: evidence
+    fields:
+      - name: source_tier
+        description: official | primary OSS | secondary | community | anecdote
+        detail_level: brief
+        required: true
+      - name: confidence
+        description: high | medium | low
+        detail_level: brief
+        required: true
+      - name: conflicts_noted
+        description: Where sources disagree
+        detail_level: moderate
+        required: true
+      - name: as_of
+        description: YYYY-MM-DD
+        detail_level: brief
+        required: true
+      - name: review_by
+        description: Re-verify by date
+        detail_level: brief
+        required: true
+      - name: primary_sources
+        description: Key URLs
+        detail_level: brief
+        required: true
+      - name: local_sources
+        description: Local paths (typescript.md rust.md stack-rules)
+        detail_level: brief
+        required: true
+
+uncertain: []

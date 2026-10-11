@@ -1,0 +1,78 @@
+# Engineering preset: competitor / product tech teardown
+evidence_policy:
+  mode: claim_v1
+  semantic_review: required
+  identity_fields: [name, sources]
+field_categories:
+  - category: Basic Info
+    fields:
+      - name: name
+        description: Product or company name
+        detail_level: brief
+        required: true
+      - name: website
+        description: Primary product URL
+        detail_level: brief
+        required: true
+      - name: category
+        description: Market category
+        detail_level: brief
+      - name: pricing_summary
+        description: Public pricing bands
+        detail_level: moderate
+  - category: Product
+    fields:
+      - name: target_icp
+        description: Stated or inferred ideal customer
+        detail_level: moderate
+      - name: core_value_prop
+        description: Main promise in one paragraph
+        detail_level: moderate
+        required: true
+      - name: key_features
+        description: Differentiating feature list
+        detail_level: detailed
+      - name: platforms
+        description: Web, mobile, API, CLI, etc.
+        detail_level: brief
+  - category: Technical Stack (public)
+    fields:
+      - name: known_stack
+        description: Publicly known tech (careers, engineering blog, job posts)
+        detail_level: moderate
+      - name: api_surface
+        description: REST/GraphQL/webhooks/SDK quality notes
+        detail_level: moderate
+      - name: integrations
+        description: Notable third-party integrations
+        detail_level: moderate
+  - category: GTM & Traction
+    fields:
+      - name: funding_or_status
+        description: Funding, acquisition, bootstrapped if public
+        detail_level: brief
+      - name: social_proof
+        description: Customers, stars, G2, public metrics with as_of
+        detail_level: moderate
+      - name: content_motion
+        description: How they acquire (content, PLG, sales)
+        detail_level: moderate
+  - category: Competitive Notes
+    fields:
+      - name: strengths
+        description: Why teams pick them
+        detail_level: moderate
+        required: true
+      - name: weaknesses
+        description: Common complaints / gaps
+        detail_level: moderate
+        required: true
+      - name: implications_for_us
+        description: What our product/stack should learn or avoid
+        detail_level: moderate
+        required: true
+      - name: sources
+        description: Primary URLs
+        detail_level: detailed
+        required: true
+uncertain: []

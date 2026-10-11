@@ -1,0 +1,216 @@
+{
+  "name": "msgspec for JSON/MessagePack hot paths",
+  "item_id": "py-msgspec-hotpath",
+  "cluster": "language",
+  "short_definition": "msgspec is a zero-dependency high-performance serialization and validation library (JSON, MessagePack, YAML, TOML) built around msgspec.Struct and typed decode. Official benchmarks claim ~10–80× faster encode/decode+validate than alternatives for supported types, with Structs 5–60× faster than dataclasses/attrs for common ops. In the engineer stack it is a P2 opt-in for internal hot paths (queues, WebSocket fanout, bulk export, inter-service MessagePack) — not a greenfield replacement for Pydantic on FastAPI request/response models.",
+  "scope_in": [
+    "When Pydantic v2 validation/serialization cost dominates CPU (measured)",
+    "Internal DTOs: workers, Redis streams, NATS/Kafka payloads, gRPC-adjacent JSON bridges",
+    "MessagePack binary envelopes between Python services",
+    "Bulk JSON encode/decode (export jobs, ML feature batches, log shippers)",
+    "msgspec.Struct schema design, ValidationError handling, convert() between types",
+    "Coexistence with Pydantic at HTTP edge vs msgspec on internal paths"
+  ],
+  "scope_out": [
+    "Default FastAPI body/query models (stay on Pydantic for OpenAPI, settings, DX)",
+    "Replacing pydantic-settings / env validation",
+    "UI or TypeScript schema generation (OpenAPI stays Pydantic-driven unless custom)",
+    "Full Litestar/Ravyn migration solely for msgspec",
+    "Notebooks-as-product serialization sprawl"
+  ],
+  "priority": "P2",
+
+  "defaults": {
+    "greenfield_http": "Pydantic v2 BaseModel on FastAPI; do not introduce msgspec until a profiled hot path exists",
+    "hot_path": "Define msgspec.Struct for internal messages; msgspec.json.encode/decode or msgspec.msgpack for binary; validate on decode with type=",
+    "boundary": "HTTP edge = Pydantic; worker/queue/ws internal = msgspec optional",
+    "conversion": "Map Struct ↔ Pydantic only at the boundary with explicit convert functions; avoid dual models on same public API",
+    "python": "3.12+ preferred; same as service runtime pin"
+  },
+  "decision_gates": {
+    "use_when": [
+      "py-spy/scalene shows encode/validate in top CPU for high-QPS or large-payload paths",
+      "Internal-only contracts (no need for FastAPI OpenAPI from those types)",
+      "MessagePack or multi-million object JSON pipelines",
+      "Shared message types across worker processes where dependency weight matters"
+    ],
+    "do_not_use_when": [
+      "CRUD API with DB-bound latency (server/JSON is not the bottleneck)",
+      "You need rich Pydantic features: custom validators, computed fields, settings, extensive JSON Schema",
+      "Team has no measured perf problem — premature dual-stack tax",
+      "Public OpenAPI must auto-generate from the same models without extra tooling"
+    ],
+    "alternatives": {
+      "pydantic_v2": "Default for FastAPI + settings + agent DX",
+      "orjson": "Fast JSON bytes only; no schema validation",
+      "dataclasses_plus_orjson": "Cheap structs, manual validation",
+      "rust_boundary": "If hot path is multi-GB/s or correctness-critical parsers, hand off to Rust/serde"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Profile before adopting; record baseline p50/p99 and CPU share",
+      "Validate untrusted bytes on decode: msgspec.json.decode(data, type=MyStruct)",
+      "Prefer Struct for schemas; use plain encode for trusted internal dicts only when intentional",
+      "Catch msgspec.ValidationError at boundaries; map to domain errors",
+      "Pin msgspec in uv.lock; keep one version monorepo-wide",
+      "Document which endpoints/workers use msgspec vs Pydantic"
+    ],
+    "dont": [
+      "Don't assume Struct constructor validates types (constructor does not; decode does)",
+      "Don't replace all Pydantic models wholesale in a FastAPI app without OpenAPI plan",
+      "Don't decode untrusted input without type=",
+      "Don't mix silent orjson + msgspec + pydantic paths without ownership",
+      "Don't invent dual public schemas that drift"
+    ]
+  },
+  "code_skeleton": "import msgspec\n\nclass JobPayload(msgspec.Struct, frozen=True):\n    job_id: str\n    user_id: str\n    payload: dict[str, str] = {}\n\ndef decode_job(raw: bytes) -> JobPayload:\n    # Validation runs during decode\n    return msgspec.json.decode(raw, type=JobPayload)\n\ndef encode_job(job: JobPayload) -> bytes:\n    return msgspec.json.encode(job)\n\n# MessagePack for internal bus\ndef encode_bus(job: JobPayload) -> bytes:\n    return msgspec.msgpack.encode(job)\n\ndef decode_bus(raw: bytes) -> JobPayload:\n    return msgspec.msgpack.decode(raw, type=JobPayload)\n\n# Optional: convert Struct -> dict for Pydantic/HTTP edge\ndef job_to_public_dict(job: JobPayload) -> dict:\n    return msgspec.to_builtins(job)\n",
+  "failure_modes": [
+    "Assuming Point(x=1, y='oops') raises — Struct init does not type-check; only decode validates",
+    "Silent schema drift between producer Struct and consumer Struct (no shared package)",
+    "Using msgspec types in FastAPI path params expecting Pydantic/OpenAPI magic",
+    "Large nested dict fields re-introduce Python object cost (Struct only helps typed shape)",
+    "Wrong protocol (JSON vs msgpack) across services → opaque decode failures",
+    "ValidationError not mapped → 500s or worker crash loops on poison messages"
+  ],
+  "anti_patterns": [
+    "Agent generates msgspec for every FastAPI model by default",
+    "Dual BaseModel and Struct for same public DTO without conversion tests",
+    "decode without type= on untrusted network input",
+    "Catching Exception and ignoring ValidationError details",
+    "Pulling msgspec just for yaml/toml config when pydantic-settings is standard"
+  ],
+
+  "tools": {
+    "primary": ["msgspec"],
+    "related": ["pydantic (HTTP edge)", "orjson (bytes-only JSON)", "faststream (msgspec subscription support)", "litestar (first-class msgspec DTO)"],
+    "profiling": ["py-spy", "scalene", "pytest-benchmark"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "msgspec": "0.21.1 (PyPI latest; release notes Apr 2026)",
+    "pydantic": "2.13.4 (comparison baseline for default stack)",
+    "note": "Pins labeled as_of research date; re-resolve with uv lock before ship"
+  },
+  "config_snippets": {
+    "pyproject_dependency": "[project]\ndependencies = [\n  \"msgspec>=0.21,<0.22\",  # only when hot-path justified\n]\n",
+    "uv_add": "uv add msgspec  # after profiling gate, not greenfield default",
+    "ruff": "# no special ruff plugin; treat Struct like dataclass for imports"
+  },
+  "deprecation_watch": [
+    "Do not start greenfield APIs on marshmallow / pydantic v1 for perf — use Pydantic v2 first, msgspec only if still hot",
+    "Avoid orjson as sole validator (no schema)",
+    "Avoid custom C extensions for JSON without need once msgspec covers the path"
+  ],
+
+  "ts_boundary": "msgspec types are not auto-exported to TS. Public contracts stay OpenAPI from FastAPI/Pydantic or hand-written JSON Schema. Internal msgspec payloads should not be consumed by Next BFF unless you publish a stable schema and version it. Prefer BFF talking HTTP JSON validated by Pydantic; use msgspec only behind Python workers.",
+  "rust_boundary": "If encode/decode remains CPU-bound after msgspec (multi-GB streams, custom binary protocols, strict latency SLOs), move the hot parser/serializer to Rust (serde_json / rmp-serde) and expose via PyO3 or a small Axum sidecar. msgspec is the last Python-native stop before Rust.",
+  "supabase_boundary": "Do not replace PostgREST/Supabase client models with msgspec. Use msgspec for internal job payloads that reference row IDs; keep DB row validation at SQLAlchemy/Pydantic or RLS layer. Never put service-role keys in Struct defaults.",
+  "boundary_contracts": [
+    "Version internal MessagePack/JSON envelopes (e.g. envelope.v + schema_id)",
+    "Poison-queue on ValidationError in workers",
+    "OpenAPI remains Pydantic-generated for external clients",
+    "Env secrets via pydantic-settings, not msgspec"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "High-volume serialize/validate of structured messages (internal)",
+    "python": "msgspec.Struct + json/msgpack after profiling; Pydantic at HTTP edge",
+    "ts": "Zod/valibot on BFF/edge only; do not reimplement msgspec in TS",
+    "rust": "When throughput/latency exceeds Python+msgspec budget or protocol is custom binary"
+  },
+
+  "threats": [
+    "Untrusted decode without type= → type confusion / unexpected structures",
+    "Over-permissive dict[str, Any] fields smuggle attacker-controlled graphs into workers",
+    "Schema confusion attacks if multiple message types share a bus without discriminators",
+    "DoS via huge JSON documents if no size limits at proxy/app"
+  ],
+  "mitigations": [
+    "Always decode(data, type=Struct) for untrusted input",
+    "Enforce max body size at reverse proxy and ASGI layer",
+    "Use tagged unions / explicit type field for multi-message channels",
+    "frozen=True Structs for immutability after decode",
+    "Reject unknown message versions"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "ValidationError handling on decode boundaries",
+      "Comment or module docstring stating why msgspec (measured hot path)",
+      "Explicit type= on decode"
+    ],
+    "must_not_generate": [
+      "msgspec as default for all FastAPI models",
+      "Struct without tests for invalid payloads",
+      "Silent fallthrough from ValidationError to generic 500 without logging"
+    ]
+  },
+
+  "tests_required": [
+    "Round-trip encode/decode for every Struct",
+    "Invalid payload matrix (wrong types, missing fields, extra fields policy)",
+    "Poison message worker test (ValidationError → nack/DLQ)",
+    "Boundary convert tests if dual Pydantic/msgspec models exist",
+    "Optional: pytest-benchmark guard on critical path"
+  ],
+  "ci_gates": [
+    "ruff + basedpyright on modules importing msgspec",
+    "unit tests for Struct schemas",
+    "uv lock includes msgspec only if declared dependency"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "msgspec used in workers/queues with type= decode",
+      "Pydantic retained on FastAPI routes",
+      "Profile evidence or comment justifying hot-path use"
+    ],
+    "negative": [
+      "msgspec.Struct as only API model layer with no OpenAPI story",
+      "json.loads + manual dict without schema on same hot path",
+      "decode without type= on network/queue input",
+      "Both orjson and msgspec without documented split"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default HTTP validation: Pydantic v2; msgspec is P2 hot-path only after profiling",
+    "msgspec.Struct validates on decode, not on constructor — always type= for untrusted bytes",
+    "Prefer msgspec for internal JSON/MessagePack buses and bulk jobs; keep OpenAPI on Pydantic",
+    "Pin msgspec as_of 2026-07-13: 0.21.x; do not dual-stack casually",
+    "If msgspec still not enough → Rust serde boundary"
+  ],
+  "action_items": [
+    "Document in references/python.md: Pydantic default vs msgspec gate",
+    "Add scan rule: msgspec in api/routes without justification → warn",
+    "Optional example worker using msgspec.msgpack in skill samples",
+    "Link primary sources msgspec.dev + benchmarks"
+  ],
+  "checklist": [
+    "Measured CPU/latency before introducing msgspec",
+    "Structs frozen where appropriate; decode uses type=",
+    "ValidationError → controlled failure path",
+    "No public OpenAPI regression",
+    "Size limits on inbound payloads",
+    "Versioned internal envelope if multi-service"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Community blog claims vary widely (3×–15× vs Pydantic v2); official msgspec docs state ~10–80× for supported types vs alternatives and ~12× vs Pydantic v2 on their validation benchmark — treat exact multiples as workload-dependent",
+    "Some teams advocate msgspec as default DTO layer (Litestar); FastAPI ecosystem remains Pydantic-first — engineer follows FastAPI default",
+    "jcristharif.com legacy URLs vs msgspec.dev canonical docs"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://msgspec.dev/",
+    "https://msgspec.dev/benchmarks",
+    "https://github.com/msgspec/msgspec",
+    "https://pypi.org/project/msgspec/"
+  ],
+  "local_sources": [
+    "./research/python/outline.yaml",
+    "./references/rust.md",
+    "./references/backend-api.md"
+  ]
+}

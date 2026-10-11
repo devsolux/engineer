@@ -1,0 +1,57 @@
+{
+  "name": "prek monorepo hooks with uv + ruff",
+  "item_id": "py-prek-hooks",
+  "cluster": "tooling",
+  "priority": "P1",
+  "short_definition": "prek is a Rust reimplementation of the pre-commit framework: single binary, drop-in .pre-commit-config.yaml compatibility, native monorepo workspace mode, and uv-backed Python hook envs — default local quality gate runner for polyglot repos that already standardize on ruff/uv.",
+  "scope_in": "prek install/run vs pre-commit; ruff-pre-commit and uv-related hooks; monorepo workspace discovery; orphan projects; selector syntax; builtin hooks; CI prek run --all-files; cooldown on hook rev updates; coexistence with Next/ESLint and Rust clippy hooks.",
+  "scope_out": "Full ruff rule selection (py-ruff-format-lint); typecheck policy (py-typecheck); supply-chain audit (py-uv-audit-supply-chain); replacing CI entirely with hooks only; Husky/lint-staged for JS-only repos without Python.",
+
+  "defaults": "Greenfield and monorepos: prefer prek over classic pre-commit. Install: `uv tool install prek` (or cargo/binary). Config: keep `.pre-commit-config.yaml` at repo root (compatible) or migrate to prek.toml via `prek util yaml-to-toml`. Python stack hooks: astral-sh/ruff-pre-commit (ruff-check --fix + ruff-format) pinned by tag; optional uv lock/export checks via astral-sh/uv-pre-commit when available. Prefer prek builtins for trailing-whitespace/end-of-file/large-files when they replace slow Python hooks. Monorepo: root config for shared meta hooks; nested `.pre-commit-config.yaml` under `services/py-*`, `apps/web` only when toolchains differ — use `orphan: true` on language silos to avoid double-processing. `prek install` once per clone; CI runs `prek run --all-files` (or language-scoped selectors). Pin hook revs; update with `prek update --cooldown-days 7` and `prek update --check` in scheduled CI.",
+  "decision_gates": "USE prek: any repo with Python + uv/ruff; polyglot monorepos needing nested configs; teams blocked on pre-commit speed/disk. STAY on pre-commit: regulated env that only allows audited pre-commit package and forbids new binaries (document exception). SKIP heavy local hooks: typecheck/full pytest belong in CI unless under ~2s. DO NOT run network-heavy audits on every commit (uv audit → CI). Prefer root-only config when single Python package; nested configs when JS/Rust/Python need different formatters with file isolation.",
+  "do_dont": "DO: pin rev tags (e.g. ruff-pre-commit v0.15.x); ruff-check --fix then ruff-format; install hooks with prek install; use workspace selectors `prek run services/py-api/`; enable orphan on nested language projects; document PREK_SKIP for emergencies. DON'T: unpinned rev: main; black+isort+flake8 alongside ruff; mypy hook as default if basedpyright is CI (duplicate pain); commit hook env caches; skip CI because hooks exist; use pre-commit framework Python install when prek binary is available.",
+  "code_skeleton": "# .pre-commit-config.yaml (root) — works with prek drop-in\ndefault_language_version:\n  python: python3.12\n\nrepos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n    rev: v0.15.21  # pin; bump deliberately\n    hooks:\n      - id: ruff-check\n        args: [--fix]\n      - id: ruff-format\n\n  - repo: local\n    hooks:\n      - id: uv-lock-check\n        name: uv lock --check\n        entry: uv lock --check\n        language: system\n        pass_filenames: false\n        files: '(^|/)(pyproject\\.toml|uv\\.lock)$'\n\n# Optional nested: services/py-worker/.pre-commit-config.yaml\n# orphan: true\n# repos: [ ruff only for this tree ]\n\n# Setup\n# uv tool install prek\n# prek install\n# prek run --all-files\n# prek run services/py-worker/\n# prek update --cooldown-days 7",
+  "failure_modes": "1) Unpinned/main rev → silent tool drift and broken CI. 2) Nested configs without orphan double-run ruff (slow/noise). 3) language: system hooks assume uv/prek on PATH — fail on fresh CI images. 4) Workspace discovery ignores new configs until --refresh. 5) Hooks mutate files but developer skips re-stage. 6) pre-commit and prek both installed fighting hooksPath. 7) Heavy typecheck/pytest in pre-commit → hooks disabled by humans.",
+  "anti_patterns": "Agents must not: generate black+isort+flake8 stacks; leave rev unpinned; put uv audit in pre-commit default set; recommend only pre-commit when prek is policy; use network install hooks without pin; disable hooks via --no-verify in scripts/docs; mix poetry run pre-commit with uv-managed prek without reason.",
+
+  "tools": "Primary: prek (j178/prek), ruff-pre-commit, uv, local system hooks. Alternatives: classic pre-commit; lefthook/husky for non-Python; CI-only quality without local hooks (acceptable for tiny scripts).",
+  "versions_as_of": "as_of 2026-07-13: prek PyPI 0.4.9; ruff 0.15.21 (match ruff-pre-commit rev); uv 0.11.28. prek used in production-adjacent OSS (CPython, FastAPI, Airflow, Ruff, Sentry per prek docs listing as of early 2026). Features labeled stable enough for greenfield; still younger than pre-commit — pin binary in CI.",
+  "config_snippets": "# CI (GitHub Actions sketch)\n# - uses: astral-sh/setup-uv@...\n# - run: uv tool install prek==0.4.9\n# - run: prek run --all-files\n#\n# monorepo skip JS when only Python changed:\n# prek run services/py-/\n#\n# .prekignore example\n# apps/web/node_modules/\n# **/dist/\n#\n# Env\n# PREK_SKIP=frontend/,markdownlint\n# PREK_CONCURRENT_HOOKS=4",
+  "deprecation_watch": "Classic pre-commit as greenfield default when prek available; multi-tool Python lint meta-hooks (flake8 plugins); pre-commit-hooks Python reimplementations when prek builtins exist; unversioned hook caches in Docker layers.",
+
+  "ts_boundary": "ESLint/oxlint/prettier stay under apps/web (pnpm + their own hooks or root nested config with orphan). prek workspace can host frontend/.pre-commit-config.yaml but do not force ruff on TS. Prefer language-scoped selectors so Python commits do not wait on full frontend lint.",
+  "rust_boundary": "Rust fmt/clippy via cargo hooks or separate CI job; nested config under services/api-rust with orphan. prek can orchestrate but cargo must be present — often cleaner as CI-only for Rust to keep commit latency low.",
+  "supabase_boundary": "No direct Supabase hooks required. Optional: SQLFluff/sql format on supabase/migrations only if team wants — keep out of default Python ruff path. Never commit service role keys via secret-scan hook if added (gitleaks/trufflehog) at root.",
+  "boundary_contracts": "OpenAPI/schema files: optional spectral/redocly hooks at contracts/; keep separate from Python ruff. Env sample files can be checked for forbidden secrets patterns at root.",
+  "decision_matrix_row": "Problem: local fast format/lint before commit on Python → prek + ruff. Problem: monorepo multi-language hooks → prek workspace mode. Problem: supply-chain CVE scan → CI uv audit, not prek. Problem: typecheck → CI basedpyright (optional editor ty), not default commit hook. Problem: JS-only repo → pnpm lint-staged/husky; prek optional.",
+
+  "threats": "Malicious hook repo rev (supply chain via pre-commit configs); impostor commits on tags; executing untrusted local hooks from cloned repos; secrets leaked if formatters run on .env; hook update without cooldown pulling compromised tool release.",
+  "mitigations": "Pin revs; prek update validates SHA/impostor detection; --cooldown-days on updates; review .pre-commit-config.yaml in CODEOWNERS; prefer astral official hook repos + builtins; secret scanning; never auto-trust hooks from unknown templates.",
+  "agent_codegen_policy": "MUST: emit pinned ruff-pre-commit rev; ruff-check --fix + ruff-format; document prek install. MUST for monorepos: root config + orphan guidance. MUST NOT: black/isort/flake8 default; unpinned rev; put full pytest/mypy as required local hooks; suggest --no-verify.",
+
+  "tests_required": "CI job running same hooks as local (`prek run --all-files`). Smoke on fresh clone: prek install + run. Optional: assert config pins parse; workspace discovery with --refresh.",
+  "ci_gates": "prek run --all-files (or ruff + uv lock --check if prek not in image); weekly prek update --check; fail on hook rev drift policy if adopted.",
+  "skill_scan_signals": "POSITIVE: .pre-commit-config.yaml with ruff-pre-commit pin; prek in docs/CI; orphan nested configs; no black+ruff dual format. NEGATIVE: unpinned rev; flake8+black+isort without ruff; only pre-commit Python package required in pyproject for hook runner; hooks disabled in README; audit on every commit.",
+
+  "skill_module_bullets": "- Prefer prek over pre-commit: Rust binary, uv envs, monorepo workspace mode.\n- Default hooks: ruff-check --fix, ruff-format, uv lock --check; pin revs.\n- Nested configs + orphan: true for language silos in monorepos.\n- CI mirrors hooks; typecheck/audit/pytest stay CI (not commit-blocking by default).\n- prek update --cooldown-days 7; prek update --check in scheduled CI.",
+  "action_items": "1) Add prek section to references/python.md. 2) Template .pre-commit-config.yaml with ruff pins. 3) Document workspace/orphan monorepo pattern. 4) CI template step for prek. 5) Scan signal: black+isort without justification.",
+  "checklist": "[ ] prek installed (uv tool install prek)\n[ ] prek install hooks active\n[ ] ruff hooks pinned to known rev\n[ ] No competing black/flake8 format path\n[ ] Monorepo orphan/selectors documented if nested configs\n[ ] CI runs equivalent checks\n[ ] Hook update cooldown policy\n[ ] Developers know PREK_SKIP emergency only",
+
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": "pre-commit remains ubiquitous; some orgs mandate it. prek is drop-in but younger — pin versions. Blog posts use varying ruff rev examples (0.8–0.15); always pin to current ruff line used in project. Whether typecheck runs as hook: speed vs safety tradeoff — this policy keeps it CI.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://prek.j178.dev/",
+    "https://prek.j178.dev/workspace/",
+    "https://github.com/j178/prek",
+    "https://github.com/astral-sh/ruff-pre-commit",
+    "https://blog.qstars.nl/posts/pre-commit-vs-prek/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

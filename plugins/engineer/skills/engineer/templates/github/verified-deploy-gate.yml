@@ -1,0 +1,25 @@
+name: verified deploy source
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require GitHub-verified deployment SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          result="$(gh api "repos/${REPOSITORY}/commits/${DEPLOY_SHA}" --jq '.commit.verification | [.verified, .reason] | @tsv')"
+          verified="${result%%$'\t'*}"
+          reason="${result#*$'\t'}"
+          printf 'GitHub verification for %s: verified=%s reason=%s\n' "$DEPLOY_SHA" "$verified" "$reason"
+          test "$verified" = "true"

@@ -1,0 +1,59 @@
+{
+  "resources": [
+    {
+      "uri": "fixture://orders/schema",
+      "name": "Synthetic order schema",
+      "mimeType": "application/json"
+    }
+  ],
+  "resourceTemplates": [
+    {
+      "uriTemplate": "fixture://orders/{order_id}",
+      "name": "Synthetic order",
+      "mimeType": "application/json"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "summarize_order",
+      "description": "Summarize a synthetic order for an authorized user.",
+      "arguments": [
+        {"name": "order_id", "description": "Synthetic order identifier", "required": true}
+      ]
+    }
+  ],
+  "resourceReads": [
+    {
+      "uri": "fixture://orders/schema",
+      "contents": [
+        {
+          "uri": "fixture://orders/schema",
+          "mimeType": "application/json",
+          "text": "{\"fields\":[\"order_id\",\"status\"]}"
+        }
+      ]
+    }
+  ],
+  "promptGets": [
+    {
+      "name": "summarize_order",
+      "arguments": {"order_id": "fixture-123"},
+      "description": "Synthetic order summary prompt",
+      "messages": [
+        {
+          "role": "user",
+          "content": {"type": "text", "text": "Summarize synthetic order fixture-123 without taking actions."}
+        }
+      ]
+    }
+  ],
+  "completions": [
+    {
+      "ref": {"type": "ref/prompt", "name": "summarize_order"},
+      "argument": {"name": "order_id", "value": "fixture"},
+      "values": ["fixture-123"],
+      "total": 1,
+      "hasMore": false
+    }
+  ]
+}

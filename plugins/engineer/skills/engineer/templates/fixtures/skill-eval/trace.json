@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {"kind": "read", "target": "fixture/package.json", "status": "ok"},
+    {"kind": "read", "target": "fixture/supabase/migrations", "status": "ok"},
+    {"kind": "final", "status": "ok"}
+  ],
+  "external_mutations": 0
+}

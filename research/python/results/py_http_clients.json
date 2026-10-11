@@ -1,0 +1,251 @@
+{
+  "name": "httpx timeouts, retries, and shared AsyncClient lifecycle",
+  "item_id": "py-http-clients",
+  "cluster": "web",
+  "short_definition": "Outbound HTTP from Python services uses httpx as the default client (sync Client + async AsyncClient). Own one shared AsyncClient in FastAPI lifespan for connection pooling; set explicit connect/read/write/pool timeouts (default is 5s network inactivity); retry only idempotent methods with bounded backoff; never follow user-controlled redirects into private networks. As of 2026-07-13 PyPI: httpx 0.28.1, httpcore 1.0.9, tenacity 9.1.4, httpx-retries 0.6.0, hishel 1.3.0.",
+  "scope_in": [
+    "httpx.AsyncClient / Client configuration (timeouts, Limits, HTTP/2, proxies)",
+    "Shared client lifecycle via FastAPI lifespan or dependency",
+    "Retry policy for idempotent requests (transport retries vs tenacity/httpx-retries)",
+    "Testing with respx / pytest-httpx / ASGITransport",
+    "Outbound SSRF-adjacent hardening for server-side fetch (allowlists, no open proxy)",
+    "When requests/aiohttp still appear and what to migrate"
+  ],
+  "scope_out": [
+    "Inbound FastAPI request handling (py-fastapi, py-middleware-stack)",
+    "LLM provider SDKs internals (use their client if required; still set timeouts)",
+    "Browser fetch / Next.js BFF outbound (typescript path)",
+    "gRPC / WebSocket client stacks",
+    "Full SSRF product design details beyond HTTP client knobs (py-auth-security)"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "client": "httpx.AsyncClient shared for service lifetime; close on shutdown",
+    "timeout": "httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0) — tune per upstream; never timeout=None in prod",
+    "limits": "httpx.Limits(max_connections=100, max_keepalive_connections=20) default-ish; lower for scarce upstreams",
+    "retries": "Only GET/HEAD/OPTIONS (and PUT with idempotency key); exponential backoff + jitter; respect Retry-After on 429",
+    "retry_impl": "Prefer tenacity or httpx-retries over bare loops; AsyncHTTPTransport(retries=N) is connection-error only, not status codes",
+    "http2": "http2=True only when upstream benefits and h2 extra installed; not default everywhere",
+    "follow_redirects": "False by default for security-sensitive fetches; if True, cap max redirects and validate final host",
+    "verify": "TLS verify on; system trust via certifi/truststore; never verify=False in prod",
+    "per_request": "Override timeout per call for slow AI providers vs internal APIs"
+  },
+  "decision_gates": {
+    "use_httpx_when": [
+      "Any new Python service needs outbound HTTP (sync or async)",
+      "FastAPI ASGI testing via httpx.ASGITransport",
+      "Need HTTP/2, streaming responses, or typed timeouts"
+    ],
+    "do_not_use_when": [
+      "In-process ASGI call without HTTP — prefer direct function/DI, not loopback HTTP",
+      "Vendor SDK that owns its own transport and forbids replacement without cause"
+    ],
+    "alternatives": {
+      "requests": "Legacy sync only; do not greenfield; migrate to httpx",
+      "aiohttp": "Acceptable if already deep in aiohttp stack; otherwise httpx for unified sync/async API",
+      "hishel": "HTTP cache layer on httpx for RFC-aware response caching",
+      "rust_reqwest": "Hand off ultra-hot proxy paths to Rust when measured"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Create AsyncClient once in lifespan; inject via app.state or Depends",
+      "Set granular Timeout; log TimeoutException with upstream name",
+      "Raise_for_status or map status codes explicitly; never ignore 4xx/5xx silently",
+      "Retry budget: max 2–3 attempts, only idempotent, with jitter",
+      "Propagate X-Request-Id / trace context headers outbound",
+      "Mock with respx or pytest-httpx in unit tests; real HTTP only in contract tests"
+    ],
+    "dont": [
+      "Don't httpx.get() top-level per request in hot paths (no pool reuse)",
+      "Don't timeout=None or multi-minute defaults without product reason",
+      "Don't retry POST/PATCH without idempotency key (double charge / double create)",
+      "Don't follow redirects to user-supplied URLs without host allowlist",
+      "Don't disable SSL verify to 'fix' local cert issues in committed code",
+      "Don't share one Client across event loops / threads carelessly"
+    ]
+  },
+  "code_skeleton": "from collections.abc import AsyncIterator\nfrom contextlib import asynccontextmanager\nfrom typing import Annotated\n\nimport httpx\nfrom fastapi import Depends, FastAPI, HTTPException\n\nDEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)\nDEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    app.state.http = httpx.AsyncClient(\n        timeout=DEFAULT_TIMEOUT,\n        limits=DEFAULT_LIMITS,\n        headers={\"User-Agent\": \"myservice/1.0\"},\n        follow_redirects=False,\n    )\n    yield\n    await app.state.http.aclose()\n\napp = FastAPI(lifespan=lifespan)\n\nasync def get_http() -> httpx.AsyncClient:\n    return app.state.http\n\nHttpClient = Annotated[httpx.AsyncClient, Depends(get_http)]\n\n@app.get(\"/proxy-health\")\nasync def proxy_health(http: HttpClient) -> dict[str, str]:\n    try:\n        r = await http.get(\"https://example.com/health\", timeout=httpx.Timeout(5.0))\n        r.raise_for_status()\n    except httpx.TimeoutException as e:\n        raise HTTPException(status_code=504, detail=\"upstream timeout\") from e\n    except httpx.HTTPError as e:\n        raise HTTPException(status_code=502, detail=\"upstream error\") from e\n    return {\"upstream\": \"ok\"}\n",
+  "failure_modes": [
+    "Per-request Client() → connection exhaustion / TIME_WAIT storms under load",
+    "Default 5s read timeout kills legitimate slow LLM/provider calls without per-route override",
+    "timeout=None hangs workers forever on black-hole upstreams",
+    "Retries on non-idempotent POST amplify outages and double side effects",
+    "PoolTimeout under fan-out (many concurrent upstreams) misdiagnosed as app hang",
+    "SSRF via user URL + follow_redirects into 169.254.169.254 / RFC1918",
+    "Client not closed on reload/shutdown → FD leaks in dev"
+  ],
+  "anti_patterns": [
+    "import requests in new FastAPI services",
+    "Bare except: pass around httpx errors",
+    "Hardcoded secrets in Authorization headers in repo",
+    "Global module-level AsyncClient created at import without test override",
+    "Retry forever / while True without budget",
+    "verify=False committed to fix corporate proxy MITM"
+  ],
+
+  "tools": {
+    "primary": ["httpx", "httpcore", "anyio"],
+    "retries": ["tenacity", "httpx-retries"],
+    "cache": ["hishel"],
+    "testing": ["respx", "pytest-httpx", "httpx.ASGITransport"],
+    "avoid_greenfield": ["requests", "urllib3-only ad-hoc clients"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "httpx": "0.28.1",
+    "httpcore": "1.0.9",
+    "h2": "4.3.0",
+    "tenacity": "9.1.4",
+    "httpx-retries": "0.6.0",
+    "hishel": "1.3.0",
+    "respx": "0.23.1",
+    "pytest-httpx": "0.36.2",
+    "anyio": "4.14.1",
+    "certifi": "2026.6.17",
+    "truststore": "0.10.4",
+    "aiohttp": "3.14.1 (alt)",
+    "requests": "2.34.2 (legacy)"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"httpx>=0.28,<0.29\",\n  \"tenacity>=9.1,<10\",\n]\n# optional:\n# \"httpx[http2]>=0.28,<0.29\",\n# \"httpx-retries>=0.6,<0.7\",\n# \"hishel>=1.3,<2\",\n# \"respx>=0.23,<0.24\",\n",
+    "timeout_helper": "import httpx\n\ndef upstream_timeout(*, read: float = 30.0) -> httpx.Timeout:\n    return httpx.Timeout(connect=5.0, read=read, write=10.0, pool=5.0)\n",
+    "tenacity_get": "from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_if_exception_type\nimport httpx\n\n@retry(\n    reraise=True,\n    stop=stop_after_attempt(3),\n    wait=wait_exponential_jitter(initial=0.2, max=2.0),\n    retry=retry_if_exception_type((httpx.TransportError, httpx.TimeoutException)),\n)\nasync def get_idempotent(client: httpx.AsyncClient, url: str) -> httpx.Response:\n    r = await client.get(url)\n    if r.status_code in {502, 503, 504}:\n        r.raise_for_status()  # trigger retry via custom or wrap\n    return r\n"
+  },
+  "deprecation_watch": [
+    "requests as default in new services",
+    "httpx 0.27-era docs omitting ASGITransport (use httpx.ASGITransport)",
+    "Unbounded urllib3 Retry copied into async code",
+    "aiohttp session per request without connector limits"
+  ],
+
+  "ts_boundary": "Next.js Route Handlers / Server Actions use fetch with AbortSignal timeouts. Python httpx is for Python services calling third parties, LLM gateways, or internal APIs. Do not proxy browser secrets through Python without auth; prefer same OpenAPI contracts. When Next BFF already has the token cookie session, call Python with service JWT or forwarded user JWT per boundary design.",
+  "rust_boundary": "Move to reqwest/Axum when outbound fan-out or proxy volume is CPU/latency critical, or when you need a pure edge proxy. Keep httpx for app-level integration and AI glue where developer velocity matters.",
+  "supabase_boundary": "Prefer supabase-py or direct PostgREST with service role only on server; set short timeouts on Auth/REST admin calls. Never point open httpx at user-supplied Supabase URLs. Storage signed URL fetch still needs size limits and content-type checks.",
+  "boundary_contracts": [
+    "Document per-upstream timeout SLOs in runbooks",
+    "Propagate request_id / traceparent",
+    "Map upstream 429 → client 429 or 503 with Retry-After policy",
+    "Env: UPSTREAM_*_BASE_URL, timeouts via pydantic-settings",
+    "OpenAPI not required for pure egress clients; still version internal APIs"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Service needs outbound HTTP to APIs/providers",
+    "python": "httpx.AsyncClient + explicit timeouts + idempotent retries",
+    "ts": "fetch + AbortSignal in Next server; undici defaults",
+    "rust": "reqwest when proxy/hot path measured"
+  },
+
+  "threats": [
+    "SSRF via user-controlled URL, redirects, DNS rebinding",
+    "Credential leakage in logs (Authorization, Set-Cookie mirrored)",
+    "Retry amplification / accidental DoS of upstream",
+    "TLS intercept disable (MITM)",
+    "Open proxy misuse of internal httpx client"
+  ],
+  "mitigations": [
+    "Allowlist hosts/schemes (https only); block link-local and private ranges unless explicit",
+    "follow_redirects=False or re-validate Location host",
+    "Redact auth headers in structured logs",
+    "Retry caps + circuit breaker for unhealthy upstreams",
+    "verify TLS; pin corporate CA via truststore when required",
+    "Separate clients for trusted internal vs untrusted user-driven fetch"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Shared AsyncClient in lifespan with aclose()",
+      "Explicit httpx.Timeout values",
+      "raise_for_status or explicit status handling",
+      "Retries only on idempotent methods with stop condition"
+    ],
+    "must_not_generate": [
+      "requests for new async services",
+      "timeout=None in production paths",
+      "verify=False",
+      "retry on all methods including POST without idempotency",
+      "New Client() inside every request handler"
+    ]
+  },
+
+  "tests_required": [
+    "Timeout path (mock delayed response → 504 mapping)",
+    "Retry count on transport error (assert call count)",
+    "No retry on POST without key",
+    "Client closed after lifespan / fixture teardown",
+    "respx route for happy path JSON",
+    "SSRF unit test: private IP rejected when allowlist enforced"
+  ],
+  "ci_gates": [
+    "ruff + basedpyright",
+    "pytest with respx/pytest-httpx",
+    "grep/scan: no verify=False, no timeout=None in app code",
+    "uv audit on httpx deps"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "httpx.AsyncClient in lifespan",
+      "httpx.Timeout(",
+      "await client.aclose() or async with AsyncClient",
+      "respx or pytest_httpx in tests"
+    ],
+    "negative": [
+      "import requests",
+      "timeout=None",
+      "verify=False",
+      "httpx.AsyncClient() inside route without reuse",
+      "while True: await client.get without break/budget"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default outbound HTTP: httpx 0.28.x as_of 2026-07-13",
+    "One AsyncClient per app lifetime; never per-request in hot paths",
+    "Always set Timeout(connect/read/write/pool); default 5s is not 'no timeout'",
+    "Retries: idempotent only, budgeted, prefer tenacity/httpx-retries",
+    "AsyncHTTPTransport(retries=N) ≠ full HTTP status retry policy",
+    "Test with respx; ban verify=False and timeout=None in prod code"
+  ],
+  "action_items": [
+    "Seed references/python.md httpx section",
+    "Scan rules: requests import, verify=False, timeout=None",
+    "Sample lifespan client in skill samples",
+    "Cross-link py-auth-security SSRF allowlist"
+  ],
+  "checklist": [
+    "Shared client + aclose",
+    "Timeouts per upstream class (internal vs AI)",
+    "Retry policy documented",
+    "No secrets in URLs/logs",
+    "SSRF controls if user URLs",
+    "Tests mock outbound HTTP",
+    "HTTP/2 only if needed + h2 installed"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "AsyncHTTPTransport(retries=) only covers certain connection failures; community often confuses it with status-code retries",
+    "Some guides still push aiohttp as the async default; httpx is preferred here for API symmetry and FastAPI test story",
+    "httpx-retries vs tenacity: both fine; pick one style per repo"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://www.python-httpx.org/",
+    "https://www.python-httpx.org/advanced/timeouts/",
+    "https://www.python-httpx.org/advanced/resource-limits/",
+    "https://www.python-httpx.org/async/",
+    "https://www.python-httpx.org/http2/",
+    "https://github.com/encode/httpx",
+    "https://pypi.org/project/httpx/",
+    "https://will-ockmore.github.io/httpx-retries",
+    "https://hishel.com"
+  ],
+  "local_sources": [
+    "./references/backend-api.md",
+    "./references/backend-security.md",
+    "./references/api-data-flows.md",
+    "./research/python/outline.yaml"
+  ]
+}

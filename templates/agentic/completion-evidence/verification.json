@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "capture_kind": "illustrative_fixture",
+  "contract_sha256": "d09e71f7b9d8359bb4b8dc040c16b99c8f4992531efec78bd91ce1138053a3a8",
+  "trajectory_sha256": "a9fe2091385a57a9734fccd43ebbff2269d909615c77be7b90ba78416e5d2cc0",
+  "revision_before_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "revision_after_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scope_diff_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "captured_at": "2026-07-15T06:00:00Z",
+  "runner": "isolated-fixture-runner",
+  "commands": [
+    {
+      "command": "pnpm test -- agent-loop.test.ts",
+      "exit_code": 0,
+      "started_at": "2026-07-15T05:59:00Z",
+      "completed_at": "2026-07-15T05:59:10Z",
+      "stdout_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "stderr_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "timed_out": false
+    }
+  ],
+  "acceptance": {
+    "ac_resume": {
+      "status": "passed",
+      "resumed_from_step": "step_state",
+      "duplicate_actions": 0
+    },
+    "ac_stop": {
+      "status": "passed",
+      "unchanged_observations": 2,
+      "stop_reason": "no_progress_limit_reached"
+    }
+  }
+}

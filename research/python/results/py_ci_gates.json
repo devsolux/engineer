@@ -1,0 +1,84 @@
+{
+  "name": "CI gates: ruff, typecheck, pytest, uv audit",
+  "item_id": "py-ci-gates",
+  "cluster": "quality",
+  "priority": "P0",
+  "short_definition": "Mandatory continuous-integration quality bar for greenfield Python services: frozen uv install, Ruff format+lint, basedpyright typecheck, pytest (unit required), and uv audit (+ malware check) — ordered for fast fail and reproducible environments on GitHub Actions via astral-sh/setup-uv.",
+  "scope_in": "PR/merge gates; job layout and ordering; uv sync --frozen/--locked; ruff format --check + ruff check; basedpyright; pytest markers; uv audit + UV_MALWARE_CHECK; caching; pin policy for actions and tools; monorepo path filters; relationship to prek local hooks.",
+  "scope_out": "Deep rule selection for Ruff (py-ruff-format-lint); type mode details (py-typecheck); test design (py-testing); Schemathesis budget (py-contract-testing); Docker image publish (py-docker-deploy); full release/PyPI trusted publishing beyond smoke.",
+
+  "defaults": "Single primary CI workflow for Python services (plus optional integration/contract jobs). Bootstrap: actions/checkout + astral-sh/setup-uv@pinned SHA with version: \"0.11.x\" matching policy, enable-cache: true. Install: UV_MALWARE_CHECK=1 uv sync --frozen --all-groups (or --locked per Astral examples). Gates in order (fail fast, cheap first): (1) uv lock --check if policy wants lock freshness OR rely on frozen sync failure, (2) ruff format --check ., (3) ruff check ., (4) uv run basedpyright, (5) uv run pytest -m unit, (6) uv audit. Optional parallel job: integration with Docker; optional non-blocking ty; optional contract Schemathesis. Pin Python via .python-version (3.13 default stack). Local prek/ruff hooks complement but never replace CI. Required status checks on default branch.",
+  "decision_gates": "REQUIRED on every PR touching Python: frozen sync, ruff format+check, basedpyright, unit pytest, uv audit. ADD integration job when service has DB and Docker available. ADD contract job for public OpenAPI services (can be nightly if slow). MATRIX multiple Python only for libraries; apps pin one version. SKIP audit only with documented emergency and ticket. DO NOT make format-only the sole gate. DO NOT use pip install -r without lock for apps. DO NOT mark CI green if unit tests skipped via empty collect.",
+  "do_dont": "DO: pin uv version and action SHA; cache uv; fail on format drift; run typecheck before long tests if desired; upload pytest junit on failure; keep jobs under ~10m for unit path. DON'T: secrets in workflow logs; pull:latest tools; continue-on-error on audit/typecheck; only run tests on main; mutate lock in CI without committing strategy; use npm-style 'ignore scripts' analogies to skip Python audits.",
+  "code_skeleton": "# .github/workflows/python-ci.yml\nname: python-ci\non:\n  pull_request:\n  push:\n    branches: [main]\n\njobs:\n  quality:\n    runs-on: ubuntu-latest\n    env:\n      UV_MALWARE_CHECK: \"1\"\n    steps:\n      - uses: actions/checkout@v7\n      - name: Install uv\n        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0 example — pin current SHA\n        with:\n          version: \"0.11.28\"\n          enable-cache: true\n      - name: Sync\n        run: uv sync --frozen --all-groups\n      - name: Ruff format\n        run: uv run ruff format --check .\n      - name: Ruff lint\n        run: uv run ruff check .\n      - name: Typecheck\n        run: uv run basedpyright\n      - name: Unit tests\n        run: uv run pytest -m \"unit or not integration\" --cov=src --cov-fail-under=80\n      - name: Audit\n        run: uv audit\n\n  integration:\n    needs: quality\n    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v7\n      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b\n        with:\n          version: \"0.11.28\"\n          enable-cache: true\n      - run: uv sync --frozen --all-groups\n      - run: uv run pytest -m integration\n        # requires Docker on runner for testcontainers",
+  "failure_modes": "1) Unpinned setup-uv → surprise breakage. 2) sync without --frozen allows lock drift on CI. 3) format not checked → style wars. 4) typecheck only local → PR surprises. 5) pytest collects zero tests still exits 0 without --maxfail/careful config. 6) audit ignored with continue-on-error. 7) cache poisoning edge cases — prefer official setup-uv cache. 8) Monorepo runs Python gates on pure TS PRs without path filters (waste) or skips Python when both change (gap).",
+  "anti_patterns": "Agents must not: generate CI with only flake8/black; mypy-only greenfield without basedpyright policy exception; pip install unpinned; skip ruff format --check; leave UV_MALWARE_CHECK unset in CI; recommend --no-verify culture; use poetry install in uv-standardized repos; make integration the only test job so PRs are slow and skipped by humans.",
+
+  "tools": "Primary: GitHub Actions, astral-sh/setup-uv, uv, ruff, basedpyright, pytest, uv audit. Local mirror: prek + ruff. Optional: astral-sh/ruff-action, schemathesis/action, codecov. Not default: tox multi-env for single-version apps; Jenkins-specific unless org requires.",
+  "versions_as_of": "as_of 2026-07-13 — uv 0.11.28; setup-uv v8.1.0 line (pin full commit SHA per Astral docs examples); ruff 0.15.21; basedpyright 1.39.9; pytest 9.1.1; uv audit still preview-ish since 2026-06 — pin uv so CLI stays compatible. actions/checkout@v7 appears in current Astral guides.",
+  "config_snippets": "# Minimal gate commands (local or CI)\n# export UV_MALWARE_CHECK=1\n# uv sync --frozen --all-groups\n# uv run ruff format --check .\n# uv run ruff check .\n# uv run basedpyright\n# uv run pytest -m unit\n# uv audit\n\n# monorepo path filter example\n# on:\n#   pull_request:\n#     paths:\n#       - \"services/py-api/**\"\n#       - \"uv.lock\"\n\n# Required checks (branch protection): quality job names\n# Optional: weekly workflow uv lock --upgrade + audit PR",
+  "deprecation_watch": "actions/setup-python + pip-only without uv for new services; black/isort/flake8 CI; mypy as sole type gate greenfield; poetry+pip-audit only stacks; unpinned @master actions; continue-on-error on security audit; relying solely on pre-commit without CI.",
+
+  "ts_boundary": "TS CI (pnpm lint/test) stays separate job; monorepo path filters per package. Do not block Python merge only on frontend lint. Shared contracts: if OpenAPI changes, run both Python provider tests and TS client typecheck when applicable.",
+  "rust_boundary": "Rust fmt/clippy/test/cargo-audit parallel discipline in rust job — not mixed into Python quality job unless tiny workspace script. Same PR can require both status checks.",
+  "supabase_boundary": "CI must not use production Supabase keys. Integration tests use testcontainers or ephemeral project. Migration lint can be separate job; never apply unreviewed migrations to shared prod from PR CI.",
+  "boundary_contracts": "Merge contract = all required gates green. Lockfile is dependency contract. OpenAPI optional contract job. Branch protection encodes the human-visible contract. Agents must not weaken gates in templates.",
+  "decision_matrix_row": "Problem: Python PR quality → uv frozen + ruff + basedpyright + pytest unit + uv audit. Problem: DB realism → optional integration job. Problem: API schema → Schemathesis job. Problem: TS app → pnpm CI. Problem: Rust → cargo CI. Problem: supply chain only → audit still insufficient without tests.",
+
+  "threats": "Compromised GitHub Action (tag move); malicious dependency installed before audit if order wrong — prefer malware check on sync then audit; secrets in workflow env dumped on debug; self-hosted runner residue; bypass via admin merge without checks.",
+  "mitigations": "Pin actions to commit SHA; UV_MALWARE_CHECK on sync; uv audit fail closed; least-privilege GITHUB_TOKEN; required checks + no admin bypass for prod paths; path-filtered jobs still cover lockfile changes; review dependabot PRs.",
+  "agent_codegen_policy": "MUST generate: setup-uv with pinned uv version; uv sync --frozen; ruff format --check + check; basedpyright; pytest unit; uv audit; UV_MALWARE_CHECK=1. MUST NOT: black/flake8 CI; skip typecheck; continue-on-error on audit; unpinned action tags only; empty test job; poetry as default installer.",
+
+  "tests_required": "CI itself is the meta-test: unit suite must run and pass; optional integration/contract. Consider a repo smoke that fails if pytest collected 0 items (pytest --collect-only assert). Workflow changes reviewed like code.",
+  "ci_gates": "Blocking: frozen sync, ruff format --check, ruff check, basedpyright, pytest unit, uv audit. Non-blocking optional: ty, long fuzz. Release: same gates + image build/health (py-docker-deploy).",
+  "skill_scan_signals": "POSITIVE: setup-uv; uv sync --frozen; ruff format --check; basedpyright; pytest; uv audit; UV_MALWARE_CHECK. NEGATIVE: pip install unpinned; no typecheck; no format check; audit missing; black+flake8 only; tests not in PR CI; continue-on-error on gates.",
+
+  "skill_module_bullets": [
+    "Canonical PR gates: uv sync --frozen → ruff format --check → ruff check → basedpyright → pytest unit → uv audit.",
+    "Use astral-sh/setup-uv with pinned version + cache; pin action SHA.",
+    "UV_MALWARE_CHECK=1 on CI sync; audit fails the build.",
+    "Local prek/hooks accelerate feedback; CI remains source of truth.",
+    "Integration/contract are additional jobs, not replacements for unit gates.",
+    "Apps pin one Python (.python-version); libraries may matrix."
+  ],
+  "action_items": [
+    "Paste canonical workflow into references/python.md.",
+    "Scan for missing gates (format, types, audit).",
+    "Template monorepo path filters for services/py-*.",
+    "Document required branch protection check names."
+  ],
+  "checklist": [
+    "setup-uv pinned + uv version pinned",
+    "UV_MALWARE_CHECK=1",
+    "uv sync --frozen --all-groups",
+    "ruff format --check and ruff check",
+    "basedpyright in CI",
+    "pytest unit on every PR",
+    "uv audit blocking",
+    "Branch protection requires quality job",
+    "No secrets in logs",
+    "Optional integration/contract documented"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Astral docs show both uv sync --locked and --frozen; frozen is stricter for deployable CI — use frozen for apps. uv audit preview may change flags — pin uv. Whether coverage fail-under is mandatory is team-specific (default 80% unit as soft policy). integration-after-quality vs parallel tradeoffs: serial saves runners when quality fails; parallel is faster when green is common.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.astral.sh/uv/guides/integration/github/",
+    "https://docs.astral.sh/uv/reference/cli/#uv-audit",
+    "https://astral.sh/blog/uv-audit",
+    "https://docs.astral.sh/ruff/",
+    "https://docs.basedpyright.com/",
+    "https://docs.pytest.org/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md",
+    "./research/python/results/py_uv_audit_supply_chain.json",
+    "./research/python/results/py_ruff_format_lint.json",
+    "./research/python/results/py_typecheck.json"
+  ]
+}

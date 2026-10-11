@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "id": "fixture-finding",
+      "summary": "The isolated fixture produced a hash-bound result."
+    }
+  ],
+  "artifact_hash": "declared-by-captured-receipt"
+}

@@ -1,0 +1,57 @@
+name: optimization evidence attestation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Check fixed optimization evidence paths
+        run: |
+          set -euo pipefail
+          python3 -m json.tool .engineer/optimization/optimization-run.json >/dev/null
+          python3 -m json.tool .engineer/optimization/trials.json >/dev/null
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(Path(".engineer/optimization/optimization-run.json").read_text())
+          evidence = Path(".engineer/optimization/trials.json")
+          actual = hashlib.sha256(evidence.read_bytes()).hexdigest()
+          assert receipt["decision"] == "reject", "attest before changing decision to promote"
+          assert receipt["evidence"]["capture_kind"] == "captured_run"
+          assert receipt["evidence"]["attestation"] is None
+          assert receipt["evidence"]["path"] == ".engineer/optimization/trials.json"
+          assert receipt["evidence"]["sha256"] == actual
+          PY
+
+      - name: Attest captured trial evidence
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: .engineer/optimization/trials.json
+
+      - name: Preserve verification bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: optimization-attestation-bundle
+          path: ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30

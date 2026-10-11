@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "session": {
+    "id":"browser_fixture_001","environment":"local","risk_class":"public_read","role":"public","auth_mode":"logged_out","lane":"public-read-fixture","worker_id":"worker-0","namespace":"browser-fixture-0","account_id_sha256":null,"tenant_id_sha256":null,"context_id":"context-ephemeral-0","profile":"ephemeral_nonpersistent",
+    "storage_state":{"used":false,"source":null,"retained":false,"committed":false,"shared_between_workers":false},
+    "started_at":"2026-07-15T05:00:00+00:00","ended_at":"2026-07-15T05:01:00+00:00"
+  },
+  "policy": {
+    "allowed_origins":["http://127.0.0.1:3000"],
+    "initial_urls":["http://127.0.0.1:3000/"],
+    "network":{"subresources":"first_party_only","redirects":"allowed_origins_only","page_derived_urls":"exact_allowlist_or_user_approval","exact_url_allowlist":["http://127.0.0.1:3000/","http://127.0.0.1:3000/login"],"forbidden_query_keys":["token","key","secret","password","cookie","authorization","email","session","code"]},
+    "permissions":{"clipboard":"deny","geolocation":"deny","notifications":"deny","camera":"deny","microphone":"deny","downloads":"deny","uploads":"deny","extensions":"deny","filesystem":"deny"},
+    "actions":{"allowed":["navigate","read","screenshot","assert"],"mutations":[],"always_ask":["login","payment","message","post","invite","account_change","permission_change","delete","upload","download"]},
+    "data":{"allowed_classes":["public_page_content","synthetic_fixture"],"prohibited_classes":["credentials","cookies","tokens","customer_data","private_files","clipboard"],"url_values_must_be_public":true,"page_content_untrusted":true},
+    "artifacts":{"redact":true,"auth_state_forbidden":true,"failure_only":true,"retention":"Delete after the fixture review window."},
+    "stop_conditions":["prompt_injection","unexpected_origin","auth_boundary_change","permission_prompt","captcha","ambiguous_mutation"]
+  },
+  "artifacts":[
+    {"id":"art_summary","kind":"summary","path":"browser-session-evidence/summary.json","sha256":"5ffb367e91045cf1a78dfdcb8f23af4ab771593524be1a18964deeeb37997bfb","redacted":true,"contains_auth_state":false}
+  ],
+  "observations": {
+    "navigations":[{"url":"http://127.0.0.1:3000/","source":"initial","user_approved":false,"public_indexed":false,"redirect":false}],
+    "requests":[{"url":"http://127.0.0.1:3000/","method":"GET","resource_type":"document","initiator":"navigation","blocked":false,"sensitive_data":false}],
+    "actions":[{"id":"action_read_home","kind":"read","target":"main","mutation":false,"approval_id":null,"source":"goal","artifact_ids":["art_summary"]}],
+    "popups":[],"transfers":[],"permission_prompts":[],
+    "injection":{"encountered":false,"followed":false,"source_to_sink_blocked":true,"stopped":false,"evidence":"No page instruction was treated as authority in the synthetic trace."},
+    "console_errors":[],"page_errors":[],"final_url":"http://127.0.0.1:3000/","artifact_ids":["art_summary"]
+  },
+  "cleanup":{"context_closed":true,"storage_deleted":true,"downloads_deleted":true,"fixture_data_deleted":true,"namespace_verified":true,"unexpected_pages_closed":true},
+  "review":{"reviewer":"fixture-browser-reviewer","policy_reviewed":true,"evidence_reviewed":true,"approved":false,"notes":"Illustrative fixture cannot authorize a real browser session."},
+  "decision":{"outcome":"fail","reasons":["Illustrative fixture demonstrates schema only."],"unresolved_risks":["No real browser session was captured."]}
+}

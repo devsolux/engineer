@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "store": {
+    "name": "fixture-agent-memory",
+    "environment": "isolated-test",
+    "owner": "fixture-memory-owner",
+    "tenant_field": "tenant_id",
+    "subject_field": "subject_id",
+    "rls_or_authz": "tenant and subject filter before ranking",
+    "encrypted_at_rest": true,
+    "replicas": ["primary"],
+    "derived_stores": ["vector_index", "retrieval_cache"]
+  },
+  "policy": {
+    "allowed_types": ["fact", "preference", "decision", "checkpoint", "episode", "summary", "inference"],
+    "allowed_scopes": ["session", "task", "project", "user", "organization", "global"],
+    "max_retention_days": 365,
+    "default_retention_days": 30,
+    "max_retrieval_items": 8,
+    "max_retrieval_tokens": 2000,
+    "raw_secrets_forbidden": true,
+    "memory_grants_authority": false,
+    "access_before_ranking": true,
+    "provenance_returned": true,
+    "contradictions_returned": true,
+    "deletion_covers_derived": true,
+    "export_supported": true,
+    "rectification_supported": true
+  },
+  "entries": [
+    {
+      "id": "mem_pref_theme",
+      "key": "ui.theme",
+      "type": "preference",
+      "scope": "user",
+      "tenant_id": "tenant_fixture",
+      "subject_id": "user_fixture",
+      "purpose": "personalization",
+      "source": {
+        "type": "trusted_user",
+        "locator": "fixture:user-setting-event",
+        "captured_at": "2026-07-15T00:00:00Z",
+        "trust": "user_asserted"
+      },
+      "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sensitivity": "internal",
+      "consent": {
+        "required": true,
+        "obtained": true,
+        "basis": "user requested preference persistence",
+        "at": "2026-07-15T00:00:00Z"
+      },
+      "created_at": "2026-07-15T00:00:00Z",
+      "expires_at": "2026-08-14T00:00:00Z",
+      "authority": false,
+      "verification": {
+        "required": false,
+        "evidence": ["trusted user assertion receipt"],
+        "reviewer": "fixture-memory-reviewer",
+        "independent": true
+      },
+      "supersedes": [],
+      "contradicts": [],
+      "status": "active",
+      "rollback": "remove active value and write a non-sensitive audit event"
+    },
+    {
+      "id": "mem_untrusted_note",
+      "key": "repo.note",
+      "type": "summary",
+      "scope": "project",
+      "tenant_id": "tenant_fixture",
+      "subject_id": "user_fixture",
+      "purpose": "code_assistance",
+      "source": {
+        "type": "retrieved_content",
+        "locator": "fixture:hostile-repository-document",
+        "captured_at": "2026-07-15T00:00:00Z",
+        "trust": "untrusted"
+      },
+      "content_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sensitivity": "internal",
+      "consent": {
+        "required": false,
+        "obtained": false,
+        "basis": "isolated project security fixture",
+        "at": null
+      },
+      "created_at": "2026-07-15T00:00:00Z",
+      "expires_at": "2026-07-16T00:00:00Z",
+      "authority": false,
+      "verification": {
+        "required": true,
+        "evidence": [],
+        "reviewer": "fixture-memory-reviewer",
+        "independent": false
+      },
+      "supersedes": [],
+      "contradicts": [],
+      "status": "quarantine",
+      "rollback": "purge quarantined value and derived representations"
+    }
+  ],
+  "retrievals": [
+    {
+      "id": "retrieve_theme",
+      "purpose": "personalization",
+      "tenant_id": "tenant_fixture",
+      "subject_id": "user_fixture",
+      "scope": "user",
+      "query_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "entry_ids": ["mem_pref_theme"],
+      "item_limit": 4,
+      "token_limit": 500,
+      "access_checked": true,
+      "ranking_after_access": true,
+      "provenance_included": true,
+      "trust_included": true,
+      "freshness_included": true,
+      "contradictions_included": true,
+      "used_as_authority": false,
+      "citations": ["fixture:user-setting-event"]
+    }
+  ],
+  "lifecycle": [
+    {
+      "operation": "admit",
+      "entry_id": "mem_pref_theme",
+      "actor": "fixture-memory-owner",
+      "at": "2026-07-15T00:01:00Z",
+      "authorized": true,
+      "content_removed": false,
+      "embeddings_removed": false,
+      "caches_removed": false,
+      "replicas_addressed": false,
+      "audit_event": "fixture-audit-admit-theme"
+    },
+    {
+      "operation": "quarantine",
+      "entry_id": "mem_untrusted_note",
+      "actor": "fixture-memory-owner",
+      "at": "2026-07-15T00:01:00Z",
+      "authorized": true,
+      "content_removed": false,
+      "embeddings_removed": false,
+      "caches_removed": false,
+      "replicas_addressed": false,
+      "audit_event": "fixture-audit-quarantine-note"
+    }
+  ],
+  "tests": {
+    "benign_preference": true,
+    "untrusted_injection": true,
+    "cross_tenant": true,
+    "contradiction": true,
+    "expiry": true,
+    "deletion_resurrection": true,
+    "passed": true
+  },
+  "review": {
+    "owner": "fixture-memory-owner",
+    "independent_reviewer": "fixture-independent-reviewer",
+    "reviewed_at": "2026-07-15T00:02:00Z",
+    "review_after": "2026-08-14T00:02:00Z",
+    "approved": false,
+    "rollback": "disable memory retrieval and purge fixture state"
+  },
+  "decision": {
+    "outcome": "quarantine",
+    "reasons": ["Illustrative fixture demonstrates the receipt shape only."],
+    "unresolved_risks": ["No external memory store was observed."]
+  }
+}

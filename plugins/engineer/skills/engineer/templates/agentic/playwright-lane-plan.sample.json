@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "run_kind": "illustrative_fixture",
+  "run_id": "preview-browser-smoke-001",
+  "environment": "preview",
+  "base_url": "https://preview.example.test",
+  "app_root": ".",
+  "max_parallel": 3,
+  "lanes": [
+    {"id": "public", "kind": "public", "workers": 2, "timeout_seconds": 300, "enabled": true},
+    {"id": "quality", "kind": "quality", "workers": 2, "timeout_seconds": 300, "enabled": true},
+    {"id": "auth-read", "kind": "auth-read", "workers": 1, "timeout_seconds": 300, "enabled": false},
+    {"id": "auth-write", "kind": "auth-write", "workers": 1, "timeout_seconds": 300, "enabled": false}
+  ],
+  "output_root": ".engineer/browser-runs/preview-browser-smoke-001"
+}

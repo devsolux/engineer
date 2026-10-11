@@ -1,0 +1,88 @@
+{
+  "name": "Python↔TypeScript boundary: OpenAPI shared schemas and codegen",
+  "item_id": "py-ts-boundary",
+  "cluster": "interop",
+  "priority": "P0",
+  "short_definition": "Contract-first integration between Python services (FastAPI OpenAPI) and Next/TS BFF or clients: FastAPI emits OpenAPI 3.x as source of truth for HTTP shapes; TS consumes via codegen (openapi-typescript + openapi-fetch, or @hey-api/openapi-ts SDK) rather than hand-synced interfaces. Session stays in Next; Python receives Bearer JWT or service tokens. Aligns with typescript.md shared-types monorepo pattern and rust.md contract-first rules, extended to Python as peer. As of 2026-07-13: openapi-typescript 7.13.0, @hey-api/openapi-ts 0.99.0, orval 8.21.0; FastAPI auto OpenAPI.",
+  "scope_in": "OpenAPI export from FastAPI; committed openapi.json/yaml vs live /openapi.json; TS codegen tool choice; monorepo packages/types layout; auth header patterns; error JSON shape; versioning /v1; CI drift checks; SSE/streaming caveat; optional JSON Schema for non-HTTP; agent rules against hand DTOs.",
+  "scope_out": "Full language choice matrix (py-vs-ts-vs-rust); Rust gRPC/protobuf deep dive; FastAPI router internals (py-fastapi); Schemathesis details (py-contract-testing); Zod-only Server Actions that never call Python.",
+
+  "defaults": "Source of truth: FastAPI app OpenAPI (Pydantic v2 models → components/schemas). Export artifact: contracts/openapi-py-ai.json (or yaml) generated in CI from `uv run python -c '...'` or fastapi CLI / pytest fixture — commit or generate both sides consistently. TS consumption default: openapi-typescript (types) + openapi-fetch (typed client) for thin BFF calls; OR @hey-api/openapi-ts when full SDK + TanStack Query plugins desired (FastAPI docs highlight Hey API for TS). Place generated output under packages/types or apps/web/src/generated — never edit by hand. Auth: Next verifies session; server-side fetch to Python with Authorization: Bearer <access_token|service_jwt>. Errors: stable {error, code?} JSON both sides. Version path prefix /v1. Timeouts explicit on TS fetch. Breaking schema changes: bump version or expand-contract.",
+  "decision_gates": "USE OpenAPI codegen whenever TS calls Python HTTP. USE committed openapi artifact when CI cannot boot Python to introspect. USE live codegen only in local dev with lockstep servers. USE Hey API when team wants generated SDK+React Query options; use openapi-typescript when types-only + custom fetch wrapper preferred. USE protobuf/gRPC only if mesh already standard (more common TS↔Rust). DO NOT hand-copy Pydantic fields into Zod/TS interfaces. DO NOT call Python from browser with service role keys. DO NOT share Python runtime packages with TS. DO NOT skip auth on 'internal' docker network APIs exposed to the web.",
+  "do_dont": "DO: generate types in CI; fail PR on openapi drift; document base URL env; map 401/403/422/409 consistently; include request_id correlation; test one golden path e2e. DON'T: any-cast fetch responses; commit divergent manual DTOs; put service secrets in NEXT_PUBLIC_*; stream without backpressure timeouts; dual-write DB from TS and Python on same table without owner.",
+  "code_skeleton": "# --- Python: keep models explicit; OpenAPI comes free ---\n# src/mypkg/schemas.py\nfrom pydantic import BaseModel, Field\n\nclass RankRequest(BaseModel):\n    query: str = Field(min_length=1, max_length=2000)\n    top_k: int = Field(default=10, ge=1, le=100)\n\nclass RankHit(BaseModel):\n    id: str\n    score: float\n\nclass RankResponse(BaseModel):\n    hits: list[RankHit]\n\n# export script scripts/export_openapi.py\n# from mypkg.main import app\n# import json\n# print(json.dumps(app.openapi(), indent=2))\n# uv run python scripts/export_openapi.py > contracts/openapi-py-ai.json\n\n# --- TS: openapi-typescript + openapi-fetch ---\n# pnpm add -D openapi-typescript\n# pnpm add openapi-fetch\n# pnpm exec openapi-typescript ./contracts/openapi-py-ai.json -o src/generated/py-ai.ts\n#\n# import createClient from 'openapi-fetch';\n# import type { paths } from '@/generated/py-ai';\n# const py = createClient<paths>({ baseUrl: process.env.PY_AI_URL! });\n# const { data, error } = await py.POST('/v1/rank', {\n#   body: { query: '…', top_k: 10 },\n#   headers: { Authorization: `Bearer ${token}` },\n# });\n\n# --- Alt: Hey API (FastAPI recommended path) ---\n# npx @hey-api/openapi-ts -i ./contracts/openapi-py-ai.json -o src/client\n\n# package.json script\n# \"codegen:py-ai\": \"openapi-typescript ../../contracts/openapi-py-ai.json -o src/generated/py-ai.ts\"\n",
+  "failure_modes": "1) Hand-synced types drift → runtime 422/500. 2) Client calls Python without token → 401 loops. 3) NEXT_PUBLIC service URL + service key leak. 4) OpenAPI from dev server with debug routes differs from prod. 5) Pydantic response_model omitted → weak schema. 6) Streaming SSE not represented well in codegen — custom client needed. 7) CI doesn't regenerate → merged TS breaks. 8) Multiple conflicting generators (orval+hey+manual). 9) Error shapes differ → UI cannot branch. 10) Breaking field rename without version.",
+  "anti_patterns": "Agents must not: invent parallel Zod schemas that restate Pydantic for the same HTTP API without codegen; fetch with any; put service role in client bundle; generate clients into untracked folders only; use openapi-typescript-codegen as greenfield default when FastAPI now points to Hey API / modern openapi-ts (legacy package still exists but prefer current stack).",
+
+  "tools": "Provider: FastAPI OpenAPI, Pydantic v2, optional datamodel-code-generator reverse only if needed. Consumer: openapi-typescript 7.x + openapi-fetch; @hey-api/openapi-ts 0.99.x; orval 8.x alternative. Contract test: Schemathesis (py-contract-testing). CI: export openapi + diff. Not default: hand-written TS interfaces for Python APIs; GraphQL federation for simple BFF→Python.",
+  "versions_as_of": "as_of 2026-07-13 — openapi-typescript 7.13.0; @hey-api/openapi-ts 0.99.0; orval 8.21.0; openapi-python-client 0.29.0 (Py→Py); datamodel-code-generator 0.68.1. FastAPI 0.139.x line per sibling research generates OpenAPI 3.1 typically — confirm per pin.",
+  "config_snippets": "# CI sketch\n# - uv run python scripts/export_openapi.py > /tmp/openapi.json\n# - diff -u contracts/openapi-py-ai.json /tmp/openapi.json\n# - pnpm exec openapi-typescript contracts/openapi-py-ai.json -o apps/web/src/generated/py-ai.ts\n# - pnpm --filter web typecheck\n\n# Env (server only)\n# PY_AI_URL=http://py-ai:8000\n# PY_AI_SERVICE_TOKEN=…  # or mint user JWT\n\n# FastAPI route discipline\n# @router.post('/v1/rank', response_model=RankResponse)\n# async def rank(body: RankRequest, user: AuthUser) -> RankResponse: ...\n",
+  "deprecation_watch": "Hand-maintained TS DTOs for Python APIs; openapi-typescript-codegen as only documented path (superseded options in 2026 guides); committing generated clients that are never refreshed; browser-direct service-role calls; dual OpenAPI sources (manual yaml + FastAPI) fighting.",
+
+  "ts_boundary": "This item IS the TS boundary. Next owns session cookies and Server Actions; only server components/actions/route handlers call Python. Zod still validates browser→Next inputs. Generated types validate Next→Python shapes. See typescript.md Shared types across stack.",
+  "rust_boundary": "Same contract-first discipline as TS↔Rust. Prefer one OpenAPI catalog or separate files per service (openapi-py-ai.json, openapi-rust.json). Don't funnel Rust and Python through ad-hoc untyped JSON. If both called from Next, separate clients.",
+  "supabase_boundary": "Python may use service role for embeddings tables it owns; TS uses user session + RLS for product tables. Codegen does not replace RLS. Never expose service role through TS generated client to browser.",
+  "boundary_contracts": "contracts/openapi-*.json|yaml; env PY_*_URL + tokens; error envelope; /v1 versioning; optional JSON Schema for queue payloads; MCP tool schemas separate; migration ownership docs.",
+  "decision_matrix_row": "Problem: TS needs Python API types → OpenAPI export + openapi-typescript or Hey API codegen. Problem: browser forms → Zod on Next, not Python. Problem: TS↔Rust → same OpenAPI/proto pattern. Problem: shared pure types without HTTP → JSON Schema package, still generate. Problem: streaming tokens → SSE client hand-written + document event schema. Problem: no cross-language call → skip codegen.",
+
+  "threats": "Leaked service tokens via generated client misuse; overly broad CORS on Python; openapi.json exposing internal routes/admin; prototype pollution rare but validate; SSRF if TS proxies user URLs into Python.",
+  "mitigations": "Server-only env for tokens; strip internal routes from public OpenAPI if public; auth on all mutating routes; CORS allowlist; schema export from prod-equivalent config; rate limit; never NEXT_PUBLIC for secrets.",
+  "agent_codegen_policy": "MUST: define Pydantic request/response models; export OpenAPI artifact; generate TS types/client; use Bearer from server; explicit timeouts; /v1 prefix. MUST NOT: hand-sync interfaces; browser service role; any-typed fetch; dual manual yaml conflicting with FastAPI without process; skip CI drift check in templates.",
+
+  "tests_required": "Export openapi job; Schemathesis or contract tests on provider; TS typecheck after codegen; integration test Next→Python happy path with test token; breaking change test on error envelope.",
+  "ci_gates": "openapi export diff = 0 or intentional update; codegen + tsc; Python pytest; optional Schemathesis. Fail if packages/types generated files dirty when not intended.",
+  "skill_scan_signals": "POSITIVE: contracts/openapi; openapi-typescript or @hey-api/openapi-ts scripts; response_model on routes; Bearer from server; CI drift check. NEGATIVE: duplicate manual DTOs; any fetch; service key in client; no OpenAPI export; hand-written fetch without types for Python APIs.",
+
+  "skill_module_bullets": [
+    "Python↔TS: FastAPI OpenAPI is source of truth; codegen TS — never hand-sync DTOs.",
+    "Prefer openapi-typescript+openapi-fetch or @hey-api/openapi-ts; commit or CI-generate contracts/openapi-*.json.",
+    "Session in Next; Python gets Bearer JWT/service token from server-side fetch only.",
+    "Stable error JSON {error, code?}; /v1 versioning; explicit timeouts.",
+    "CI: export OpenAPI, fail on drift, typecheck consumer.",
+    "SSE/streams may need hand clients — still document event schema.",
+    "One table owner across TS and Python; codegen is not a substitute for RLS."
+  ],
+  "action_items": [
+    "Document codegen script pair in references/python.md and typescript.md.",
+    "Add contracts/ + export script to Python service template.",
+    "CI drift gate for openapi artifact.",
+    "Agent ban on hand-synced cross-language DTOs.",
+    "Example BFF fetch wrapper with timeout + auth."
+  ],
+  "checklist": [
+    "Pydantic models on all public Python endpoints",
+    "OpenAPI export script exists",
+    "contracts/ artifact committed or generated in CI",
+    "TS codegen script in package.json",
+    "Generated files not hand-edited",
+    "Server-only auth to Python",
+    "No service secrets in NEXT_PUBLIC_",
+    "Timeouts set",
+    "Error envelope consistent",
+    "/v1 path policy",
+    "CI drift + tsc green",
+    "Table ownership documented if both touch DB"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "FastAPI docs historically showed openapi-typescript-codegen; 2026 FastAPI generate-clients page emphasizes Hey API for TS — both Hey API and openapi-typescript are acceptable; pick one per repo. Whether to commit generated TS vs generate in CI only: commit for smaller apps, CI-only for large churn — either with drift check. OpenAPI 3.0 vs 3.1 tooling quirks: pin generator versions. SSE not first-class in all generators.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/advanced/generate-clients/",
+    "https://github.com/openapi-ts/openapi-typescript",
+    "https://heyapi.dev/",
+    "https://www.npmjs.com/package/openapi-typescript",
+    "https://www.npmjs.com/package/@hey-api/openapi-ts"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/api-data-flows.md",
+    "./references/system-architecture.md",
+    "./research/python/results/py_vs_ts_vs_rust.json",
+    "./research/python/results/py_fastapi.json",
+    "./research/python/results/py_contract_testing.json"
+  ]
+}

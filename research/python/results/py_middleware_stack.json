@@ -1,0 +1,250 @@
+{
+  "name": "Canonical FastAPI/Starlette middleware order and security headers",
+  "item_id": "py-middleware-stack",
+  "cluster": "web",
+  "short_definition": "Canonical cross-cutting ASGI middleware stack for FastAPI services: correct add_middleware order (last added = outermost), CORS, TrustedHost, HTTPS redirect (when appropriate), GZip, proxy headers, request-ID/logging, timeouts, and security response headers. Official FastAPI: middleware forms a stack; request flows outermost→innermost→route; response reverses. Dependencies with yield run after middleware; BackgroundTasks after all middleware.",
+  "scope_in": [
+    "add_middleware vs @app.middleware('http') order semantics",
+    "CORSMiddleware configuration with credentials",
+    "TrustedHostMiddleware, HTTPSRedirectMiddleware, GZipMiddleware",
+    "Proxy/X-Forwarded-* trust model (Uvicorn/Granian)",
+    "Request ID, structured logging, exception-safe headers",
+    "Security headers on API responses (HSTS, nosniff, frame, referrer, permissions)",
+    "What belongs in middleware vs Depends vs router dependencies"
+  ],
+  "scope_out": [
+    "Next.js middleware.ts cookie auth (backend-auth.md)",
+    "Full JWT/OAuth implementation (py-auth-security)",
+    "Rate limit algorithm details (py-rate-limit-cache)",
+    "Business authorization rules inside middleware (use Depends)",
+    "CSP nonce pipelines for HTML apps (API-first services rarely need full CSP)"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "order_rule": "Last app.add_middleware(X) is outermost; runs first on request, last on response",
+    "canonical_outer_to_inner_request": [
+      "ProxyHeaders / forwarded trust (server or wrap)",
+      "CORSMiddleware",
+      "TrustedHostMiddleware",
+      "HTTPSRedirectMiddleware (only if app terminates TLS or must force https)",
+      "RequestId + access logging middleware",
+      "Security headers middleware (set on response)",
+      "GZipMiddleware (inner-ish; compress final body)",
+      "Optional: slowapi/rate-limit or timeout middleware",
+      "Route + Depends"
+    ],
+    "cors": "Explicit allow_origins from settings; allow_credentials only with explicit origins; never * with credentials",
+    "auth": "Prefer Depends/APIRouter dependencies for authZ — not giant middleware that parses every path",
+    "headers_api": [
+      "Strict-Transport-Security (when HTTPS)",
+      "X-Content-Type-Options: nosniff",
+      "X-Frame-Options: DENY (or CSP frame-ancestors)",
+      "Referrer-Policy: strict-origin-when-cross-origin",
+      "Permissions-Policy: restrictive default",
+      "Cache-Control appropriate for authenticated APIs (often no-store)"
+    ],
+    "expose_custom_headers": "Add to CORS expose_headers if browsers must read X-Request-Id etc."
+  },
+  "decision_gates": {
+    "middleware_when": [
+      "Must run for every request (CORS, host check, request ID, security headers, compression)",
+      "Needs raw ASGI access (streaming, early reject)"
+    ],
+    "depends_when": [
+      "Auth user loading, DB session, tenant context, per-route permissions",
+      "Optional dependencies only on some routes"
+    ],
+    "proxy_layer_when": [
+      "HSTS/TLS and broad security headers often better at ingress/CDN — still set app-level defaults for defense in depth when clients hit app directly"
+    ],
+    "skip_gzip_when": [
+      "Responses already compressed or tiny",
+      "SSE/streaming endpoints where buffering hurts — exclude or set carefully"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Add CORS outermost among app middlewares that must see preflight early (typical pattern: add CORS last so it is outermost)",
+      "Keep middleware pure and fast — no DB in middleware",
+      "Propagate X-Request-Id from inbound or generate UUID; bind to structlog context",
+      "Document order in main.py comments for agents",
+      "Test preflight OPTIONS and credentialed CORS",
+      "Use app.add_middleware for third-party ASGI middleware so exception handlers work"
+    ],
+    "dont": [
+      "Don't use allow_origins=['*'] with allow_credentials=True (invalid/broken)",
+      "Don't implement full session auth only in middleware and skip route checks",
+      "Don't mutate response body after streaming started carelessly",
+      "Don't trust X-Forwarded-For from the public internet without proxy allowlist",
+      "Don't put heavy CPU/crypto in middleware without caching where safe",
+      "Don't reverse order casually — last-added is outermost"
+    ]
+  },
+  "code_skeleton": "from uuid import uuid4\nfrom fastapi import FastAPI, Request\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom fastapi.middleware.gzip import GZipMiddleware\nfrom fastapi.middleware.trustedhost import TrustedHostMiddleware\nfrom starlette.middleware.base import BaseHTTPMiddleware\nfrom starlette.types import ASGIApp\n\n# Example settings\nALLOWED_ORIGINS = [\"https://app.example.com\", \"http://localhost:3000\"]\nALLOWED_HOSTS = [\"api.example.com\", \"localhost\"]\n\nclass RequestIdMiddleware(BaseHTTPMiddleware):\n    async def dispatch(self, request: Request, call_next):\n        request_id = request.headers.get(\"x-request-id\") or str(uuid4())\n        request.state.request_id = request_id\n        response = await call_next(request)\n        response.headers[\"X-Request-Id\"] = request_id\n        return response\n\nclass SecurityHeadersMiddleware(BaseHTTPMiddleware):\n    async def dispatch(self, request: Request, call_next):\n        response = await call_next(request)\n        response.headers.setdefault(\"X-Content-Type-Options\", \"nosniff\")\n        response.headers.setdefault(\"X-Frame-Options\", \"DENY\")\n        response.headers.setdefault(\"Referrer-Policy\", \"strict-origin-when-cross-origin\")\n        response.headers.setdefault(\"Permissions-Policy\", \"camera=(), microphone=(), geolocation=()\")\n        # HSTS only when you are sure HTTPS is enforced end-to-end\n        # response.headers.setdefault(\"Strict-Transport-Security\", \"max-age=63072000; includeSubDomains; preload\")\n        return response\n\napp = FastAPI()\n\n# add_middleware: LAST added = OUTERMOST (runs first on request)\napp.add_middleware(GZipMiddleware, minimum_size=1000)\napp.add_middleware(SecurityHeadersMiddleware)\napp.add_middleware(RequestIdMiddleware)\napp.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=ALLOWED_ORIGINS,\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n    expose_headers=[\"X-Request-Id\"],\n)\n# Request order: CORS → TrustedHost → RequestId → SecurityHeaders → GZip → route\n",
+  "failure_modes": [
+    "CORS middleware not outermost → preflight never gets ACAO headers",
+    "Middleware order reversed after refactor → subtle prod-only bugs",
+    "TrustedHost too strict behind LB with wrong Host header → 400s",
+    "Logging middleware reads body and breaks streaming/uploads",
+    "Gzip on SSE → client hang/buffer",
+    "Security headers only on HTML apps forgotten for APIs that still get browsed",
+    "yield dependencies assumed to run before middleware teardown (docs: yield exit after middleware)"
+  ],
+  "anti_patterns": [
+    "allow_origins=['*'] + cookies/Authorization credentialed browser clients",
+    "Auth entirely in middleware with route handlers trusting request.state.user blindly without tests",
+    "Dozen middlewares each doing partial auth/rate-limit/logging with unclear order",
+    "Copy-pasting Next CSP middleware into FastAPI JSON API without adaption",
+    "Catch-all middleware that swallows exceptions and returns 200"
+  ],
+
+  "tools": {
+    "primary": ["fastapi.middleware.*", "starlette.middleware.*", "uvicorn proxy headers", "granian.utils.proxies"],
+    "optional": ["asgi-correlation-id", "slowapi / custom rate limit", "CORSMiddleware", "BaseHTTPMiddleware (simple) vs pure ASGI (hot path)"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "fastapi": "0.139.0",
+    "starlette": "1.3.1",
+    "uvicorn": "0.51.0",
+    "granian": "2.7.9",
+    "note": "Middleware APIs stable; verify CORS/TrustedHost args against current Starlette docs on upgrade"
+  },
+  "config_snippets": {
+    "settings": "class Settings(BaseSettings):\n    cors_origins: list[str] = [\"http://localhost:3000\"]\n    allowed_hosts: list[str] = [\"localhost\", \"api.example.com\"]\n    # parse from env: CORS_ORIGINS=[\"https://app.example.com\"]\n",
+    "order_comment": "# MIDDLEWARE ORDER (request): last add_middleware = first to run\n# 1 CORS 2 TrustedHost 3 RequestId 4 SecurityHeaders 5 GZip → routes\n"
+  },
+  "deprecation_watch": [
+    "Custom CORS hacks instead of CORSMiddleware",
+    "django-cors-headers patterns copy-pasted incorrectly",
+    "BaseHTTPMiddleware known caveats for some streaming edge cases — prefer pure ASGI middleware if profiling shows issues",
+    "Disabling TrustedHost with allowed_hosts=['*'] on public multi-tenant hosts"
+  ],
+
+  "ts_boundary": "Browser calls from Next (localhost:3000 / app origin) require FastAPI CORS allowlist of that origin when not same-origin proxied. Prefer Next rewrite/proxy to same origin in prod to reduce CORS surface. Cookie SSR auth stays on Next middleware; Python service uses Bearer/service tokens for server-to-server.",
+  "rust_boundary": "Axum/Tower layer order is analogous (outer layers first). When porting, map CORS/trace/timeout layers explicitly; don't assume middleware names match.",
+  "supabase_boundary": "If FastAPI validates Supabase JWTs, do it in Depends not CORS middleware. CORS must allow the web app origin only; never reflect Origin arbitrarily. Service-role calls are server-side — no CORS involved.",
+  "boundary_contracts": [
+    "X-Request-Id / traceparent propagation to OTel",
+    "CORS_ORIGINS and ALLOWED_HOSTS env contracts",
+    "Error JSON still applies security headers",
+    "OpenAPI security schemes separate from CORS"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Cross-cutting HTTP concerns on Python API",
+    "python": "Starlette/FastAPI middleware stack + Depends for auth/session",
+    "ts": "next.config headers + middleware.ts for Next app shell",
+    "rust": "Tower layers on Axum Router"
+  },
+
+  "threats": [
+    "Host header attacks without TrustedHost",
+    "CORS misconfiguration → credential theft from browser",
+    "Client IP spoofing via X-Forwarded-For → auth bypass of IP allows / rate limit dodge",
+    "Clickjacking if API serves any HTML admin",
+    "Information leak via verbose CORS/error headers",
+    "Cache poisoning if shared caches ignore Cache-Control on auth APIs"
+  ],
+  "mitigations": [
+    "TrustedHostMiddleware with real hosts",
+    "Explicit CORS origins from env; review on each frontend domain add",
+    "Proxy trust allowlist at server layer",
+    "Security headers middleware + ingress headers",
+    "no-store for authenticated JSON",
+    "Rate limit + auth in Depends after identity established (order: auth then rate limit for user-keyed limits)"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "CORS from settings list not hardcoded * for credentialed apps",
+      "Request ID middleware or OTel instrumentation",
+      "Security headers for public APIs",
+      "Comment documenting middleware order",
+      "TrustedHost when deploying with known hostnames"
+    ],
+    "must_not_generate": [
+      "allow_origins=['*'] with allow_credentials=True",
+      "Auth-only-in-middleware without route Depends",
+      "Middleware that consumes request body for logging on all routes",
+      "Gzip on streaming/SSE routes without exclusion"
+    ]
+  },
+
+  "tests_required": [
+    "OPTIONS preflight returns expected ACAO/ACAH",
+    "Disallowed origin blocked",
+    "TrustedHost rejects bad Host",
+    "X-Request-Id present on response",
+    "Security headers present on JSON error and success",
+    "Streaming/SSE still works with stack enabled"
+  ],
+  "ci_gates": [
+    "Unit/integration tests for CORS and headers",
+    "Lint/grep ban allow_origins=[\"*\"] combined with credentials True",
+    "Optional: securityheaders scan on staging URL"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "CORSMiddleware with explicit origins from settings",
+      "Request ID header middleware",
+      "TrustedHostMiddleware in prod config",
+      "Comment on middleware order",
+      "Security headers set"
+    ],
+    "negative": [
+      "allow_origins=[\"*\"] and allow_credentials=True",
+      "No CORS but browser frontend on different origin",
+      "Missing request id on public API",
+      "Custom CORS headers hand-rolled on each route",
+      "Middleware doing SQLAlchemy session open"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Last add_middleware = outermost; document order in main.py",
+    "Canonical: CORS → TrustedHost → RequestId → SecurityHeaders → GZip → routes (adjust with comments)",
+    "Auth/DB sessions = Depends, not middleware",
+    "CORS: explicit origins; never * with credentials",
+    "Trust X-Forwarded-* only from proxy CIDRs",
+    "yield-deps run after middleware; BackgroundTasks after all middleware (FastAPI docs)"
+  ],
+  "action_items": [
+    "Codify middleware order snippet in references/python.md",
+    "Scan rules for CORS * + credentials and missing Request-Id",
+    "Cross-link backend-security.md header names for consistency with Next",
+    "SSE exclusion note for GZip"
+  ],
+  "checklist": [
+    "Order documented and tested",
+    "CORS origins match real frontends",
+    "TrustedHost hosts correct behind LB",
+    "Request ID + logs correlated",
+    "Security headers on all responses",
+    "Proxy trust configured at server",
+    "SSE/streaming verified",
+    "No body-buffering middleware on uploads"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Exact middleware ordering recipes vary across blogs; FastAPI documents stack semantics clearly — project-specific order should follow outermost-first needs (CORS/preflight usually outer)",
+    "Whether HSTS belongs on app vs CDN: both valid; avoid HSTS on plain HTTP local dev",
+    "BaseHTTPMiddleware vs pure ASGI performance/streaming debates in Starlette community — use BaseHTTPMiddleware for simple cases; pure ASGI if issues"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/tutorial/middleware/",
+    "https://fastapi.tiangolo.com/advanced/middleware/",
+    "https://fastapi.tiangolo.com/tutorial/cors/",
+    "https://www.starlette.dev/middleware/",
+    "https://github.com/emmett-framework/granian (proxy header wrappers)"
+  ],
+  "local_sources": [
+    "./references/backend-security.md",
+    "./references/backend-auth.md",
+    "./references/rust.md",
+    "./research/python/outline.yaml"
+  ]
+}

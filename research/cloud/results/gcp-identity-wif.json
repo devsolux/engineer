@@ -1,0 +1,294 @@
+{
+  "name": "GCP identity — projects/folders, service accounts, Workload Identity Federation from GitHub Actions, IAM conditions, no JSON keys",
+  "item_id": "gcp-identity-wif",
+  "cluster": "gcp",
+  "short_definition": "The identity layer for a greenfield GCP footprint: an org/folder/project resource hierarchy that scopes IAM policy inheritance, user-managed service accounts that hold least-privilege roles, and Workload Identity Federation (WIF) that lets GitHub Actions (and other external OIDC-emitting workloads) exchange a short-lived GitHub OIDC token for a short-lived Google STS token — either directly (Direct WIF, principalSet) or via service-account impersonation — with zero downloaded JSON service-account keys ever created, stored, or rotated.",
+  "scope_in": "Org/folder/project hierarchy design and IAM inheritance; service account creation, naming, and least-privilege role binding; Workload Identity Pools and Providers; attribute mapping and attribute conditions for GitHub Actions OIDC; Direct WIF vs impersonation-via-WIF; IAM Conditions (CEL) on role bindings; organization policies that ban service-account key creation; the google-github-actions/auth GitHub Action wiring.",
+  "scope_out": "Runtime workload identity for GKE Pods (see gcp-gke-workload-identity if present — different mechanism from user OIDC federation); Cloud Run/Cloud Functions invoker IAM and per-service SA attachment (see gcp-cloud-run item); Supabase auth/RLS identity (owned by the supabase cluster); Vercel deployment identity and its own OIDC federation to GCP/AWS (owned by vercel cluster); secret storage mechanics in Secret Manager (see gcp-secret-manager item); billing/quota escalation workflows beyond the identity-relevant quotas listed here.",
+  "priority": "P0",
+  "defaults": [
+    "One GCP organization per company; folders per environment or business unit (e.g. `prod`, `staging`, `sandbox`) directly under the org, projects nested under environment folders — never flat projects at org root for anything beyond a personal sandbox.",
+    "One project per environment per product line minimum (e.g. `my-project-prod`, `my-project-staging`) so IAM, quotas, and billing don't bleed across environments.",
+    "Zero downloaded service-account JSON keys anywhere — CI, local dev, containers. Local dev uses `gcloud auth application-default login` (user credentials) or short-lived impersonation; CI uses WIF.",
+    "GitHub Actions authenticates via `google-github-actions/auth@v3` using Direct WIF (principalSet bound straight to IAM roles) for simple cases, or WIF + service-account impersonation when the target API requires a service-account identity (e.g. some Cloud Run deploy paths, Firebase Admin SDK which does not support WIF).",
+    "Every Workload Identity Pool has exactly one provider per external CI system per trust boundary (e.g. `github-actions` pool with one provider trusting `token.actions.githubusercontent.com`), and every provider has a mandatory attribute condition — never rely on attribute mapping alone.",
+    "Attribute conditions and IAM bindings reference numeric identifiers (`assertion.repository_id`, `repository_owner_id`, org number) rather than name-based fields (`repository`, `repository_owner`) to prevent typosquatting/renaming attacks.",
+    "One dedicated, narrowly-scoped service account per CI workflow / deployment target (e.g. `deploy-web-prod@my-project.iam.gserviceaccount.com`), never a shared 'ci-everything' service account.",
+    "Organization policy `iam.disableServiceAccountKeyCreation` and `iam.disableServiceAccountKeyUpload` are enforced org-wide (default for orgs created after 2024-05-03; explicitly set for older orgs).",
+    "Production deploy permissions gated with an IAM Condition restricting the WIF-derived principal to the `main`/`release` branch and to `pull_request` == false, so PR-triggered workflows can't deploy to prod.",
+    "IAM roles granted are predefined or custom least-privilege roles scoped at the project (or resource) level — never `roles/owner` or `roles/editor` bound to a CI service account."
+  ],
+  "decision_gates": [
+    "Use Direct WIF (grant IAM roles straight to the `principalSet://...` mapped from GitHub OIDC claims) when the target Google API accepts federated principals directly and you want one fewer hop — simplest, fewest moving parts, no service account to rotate/manage.",
+    "Use WIF + service-account impersonation when the target integration requires a classic service-account identity (many Terraform providers, some client libraries, Firebase Admin SDK — which explicitly does not support WIF and needs a key or ADC through a supported path) or when you want a stable principal identity independent of pool/provider churn.",
+    "Use a Google-managed folder-level IAM binding (not per-project) when the same CI identity needs the same role across many projects in one folder — reduces binding sprawl, but only do this if the blast radius of that grant is genuinely folder-wide by design.",
+    "Do NOT use long-lived service-account JSON keys for GitHub Actions, ever, in this stack — this is a hard architectural rule, not a preference. If a vendor tool only supports key-file auth, isolate it in its own project with a scoped, monitored service account and treat the key as a rotated secret in Secret Manager, not a repo secret.",
+    "Do NOT use `repository`/`repository_owner` string attributes as the sole gate in an attribute condition for anything touching prod — use the numeric `repository_id`/`repository_owner_id` claims instead, since GitHub usernames and repo names can be renamed and reassigned.",
+    "Prefer Vercel's own OIDC-to-GCP federation (if the deploy originates from Vercel, not GitHub Actions) over funneling through a GitHub Actions intermediary — fewer hops, same no-keys guarantee; use GitHub Actions WIF when the pipeline itself lives in GitHub Actions (tests, IaC apply, container build/push).",
+    "Use a single shared 'infra' project with a dedicated WIF pool/provider for Terraform/OpenTofu apply identities, separate from the app-deploy pool/provider — infra-apply is higher privilege and should have its own trust boundary and audit trail.",
+    "Escalate to a full org-level Google Cloud landing zone (multiple folders, org policies, centralized logging project) only once you have more than a handful of projects or a compliance requirement; a single flat project is acceptable for an early-stage greenfield MVP with a clear migration plan."
+  ],
+  "do_dont": [
+    "DO: create a distinct Workload Identity Pool provider per external CI/IdP system, with an explicit attribute condition on every provider.",
+    "DO: bind IAM roles to `principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.repository_id/REPO_ID` (numeric) rather than name-based attributes for anything privileged.",
+    "DO: scope service accounts to a single workflow/purpose and grant only the exact predefined or custom roles that workflow needs.",
+    "DO: set org policies `iam.disableServiceAccountKeyCreation` and `iam.disableServiceAccountKeyUpload` at the organization node so no project can opt back into key-based auth silently.",
+    "DO: add an IAM Condition (or attribute condition) restricting production-impersonation grants to the release branch and to non-fork, non-PR event contexts.",
+    "DO: log and alert on Security Token Service (STS) token exchanges and IAM impersonation calls via Cloud Audit Logs data access logs.",
+    "DON'T: commit or generate any `*.json` file matching the service-account key shape (`\"type\": \"service_account\"`) anywhere in the repo, including fixtures or examples.",
+    "DON'T: set `GOOGLE_APPLICATION_CREDENTIALS` to point at a checked-in or CI-downloaded key file — ADC in CI should resolve through WIF-issued short-lived credentials injected by `google-github-actions/auth`.",
+    "DON'T: grant `roles/owner`, `roles/editor`, or org-level `roles/iam.serviceAccountAdmin` to any CI-facing service account or principalSet.",
+    "DON'T: reuse one 'ci-deploy' service account across dev/staging/prod — cross-environment blast radius from a single compromised workflow.",
+    "DON'T: allow a WIF provider's attribute condition to accept any `repository_owner` without also constraining to a specific `repository_id`/`workflow_ref`, since a fork's workflow can otherwise mint tokens against your pool if the org-level condition is too loose.",
+    "DON'T: leave workload identity pools or providers with an empty/permissive attribute condition 'temporarily' — this is the single most common real-world WIF misconfiguration and is exploitable immediately."
+  ],
+  "config_skeleton": "# ---------------------------------------------------------------------------\n# 1. gcloud CLI — one-time WIF bootstrap (run by a human/admin, not CI)\n# ---------------------------------------------------------------------------\n\nPROJECT_ID=\"my-project-id\"\nPROJECT_NUMBER=$(gcloud projects describe \"$PROJECT_ID\" --format='value(projectNumber)')\nPOOL_ID=\"github-actions\"\nPROVIDER_ID=\"my-repo-provider\"\nGITHUB_ORG=\"my-org\"\nGITHUB_REPO=\"my-org/my-repo\"\nSA_NAME=\"deploy-web-prod\"\nSA_EMAIL=\"${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com\"\n\n# Create the pool (one per external IdP boundary; separate pools per env optional)\ngcloud iam workload-identity-pools create \"$POOL_ID\" \\\n  --project=\"$PROJECT_ID\" \\\n  --location=\"global\" \\\n  --display-name=\"GitHub Actions pool\"\n\n# Create the provider trusting GitHub's OIDC issuer, with attribute mapping\n# NOTE: use numeric repository_id/repository_owner_id in the condition, not names.\ngcloud iam workload-identity-pools providers create-oidc \"$PROVIDER_ID\" \\\n  --project=\"$PROJECT_ID\" \\\n  --location=\"global\" \\\n  --workload-identity-pool=\"$POOL_ID\" \\\n  --issuer-uri=\"https://token.actions.githubusercontent.com\" \\\n  --attribute-mapping=\"google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref\" \\\n  --attribute-condition=\"assertion.repository_owner_id=='00000000' && assertion.repository_id=='000000000'\"\n\n# Option A: Direct WIF — bind IAM role straight to the principalSet (no service account)\ngcloud projects add-iam-policy-binding \"$PROJECT_ID\" \\\n  --role=\"roles/run.developer\" \\\n  --member=\"principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository_id/000000000\" \\\n  --condition=\"expression=resource.name.startsWith('projects/${PROJECT_ID}/locations/us-central1/services/web'),title=scope-to-web-service\"\n\n# Option B: WIF + service-account impersonation (used when the target API needs a classic SA identity)\ngcloud iam service-accounts create \"$SA_NAME\" \\\n  --project=\"$PROJECT_ID\" \\\n  --display-name=\"CI deploy identity for web service (prod)\"\n\ngcloud iam service-accounts add-iam-policy-binding \"$SA_EMAIL\" \\\n  --project=\"$PROJECT_ID\" \\\n  --role=\"roles/iam.workloadIdentityUser\" \\\n  --member=\"principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_ID}/attribute.repository_id/000000000\"\n\ngcloud projects add-iam-policy-binding \"$PROJECT_ID\" \\\n  --role=\"roles/run.developer\" \\\n  --member=\"serviceAccount:${SA_EMAIL}\"\n\n# Org policy: hard-disable service-account key creation/upload (run once at org node)\ngcloud resource-manager org-policies enable-enforce \\\n  iam.disableServiceAccountKeyCreation --organization=ORG_ID\ngcloud resource-manager org-policies enable-enforce \\\n  iam.disableServiceAccountKeyUpload --organization=ORG_ID\n\n# ---------------------------------------------------------------------------\n# 2. Terraform — same setup as code (preferred for repeatability)\n# ---------------------------------------------------------------------------\n\n# resource \"google_iam_workload_identity_pool\" \"github\" {\n#   project                   = \"my-project-id\"\n#   workload_identity_pool_id = \"github-actions\"\n#   display_name              = \"GitHub Actions pool\"\n# }\n#\n# resource \"google_iam_workload_identity_pool_provider\" \"github_repo\" {\n#   project                            = \"my-project-id\"\n#   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id\n#   workload_identity_pool_provider_id = \"my-repo-provider\"\n#   display_name                       = \"my-org/my-repo\"\n#   attribute_condition = \"assertion.repository_owner_id=='00000000' && assertion.repository_id=='000000000'\"\n#   attribute_mapping = {\n#     \"google.subject\"                 = \"assertion.sub\"\n#     \"attribute.repository_id\"        = \"assertion.repository_id\"\n#     \"attribute.repository_owner_id\"  = \"assertion.repository_owner_id\"\n#     \"attribute.ref\"                  = \"assertion.ref\"\n#   }\n#   oidc { issuer_uri = \"https://token.actions.githubusercontent.com\" }\n# }\n#\n# resource \"google_service_account\" \"deploy_web_prod\" {\n#   project      = \"my-project-id\"\n#   account_id   = \"deploy-web-prod\"\n#   display_name = \"CI deploy identity for web service (prod)\"\n# }\n#\n# resource \"google_service_account_iam_member\" \"wif_binding\" {\n#   service_account_id = google_service_account.deploy_web_prod.name\n#   role                = \"roles/iam.workloadIdentityUser\"\n#   member              = \"principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/github-actions/attribute.repository_id/000000000\"\n# }\n\n# ---------------------------------------------------------------------------\n# 3. GitHub Actions workflow — no JSON keys, short-lived STS token only\n# ---------------------------------------------------------------------------\n\n# .github/workflows/deploy.yml\n# name: deploy-prod\n# on:\n#   push:\n#     branches: [main]\n# permissions:\n#   contents: read\n#   id-token: write   # REQUIRED — mints the GitHub OIDC token; do not omit\n# jobs:\n#   deploy:\n#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n#     runs-on: ubuntu-latest\n#     steps:\n#       - uses: actions/checkout@v4\n#       - id: auth\n#         uses: google-github-actions/auth@v3\n#         with:\n#           project_id: 'my-project-id'\n#           workload_identity_provider: 'projects/000000000000/locations/global/workloadIdentityPools/github-actions/providers/my-repo-provider'\n#           service_account: 'deploy-web-prod@my-project-id.iam.gserviceaccount.com'  # omit for Direct WIF\n#       - uses: google-github-actions/setup-gcloud@v2\n#       - run: gcloud run deploy web --project=my-project-id --region=us-central1 --image=us-central1-docker.pkg.dev/my-project-id/web/app:${{ github.sha }}\n\n# ---------------------------------------------------------------------------\n# 4. Local dev — never a key file\n# ---------------------------------------------------------------------------\n# gcloud auth application-default login\n# gcloud auth application-default login --impersonate-service-account=deploy-web-prod@my-project-id.iam.gserviceaccount.com\n",
+  "failure_modes": [
+    "Attribute condition on a WIF provider is missing, empty, or matches too broadly (e.g. only checks `attribute.repository_owner` string) — any fork, renamed repo, or unrelated workflow in the trusted org can mint a token and assume the mapped IAM role (confused-deputy escalation).",
+    "GitHub Actions workflow omits `permissions: id-token: write`, so no OIDC token is minted and the auth step fails at runtime — often only caught in CI, not locally.",
+    "A CI service account is granted a broad role (`roles/editor`) 'temporarily to unblock a deploy' and the grant is never walked back, becoming a standing over-privileged credential.",
+    "Firebase Admin SDK (or another WIF-incompatible library) is used inside a workflow that assumes WIF everywhere, silently falling back to requiring a downloaded key — reintroducing the exact risk the architecture was meant to eliminate.",
+    "Workload identity pool provider count creeps toward the 200-per-pool default limit when a new provider is created per repo instead of using one provider with repo-scoped attribute conditions — hits quota during a release freeze.",
+    "Project or folder count nested more than 10 levels deep, or a folder exceeds 300 direct child folders, silently blocking new project/folder creation during a reorg.",
+    "Attribute mapping references a claim name that changes between GitHub Actions OIDC token schema versions, breaking authentication for all workflows simultaneously after an unrelated GitHub platform change.",
+    "IAM Condition CEL expression grows past the practical complexity budget (Google recommends staying well under 100 conditional bindings per policy) causing policy-update failures that are hard to diagnose from the error message alone.",
+    "Service-account key organization policy is not enforced at the org node (only set per-project), so a new project created outside the standard pipeline can still upload/create keys.",
+    "A shared 'ci-everything' service account used across dev/staging/prod means one compromised staging workflow can reach production resources."
+  ],
+  "anti_patterns": [
+    "Generating or committing any `*.json` service-account key file, including as a 'temporary' local convenience or in a `.env.example`.",
+    "Setting `GOOGLE_APPLICATION_CREDENTIALS` in a workflow or Dockerfile to a path containing a checked-in or downloaded key.",
+    "Storing a service-account key as a GitHub Actions repo/org secret instead of configuring WIF.",
+    "Binding `roles/owner` or `roles/editor` to any CI-facing principal (service account or principalSet).",
+    "Writing a WIF attribute condition that only checks `assertion.repository_owner` (name-based) without also pinning `repository_id`/`repository_owner_id`.",
+    "Creating one Workload Identity Pool provider per repository instead of one provider per trust boundary with per-repo attribute conditions — burns through the providers-per-pool quota.",
+    "Hardcoding a real numeric project ID, project number, or organization ID in application code or checked-in IaC instead of injecting via environment/config.",
+    "Granting `roles/iam.serviceAccountTokenCreator` or `roles/iam.workloadIdentityUser` at the project level when only one specific service account needs to be impersonable.",
+    "Skipping `permissions: id-token: write` and then working around the resulting failure by falling back to a key-based auth path 'just for this workflow'.",
+    "Flat project structure at the org root with no folders, mixing prod and non-prod resources under identical IAM bindings."
+  ],
+  "tools": [
+    "gcloud CLI (`gcloud iam workload-identity-pools`, `gcloud iam service-accounts`) — canonical CLI for creating pools, providers, and service accounts, and for org-policy enforcement.",
+    "Terraform / OpenTofu with the `google` provider — preferred for repeatable, reviewable WIF and IAM setup as code; use `google_iam_workload_identity_pool` and `google_iam_workload_identity_pool_provider` resources.",
+    "google-github-actions/auth (GitHub Action) — exchanges the GitHub OIDC token for Google credentials in a workflow run; supports Direct WIF and impersonation modes.",
+    "google-github-actions/setup-gcloud — installs and configures `gcloud`/`gsutil` in a workflow after `auth` has run.",
+    "Google Cloud Console IAM & Admin UI — for ad hoc inspection of workload identity pools, service accounts, and IAM policy bindings; not for repeatable provisioning.",
+    "Activity Analyzer (IAM Recommender) — surfaces unused service accounts and over-broad role grants for cleanup.",
+    "Cloud Audit Logs (Data Access logs for IAM and STS APIs) — required to see impersonation and token-exchange events; must be explicitly enabled.",
+    "Organization Policy Service (`gcloud resource-manager org-policies`) — enforces `iam.disableServiceAccountKeyCreation` / `iam.disableServiceAccountKeyUpload` org-wide.",
+    "Policy Analyzer / Policy Troubleshooter — diagnoses why a principal does or doesn't have effective access across the resource hierarchy.",
+    "OIDC debugger / `jwt.io` (external) — useful during setup to inspect the actual claims GitHub's OIDC token presents, to write correct attribute mappings/conditions."
+  ],
+  "versions_as_of": [
+    "google-github-actions/auth@v3 — as_of 2026-08-29",
+    "google-github-actions/setup-gcloud@v2 — as_of 2026-08-29",
+    "gcloud CLI current channel (exact patch version not verified via primary source in this research pass) [uncertain] — as_of 2026-08-29",
+    "Terraform google provider — version not pinned/verified in this research pass [uncertain] — as_of 2026-08-29"
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Workload identity pool providers per pool",
+      "value": "200",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Workload identity pools per project",
+      "value": "No specific numeric limit surfaced on the quotas page for this research pass (uncertain)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Service account keys per service account",
+      "value": "10",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Service accounts per project",
+      "value": "Varies by project; view via Google Cloud console quota page (no fixed number published) (uncertain)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/docs/service-account-overview"
+    },
+    {
+      "item": "Logic operators in a role binding's condition expression",
+      "value": "12",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Logic operators in a deny rule's condition expression",
+      "value": "12",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Logic operators in a policy binding's condition expression",
+      "value": "10",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "Maximum access token lifetime (default)",
+      "value": "3,600 seconds (1 hour); extendable up to 12 hours for specific service accounts via org policy",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/quotas"
+    },
+    {
+      "item": "GitHub Actions OIDC token lifetime (consumed by WIF exchange)",
+      "value": "5 minutes, per google-github-actions/auth documentation",
+      "as_of": "2026-08-29",
+      "source": "https://github.com/google-github-actions/auth"
+    },
+    {
+      "item": "Recommended maximum conditional role bindings per allow policy",
+      "value": "100 (best practice, not a hard quota) before risking overall policy size limits",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/docs/conditions-overview"
+    },
+    {
+      "item": "Folder nesting depth",
+      "value": "10 levels deep maximum",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/resource-manager/docs/creating-managing-folders"
+    },
+    {
+      "item": "Direct child folders per parent folder",
+      "value": "300 maximum",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/resource-manager/docs/creating-managing-folders"
+    },
+    {
+      "item": "WIF and IAM pricing",
+      "value": "Workload Identity Federation and IAM role bindings themselves are not separately billed; cost is indirect via the resources/APIs accessed [uncertain, not confirmed against a pricing page in this pass]",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/iam/docs/workload-identity-federation"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "Downloaded service-account JSON keys are not deprecated as a feature but are org-policy-disabled by default for organizations created after 2024-05-03 — treat key-based auth as end-of-life for any new footprint.",
+    "Firebase Admin SDK does not support WIF as of this research pass — isolate any Firebase Admin usage in its own tightly-scoped project/service-account rather than assuming universal WIF coverage across the stack.",
+    "Avoid provisioning per-repository Workload Identity Pool providers as a scaling pattern — this consumes the 200-providers-per-pool quota faster than necessary; prefer one provider per trust boundary with attribute-condition scoping.",
+    "Legacy 'Editor'/'Owner' broad primitive roles remain available but are explicitly discouraged by Google's own best-practices docs for any automation identity — expect increasing organization-policy pressure against broad role grants over time.",
+    "Watch for GitHub's OIDC token claim schema evolving (new claims added, e.g. `repository_id` was added after `repository`) — attribute mappings written against older claim sets should be revisited periodically."
+  ],
+  "identity_model": "Identity in this stack is layered: (1) human operators authenticate to `gcloud`/Console via their Google identity and are granted roles through the org/folder/project IAM hierarchy, with folder-level bindings inherited downward; (2) workloads that run inside Google Cloud (Cloud Run, GKE, Cloud Functions) are attached directly to a user-managed service account and get automatic, keyless credentials from the metadata server; (3) workloads that run outside Google Cloud — critically, GitHub Actions runners — never hold a Google identity of their own. Instead, GitHub's OIDC provider issues a short-lived (5-minute) signed JWT describing the calling workflow (repo, ref, actor, event). A Workload Identity Pool Provider configured to trust `token.actions.githubusercontent.com` validates that JWT's signature and issuer, applies an attribute mapping to project selected claims into a Google-internal principal identifier, and — only if the provider's attribute condition (a CEL boolean expression) evaluates true — allows Security Token Service (STS) to mint a short-lived Google access token for that federated principal. That federated principal (`principal://...` for a single identity or `principalSet://...` for anyone matching a mapped attribute) can either hold IAM role bindings directly (Direct WIF) or be granted `roles/iam.workloadIdentityUser` on a specific service account, which it then impersonates to obtain that service account's short-lived access token (WIF + impersonation). In both branches, no long-lived secret material ever leaves Google's control plane or GitHub's OIDC issuer — the only artifact in the workflow logs is a short-lived bearer token. IAM Conditions layer a second, independent CEL-based gate on top of any binding (resource attributes, request time, etc.), letting a single principalSet be restricted to specific resources or time windows without needing a second pool/provider. The entire model's security rests on the attribute condition being correct and specific (numeric IDs, not names) — a missing or loose condition collapses the trust boundary back to 'anyone who can trigger a GitHub Actions workflow in this org.'",
+  "threats": [
+    "Confused deputy via missing/loose attribute condition: any workflow run (including from a forked PR, if the workflow trigger allows it) that satisfies an overly-broad condition can obtain the mapped IAM role's access.",
+    "Name-based attribute reuse: a GitHub repository or org name is renamed/deleted and re-registered by an attacker, and a condition keyed on `repository`/`repository_owner` (string) now matches the attacker's repo.",
+    "Token leakage in workflow logs or third-party actions: a short-lived STS/access token printed to logs or exfiltrated by a malicious third-party GitHub Action still grants access for its (short) remaining lifetime.",
+    "Overprivileged CI service account: a service account impersonated by WIF is granted broad roles 'to unblock a deploy' and becomes a high-value target if any workflow in the trusting repo is compromised (e.g. via a malicious dependency or supply-chain PR).",
+    "Fork-triggered workflow abuse: `pull_request_target` or misconfigured triggers let a fork's workflow run with the base repo's `id-token: write` permission and the parent repo's WIF trust.",
+    "Stale/unused workload identity pools, providers, or service accounts left active after a migration, expanding the attack surface with no active owner monitoring them.",
+    "Organization policy drift: a newer project created outside a standard Terraform pipeline lacks the org-level key-creation-disable policy applied correctly (e.g. policy set at wrong node, or exception granted and never revoked).",
+    "Privilege escalation via `roles/iam.serviceAccountTokenCreator`/`workloadIdentityUser` granted too broadly at the project level, letting an unrelated principal impersonate any service account in the project.",
+    "Cross-environment blast radius from a shared CI service account used by both staging and production deploy workflows."
+  ],
+  "mitigations": [
+    "Mandatory attribute condition on every Workload Identity Pool provider, scoped to numeric `repository_id`/`repository_owner_id`, never left empty.",
+    "IAM Condition on production-impersonation bindings restricting to `assertion.ref=='refs/heads/main'` (or equivalent) and excluding pull-request-triggered contexts.",
+    "One dedicated, minimally-scoped service account per deploy target/environment; never share a CI service account across environments.",
+    "Org policies `iam.disableServiceAccountKeyCreation` and `iam.disableServiceAccountKeyUpload` enforced at the organization node, not just per-project, with periodic policy-drift audits.",
+    "Enable Cloud Audit Logs data access logging for the IAM and Security Token Service APIs; alert on unexpected impersonation or token-exchange volume/source.",
+    "Restrict GitHub Actions workflow triggers so `id-token: write` is only granted to workflows triggered by trusted events (`push` to protected branches), never blanket-enabled on `pull_request_target` without additional gating.",
+    "Periodic Activity Analyzer / IAM Recommender review to find and disable unused service accounts, over-broad roles, and orphaned WIF providers.",
+    "Least-privilege predefined or custom roles only; no `roles/owner`/`roles/editor` on any automation-facing principal.",
+    "Branch protection + required reviews on workflow files themselves (`.github/workflows/**`) so an attacker can't modify the deploy workflow to redirect WIF-derived credentials.",
+    "Prefer Direct WIF over impersonation where the target API supports it, reducing the number of identities and bindings that must be individually audited."
+  ],
+  "agent_codegen_policy": [
+    "MUST NOT generate, write, or scaffold any file matching a service-account key JSON shape (containing `\"type\": \"service_account\"`, `\"private_key\"`, `\"client_email\"`) under any circumstance, including as example/fixture content.",
+    "MUST NOT set or suggest setting `GOOGLE_APPLICATION_CREDENTIALS` to a file path in generated CI config, Dockerfiles, or `.env` templates.",
+    "MUST generate GitHub Actions workflows that authenticate via `google-github-actions/auth` with `workload_identity_provider` and include `permissions: id-token: write` explicitly at the job or workflow level.",
+    "MUST use placeholder identifiers (`my-project-id`, `my-org`, `my-repo`, numeric placeholders like `000000000000`) in any generated IaC or workflow snippet — never invent or reuse a real-looking project number.",
+    "MUST include a non-empty attribute condition whenever generating `gcloud iam workload-identity-pools providers create-oidc` or the Terraform equivalent — refuse to emit a provider resource with no `--attribute-condition`/`attribute_condition`.",
+    "MUST default to least-privilege predefined roles (never `roles/owner`/`roles/editor`) when generating IAM bindings for CI/service accounts, and flag the choice for human review if the requested role is broad.",
+    "SHOULD prefer Direct WIF (principalSet bound to a role) over service-account impersonation unless the target API/library is known to require a service-account identity (flag Firebase Admin SDK explicitly as an exception).",
+    "SHOULD generate separate service accounts/pools per environment (dev/staging/prod) rather than reusing one identity across environments, even if the user's initial request only mentions one environment.",
+    "MUST flag (not silently fix) any existing repo content it encounters that matches a service-account key shape or a `GOOGLE_APPLICATION_CREDENTIALS` file reference, and recommend rotation/removal rather than assuming it's already invalid."
+  ],
+  "ci_gates": [
+    "Repo secret scanner rejects commits containing a JSON blob matching `{\"type\": \"service_account\", ...}` shape.",
+    "CI lint step fails the build if any workflow YAML sets `GOOGLE_APPLICATION_CREDENTIALS` to a file path instead of relying on WIF-injected ADC.",
+    "CI lint step fails if a `google-github-actions/auth` step is present without a sibling `permissions: id-token: write` at job or workflow scope.",
+    "Terraform/OpenTofu plan step fails (via a policy-as-code check, e.g. OPA/Conftest) if a `google_iam_workload_identity_pool_provider` resource has an empty or missing `attribute_condition`.",
+    "Terraform/OpenTofu plan step fails if any `google_project_iam_member`/`google_project_iam_binding` grants `roles/owner` or `roles/editor` to a service account or principalSet.",
+    "Periodic (weekly) scheduled job runs `gcloud iam service-accounts keys list` across all project service accounts and fails/alerts if any user-managed key exists beyond an explicitly allow-listed exception.",
+    "Periodic scheduled job verifies org policies `iam.disableServiceAccountKeyCreation`/`iam.disableServiceAccountKeyUpload` are still `enforced: true` at the org node.",
+    "Branch protection requires review on changes to `.github/workflows/*.yml` and to Terraform files defining WIF pools/providers/IAM bindings."
+  ],
+  "observability": [
+    "Cloud Audit Logs: Data Access logs enabled for `iam.googleapis.com` and `sts.googleapis.com`, forwarded to a central logging project/sink.",
+    "Alert on STS `google.identity.sts.v1.IdentityBindingService` token exchanges from unexpected principals or at unexpected volume/time-of-day.",
+    "Alert on any `iam.serviceAccounts.keys.create` or `iam.serviceAccounts.keys.upload` call anywhere in the org (should be near-zero given org policy; any hit is worth investigating).",
+    "Alert on IAM policy changes (`SetIamPolicy`) affecting WIF pools/providers or CI-facing service accounts, correlated with the acting principal.",
+    "Activity Analyzer dashboards reviewed periodically for service accounts with no recent authentication activity (candidates for disabling).",
+    "GitHub Actions workflow run logs correlated with Cloud Audit Log entries via request/operation IDs to build an end-to-end deploy audit trail.",
+    "Dashboard/alert on Workload Identity Pool provider count approaching the 200-per-pool quota, to catch the per-repo-provider anti-pattern before it causes an outage."
+  ],
+  "cost_guardrails": [
+    "Workload Identity Federation, IAM role bindings, and service accounts themselves are not separately billed line items [uncertain] — cost exposure comes from the resources/APIs the granted identity can call, so guardrails should focus on the scope of granted roles rather than IAM cost itself.",
+    "Budget alerts on the projects that CI service accounts can deploy into, since a compromised or misconfigured CI identity's real cost risk is resource spend (e.g. runaway Cloud Run/BigQuery jobs), not IAM API usage.",
+    "Cap the blast radius of any single WIF-derived identity to one project or a narrow resource set, so a cost anomaly is trivially traceable to one workflow.",
+    "Avoid over-provisioning Workload Identity Pools/providers per repository (each is free but adds operational/audit overhead and quota pressure) — consolidate onto shared pools with attribute-condition scoping."
+  ],
+  "skill_scan_signals": [
+    "Flag any file (any extension) whose JSON content contains the keys `\"type\": \"service_account\"` and `\"private_key\"` together — high-confidence committed service-account key.",
+    "Flag any occurrence of the environment variable name `GOOGLE_APPLICATION_CREDENTIALS` being assigned a literal file path (not sourced from a WIF-populated runtime variable) in workflow YAML, Dockerfiles, or `.env*` files.",
+    "Flag any GitHub Actions workflow step using `google-github-actions/auth` that lacks a corresponding `permissions: id-token: write` in the same job or workflow.",
+    "Flag any Terraform/OpenTofu `google_iam_workload_identity_pool_provider` resource (or `gcloud ... providers create-oidc` command) with no `attribute_condition`/`--attribute-condition` argument.",
+    "Flag any IAM binding (Terraform `google_project_iam_member`/`_binding`, or `gcloud ... add-iam-policy-binding`) granting `roles/owner`, `roles/editor`, or `roles/iam.securityAdmin` to a `serviceAccount:` or `principalSet://` member.",
+    "Flag any attribute condition or mapping referencing `assertion.repository` or `assertion.repository_owner` (string claims) without also referencing `repository_id`/`repository_owner_id`.",
+    "Flag any hardcoded 10-13 digit numeric string adjacent to `projects/` in code or config that isn't clearly a placeholder (real GCP project numbers are numeric; placeholders should use obviously-fake sequences like `000000000000`).",
+    "Flag any hostname in config that isn't `example.com`, `*.example.com`, or another IANA-reserved placeholder domain when the surrounding context is documentation/example code.",
+    "Flag `gcloud iam service-accounts keys create` appearing anywhere in a script, Makefile, or CI workflow — this command should not exist in a keyless architecture outside a documented, reviewed exception."
+  ],
+  "skill_module_bullets": [
+    "Org/folder/project hierarchy: org at top, folders per environment, projects nested under environment folders; folders nest up to 10 levels deep and a folder holds at most 300 direct child folders.",
+    "Zero JSON service-account keys: enforce via org policy (`iam.disableServiceAccountKeyCreation`, `iam.disableServiceAccountKeyUpload`) plus a secret-scanning CI gate, not just convention.",
+    "GitHub Actions authenticates via `google-github-actions/auth@v3` using either Direct WIF (principalSet bound to IAM roles) or WIF + service-account impersonation (`roles/iam.workloadIdentityUser`); Firebase Admin SDK is the known exception requiring non-WIF auth.",
+    "Every Workload Identity Pool provider must carry a non-empty attribute condition; use numeric `repository_id`/`repository_owner_id` claims, never name-based `repository`/`repository_owner` alone, to avoid rename/takeover attacks.",
+    "`permissions: id-token: write` is mandatory in any workflow calling `google-github-actions/auth` — its absence is the most common setup failure.",
+    "One dedicated, least-privilege service account per deploy target/environment; never share across dev/staging/prod.",
+    "IAM Conditions (CEL) layer additional resource/time/branch restrictions on top of WIF bindings — recommended cap of ~100 conditional bindings per allow policy as a best practice, not a hard quota.",
+    "Providers-per-pool quota is 200 — architect for one provider per trust boundary with attribute-condition scoping, not one provider per repository.",
+    "Access tokens default to a 1-hour lifetime (extendable to 12 hours via org policy for specific service accounts); GitHub's own OIDC token used to bootstrap the exchange lives only 5 minutes."
+  ],
+  "checklist": [
+    "Org policies `iam.disableServiceAccountKeyCreation` and `iam.disableServiceAccountKeyUpload` are enforced at the organization node.",
+    "Folder structure exists per environment, with projects correctly nested (not flat at org root).",
+    "A Workload Identity Pool and provider exist for GitHub Actions, trusting `https://token.actions.githubusercontent.com`.",
+    "The provider's attribute condition is non-empty and keyed on numeric `repository_id`/`repository_owner_id`.",
+    "Every CI-facing service account is single-purpose, least-privilege, and scoped to one environment.",
+    "Every workflow calling `google-github-actions/auth` declares `permissions: id-token: write`.",
+    "No file in the repo matches a service-account key JSON shape; secret scanning confirms this in CI.",
+    "No `GOOGLE_APPLICATION_CREDENTIALS` env var points at a checked-in or downloaded key file anywhere in the codebase or CI config.",
+    "Production-impersonation IAM bindings carry a condition restricting to the release branch and excluding PR-triggered runs.",
+    "Cloud Audit Logs data access logging is enabled for IAM and STS APIs, with alerting wired to the team's on-call channel.",
+    "A periodic (at least monthly) review has run via Activity Analyzer / IAM Recommender to catch unused service accounts or stale WIF providers.",
+    "Workload identity pool provider count is tracked against the 200-per-pool quota and architected to stay well under it."
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "The official `resource-manager/docs/quotas` and `iam/docs/conditions-overview` pages did not explicitly state a numeric limit on workload identity pools per project or a fixed service-accounts-per-project quota — these are marked [uncertain] rather than asserted. The `google-github-actions/auth` README (primary OSS source) and Google's official WIF docs agree on Direct WIF vs impersonation-via-service-account as the two supported patterns; no conflicts found between sources on core mechanics.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://docs.cloud.google.com/iam/docs/workload-identity-federation",
+    "https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines",
+    "https://github.com/google-github-actions/auth",
+    "https://docs.cloud.google.com/iam/docs/service-account-overview",
+    "https://docs.cloud.google.com/iam/docs/best-practices-service-accounts",
+    "https://docs.cloud.google.com/resource-manager/docs/creating-managing-folders",
+    "https://docs.cloud.google.com/iam/docs/conditions-overview",
+    "https://docs.cloud.google.com/iam/docs/best-practices-for-using-and-managing-service-accounts",
+    "https://docs.cloud.google.com/iam/quotas"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "cost_guardrails",
+    "limits_quotas_pricing",
+    "versions_as_of"
+  ]
+}

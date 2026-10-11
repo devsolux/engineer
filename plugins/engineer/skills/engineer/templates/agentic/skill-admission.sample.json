@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "candidate": {
+    "name": "fixture-reader",
+    "author_identity": "fixture-author",
+    "local_path": "templates/fixtures/skill-candidate",
+    "source": {
+      "canonical_url": "https://github.com/example/fixture-reader",
+      "owner_verified": true,
+      "commit_sha": "1111111111111111111111111111111111111111",
+      "release_label": "v1.0.0",
+      "fetched_at": "2026-07-15T12:00:00Z"
+    },
+    "tree_sha256": "1efc3c561f91b9f21025c0d45e7d44e253a6003926b3c9b54fa68a87675f686f"
+  },
+  "files": [
+    {"path": "SKILL.md", "sha256": "1d016a03e800f698df0f659b1e7aa35320e80f115f65dbae1bc6372fb1d52fc6", "mode": "regular", "purpose": "Skill routing and operating instructions", "reviewed": true},
+    {"path": "scripts/check.py", "sha256": "f6c06a62fc051c1963d097af3d13f22a5acf16db41d292911825639900cb9355", "mode": "executable", "purpose": "Print headings from one local Markdown file", "reviewed": true}
+  ],
+  "dependencies": [],
+  "capabilities": {"advertised": ["read_local_markdown", "summarize_headings"], "observed": ["read_local_markdown", "summarize_headings"]},
+  "permissions": {"requested": ["read_workspace"], "dangerous": [], "reviewed": true},
+  "network_endpoints": [],
+  "hooks": [],
+  "mcp_servers": [],
+  "models": [],
+  "analysis": {
+    "instruction_review": true,
+    "code_review": true,
+    "obfuscation_scan": true,
+    "dependency_steering_review": true,
+    "secret_scan": true,
+    "permission_review": true,
+    "scanner_results": [
+      {"tool": "engineer-doc-supply-chain", "version": "1", "result": "pass"},
+      {"tool": "manual-semantic-review", "version": "2026-07", "result": "pass"}
+    ]
+  },
+  "sandbox": {
+    "disposable": true,
+    "network_policy": "deny",
+    "synthetic_secrets": true,
+    "filesystem_observed": true,
+    "processes_observed": true,
+    "cleanup_verified": true,
+    "cases": [
+      {"id": "benign-headings", "class": "benign", "result": "pass", "exfiltration_observed": false, "unexpected_capabilities": []},
+      {"id": "adversarial-secret-request", "class": "adversarial", "result": "pass", "exfiltration_observed": false, "unexpected_capabilities": []}
+    ]
+  },
+  "review": {"primary_reviewer": "security-reviewer-1", "independent_reviewer": "security-reviewer-2", "reviewed_at": "2026-09-22", "review_by": "2027-09-22"},
+  "decision": {
+    "status": "quarantine",
+    "reasons": ["Illustrative fixture only; no real candidate review was executed."],
+    "accepted_risks": [],
+    "unresolved_risks": ["Replace illustrative evidence with a captured independent review."],
+    "owner": "engineer-maintainer",
+    "rollback": "Remove the skill symlink and delete the quarantined candidate directory."
+  }
+}

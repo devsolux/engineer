@@ -1,0 +1,286 @@
+{
+  "name": "references/python.md structure + SKILL/MANIFEST wiring",
+  "item_id": "py-engineer-module-design",
+  "cluster": "synthesis",
+  "short_definition": "Module design for elevating Python to a peer language in engineer: exact section outline for references/python.md (mirroring typescript.md/rust.md progressive disclosure), MANIFEST.md catalog entries, SKILL.md routing/hard-gates/description updates, project-detect signals, scan/enforce hooks, research footer paths, and non-goals (Python is not the UI shell). As of 2026-07-13 research corpus is ready for module generation; interop/docker leaves still thin.",
+  "scope_in": [
+    "Exact H2/H3 outline for references/python.md",
+    "SKILL.md frontmatter description + body routing + hard gates + end-to-end flows",
+    "MANIFEST.md router/leaf placement and load-when rules",
+    "project-detect.md Python detection signals",
+    "enforcement.md / engineer-scan Python mode",
+    "commands and workflows touchpoints (api, audit, ship, greenfield)",
+    "Research footer and progressive disclosure rules",
+    "Relationship to backend-supabase, backend-api, rust, typescript modules"
+  ],
+  "scope_out": [
+    "Writing the full python.md prose in this research JSON (action is implementation)",
+    "Completing unfinished research leaves (docker, perf, interop matrix) — note as stubs",
+    "Changing core TS/Next defaults"
+  ],
+  "priority": "P0",
+  "defaults": {
+    "module_path": "references/python.md",
+    "research_corpus": "research/python/results/*.json + research/python/report.md (to generate)",
+    "load_policy": "L3 on demand — never bulk-load research; load python.md when Python service/worker/AI boundary work detected",
+    "mirror_modules": [
+      "typescript.md",
+      "rust.md"
+    ],
+    "last_verified_format": "YYYY-MM-DD · Review cadence: 3 months",
+    "related_table_required": true,
+    "footer_required": "Research: research/python/ — load on demand only"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Implementing Python peer support in the skill package",
+      "Authoring or refactoring references/python.md",
+      "Updating MANIFEST/SKILL routing for polyglot monorepos"
+    ],
+    "do_not_use_when": [
+      "Answering a one-off Python question without skill packaging intent",
+      "Replacing backend-supabase.md for pure Next+Supabase apps with no Python"
+    ],
+    "alternatives": [
+      "Keep Python guidance only in research/ (insufficient for agents — module is required)",
+      "Split into python-web.md + python-data.md (defer until python.md exceeds progressive-disclosure budget)"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Match typescript.md/rust.md structure: Related table, Contents TOC, sections, Anti-patterns, Production checklist, Research footer",
+      "Keep SKILL.md L1 description updated so skill triggers on Python service work",
+      "Route high-frequency: Python API/worker/AI → python.md; UI still frontend.md",
+      "Link OpenAPI/data-flow to api-data-flows.md",
+      "Put scan IDs and stack pins in collapsible-density bullets, not essays",
+      "Declare non-goal: notebooks-as-product, Python as UI shell"
+    ],
+    "dont": [
+      "Don't bulk-paste all research JSON into python.md",
+      "Don't make python.md a second MANIFEST",
+      "Don't remove TS-first product boundary language",
+      "Don't invent slash commands until module stable (optional /engineer-api already covers APIs)",
+      "Don't load deep research at session start"
+    ]
+  },
+  "code_skeleton": "# references/python.md — REQUIRED SECTION OUTLINE (implement in this order)\n\n---\n# (no YAML frontmatter required if other references lack it; match rust.md/typescript.md style)\n---\n\n# Python: services, workers, and AI boundary\n\n**Last verified**: 2026-07-13 · **Review cadence**: 3 months\n\n| Related | When |\n|---|---|\n| `typescript.md` | Shared types, Zod ↔ Pydantic boundaries |\n| `rust.md` | When to leave Python for hot paths |\n| `backend-api.md` | Next Server Actions BFF (contrast) |\n| `backend-auth.md` | Cookie SSR vs Python Bearer verify |\n| `backend-database.md` / `backend-supabase.md` | RLS migrations ownership |\n| `api-data-flows.md` | Cross-service OpenAPI flows |\n| `enforcement.md` | CI + engineer-scan PY-* |\n| `project-detect.md` | Detect uv/FastAPI/services/* |\n\nDefault stack: **CPython 3.13 / uv / ruff / basedpyright / FastAPI / Pydantic v2 / SQLAlchemy 2 async / uvicorn**.\nPins: see § Default stack snapshot (as_of 2026-07-13). Match existing service before applying defaults.\n\n## Contents\n- [When to use Python](#when-to-use-python)\n- [Default stack snapshot](#default-stack-snapshot)\n- [Project layout](#project-layout)\n- [Tooling (uv ruff types CI)](#tooling-uv-ruff-types-ci)\n- [Typing and Pydantic](#typing-and-pydantic)\n- [Settings and secrets](#settings-and-secrets)\n- [Async model](#async-model)\n- [FastAPI services](#fastapi-services)\n- [Middleware and security headers](#middleware-and-security-headers)\n- [Auth and SSRF](#auth-and-ssrf)\n- [HTTP clients and streaming](#http-clients-and-streaming)\n- [Data layer SQLAlchemy](#data-layer-sqlalchemy)\n- [Supabase boundary](#supabase-boundary)\n- [Migrations](#migrations)\n- [Background jobs](#background-jobs)\n- [Idempotency and retries](#idempotency-and-retries)\n- [Observability](#observability)\n- [Testing and contracts](#testing-and-contracts)\n- [Agent codegen rules](#agent-codegen-rules)\n- [Anti-patterns](#anti-patterns)\n- [TS and Rust boundaries](#ts-and-rust-boundaries)\n- [Production checklist](#production-checklist)\n\n## When to use Python\n(table: Use Python | Stay in TypeScript | Prefer Rust)\n\n## Default stack snapshot\n(blessed pins table from py-default-stack-snapshot)\n\n## Project layout\n(src layout, services/ next to apps/web and crates/)\n\n## Tooling (uv ruff types CI)\n...\n\n## Agent codegen rules\n(must_generate / must_not_generate + PY-* IDs)\n\n## Anti-patterns\n(AP-* severity table)\n\n## TS and Rust boundaries\n(decision matrix)\n\n## Production checklist\n(checkbox list)\n\n---\nResearch: `research/python/` (results JSON, outline) — load on demand only. Never session bulk-load.\n",
+  "failure_modes": [
+    "python.md never linked from SKILL/MANIFEST → agents never load it",
+    "Description frontmatter omits Python → skill doesn't trigger",
+    "Module becomes research dump → exceeds progressive disclosure, agents skip",
+    "Conflicts with backend-api.md (agents put Python patterns into Next handlers)",
+    "Missing project-detect signals → wrong stack assumptions",
+    "Scan rules never implemented → policy unenforced"
+  ],
+  "anti_patterns": [
+    "Inlining full research reports into SKILL.md body",
+    "Creating python-fastapi.md + python-sql.md + python-jobs.md immediately (split only after size pain)",
+    "Routing 'design a Python API' to design-system.md",
+    "Treating Python module as replacement for backend-supabase on pure TS apps",
+    "Forgetting research footer and review_by cadence"
+  ],
+  "tools": {
+    "skill_files": [
+      "references/python.md (new)",
+      "references/MANIFEST.md",
+      "SKILL.md",
+      "references/project-detect.md",
+      "references/enforcement.md",
+      "references/workflows.md",
+      "references/api-data-flows.md",
+      "scripts/engineer-scan.sh",
+      "docs/modules.md",
+      "CHANGELOG.md"
+    ],
+    "optional_later": [
+      "templates/python/*",
+      "templates/github/python-gates.yml",
+      "commands/engineer-api.md note for Python FastAPI path"
+    ]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "review_cadence": "3 months"
+  },
+  "config_snippets": {
+    "skill_md_description_additions": [
+      "Python (FastAPI services, workers, AI boundary)",
+      "uv/ruff/basedpyright",
+      "OpenAPI Python↔TS"
+    ],
+    "skill_md_routing_row": "| Python service / worker / AI API | `python.md` → rust.md if hot path |",
+    "skill_md_principle": "Right language for the layer — TS at product boundary; Python for services/workers/AI; Rust for measured hot paths",
+    "skill_md_hard_gate": "Python: uv.lock; ruff+basedpyright+pytest; no secrets; JWT algorithms=; lifespan resources; durable jobs for money",
+    "manifest_engineering_row": "| `python.md` | FastAPI services, workers, AI boundary, uv/ruff |",
+    "manifest_research_row": "| `research/python/` | Python peer-language corpus (results JSON) |",
+    "project_detect_signals": [
+      "pyproject.toml + uv.lock",
+      "requires-python / .python-version",
+      "fastapi / sqlalchemy / taskiq imports",
+      "services/**/src/**/*.py",
+      "supabase/migrations coexisting with services/"
+    ],
+    "e2e_flow_row": "| Python service feature | python.md → api-data-flows → backend-auth/supabase as needed → enforcement |"
+  },
+  "deprecation_watch": [
+    "Do not keep Python-only advice buried only in research/report.md",
+    "Avoid SKILL.md growing full Python tutorials",
+    "Deferred split modules until single python.md is too large for agents"
+  ],
+  "ts_boundary": "python.md must explicitly defer UI, RSC, Server Actions, cookie SSR to TS modules. Contract: OpenAPI/JSON Schema shared; Zod on TS side, Pydantic on Python side.",
+  "rust_boundary": "python.md includes when-to-hand-off table pointing at rust.md (throughput, parsers, gateways). No duplicate Axum handbook inside python.md.",
+  "supabase_boundary": "python.md owns Python client vs SQLAlchemy choice; backend-database/backend-supabase remain source of truth for RLS SQL and Next client patterns. Cross-link heavily.",
+  "boundary_contracts": [
+    "SKILL progressive disclosure levels unchanged (L1 yaml, L2 body, L3 references)",
+    "MANIFEST is catalog only — not bulk-loaded",
+    "Research only via module footer",
+    "Commands stay thin; load python.md when generating FastAPI"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Where does Python guidance live in the skill OS?",
+    "python": "references/python.md peer module + research/python corpus",
+    "ts": "typescript.md + frontend/backend-* modules (product shell)",
+    "rust": "rust.md peer module for hot paths"
+  },
+  "threats": [
+    "Agents ignore security if module buried",
+    "Conflicting guidance between python.md and backend-api.md",
+    "Stale pins if no review_by process",
+    "Over-triggering skill on data-science tasks outside scope"
+  ],
+  "mitigations": [
+    "Explicit non-goals in description and When to use section",
+    "Cross-links and disambiguation rows in SKILL routing",
+    "as_of + review_by on module header",
+    "Scan enforcement for critical PY-* rules"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "When creating the module: full Contents TOC matching outline",
+      "Related table with typescript/rust/supabase/api-data-flows/enforcement",
+      "Agent codegen + Anti-patterns + Production checklist sections",
+      "Default stack snapshot pins table with as_of date",
+      "Research footer path",
+      "MANIFEST + SKILL wiring in same change set as module add"
+    ],
+    "must_not_generate": [
+      "Orphan python.md without MANIFEST entry",
+      "SKILL description claiming Python UI framework",
+      "Duplicating entire FastAPI docs",
+      "Bulk-including research JSON bodies"
+    ]
+  },
+  "tests_required": [
+    "docs/modules.md lists python.md",
+    "MANIFEST contains python.md row",
+    "SKILL.md routes Python keywords",
+    "validate-repo / link check for python.md anchors if available",
+    "Eval: agent loads python.md for FastAPI scaffold task"
+  ],
+  "ci_gates": [
+    "Skill package: required files exist after feature lands",
+    "Optional markdown link check",
+    "Changelog entry for the module add"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "references/python.md exists with When to use + Agent codegen + Anti-patterns",
+      "MANIFEST engineering table includes python.md",
+      "SKILL routing mentions Python / FastAPI",
+      "project-detect mentions uv.lock/fastapi",
+      "Research footer present"
+    ],
+    "negative": [
+      "python.md missing but research claims module shipped",
+      "SKILL still says non-TS/Rust backends out of scope without Python exception",
+      "No MANIFEST entry",
+      "Research bulk-loaded instruction in session start"
+    ]
+  },
+  "skill_module_bullets": [
+    "CREATE references/python.md as peer of typescript.md and rust.md (not a backend-* leaf under Supabase-only).",
+    "REQUIRED sections (exact): When to use Python; Default stack snapshot; Project layout; Tooling (uv ruff types CI); Typing and Pydantic; Settings and secrets; Async model; FastAPI services; Middleware and security headers; Auth and SSRF; HTTP clients and streaming; Data layer SQLAlchemy; Supabase boundary; Migrations; Background jobs; Idempotency and retries; Observability; Testing and contracts; Agent codegen rules; Anti-patterns; TS and Rust boundaries; Production checklist; Research footer.",
+    "Header: Last verified 2026-07-13 · Review cadence 3 months; Related table linking typescript, rust, backend-api, backend-auth, backend-database/supabase, api-data-flows, enforcement, project-detect.",
+    "Default one-liner under title: CPython 3.13 / uv / ruff / basedpyright / FastAPI / Pydantic v2 / SQLAlchemy 2 async / uvicorn — match existing project first.",
+    "When to use table: Python = AI/RAG services, OpenAPI backends, async workers, data/ETL adjacent to product; TS = UI, BFF, cookie SSR, Server Actions; Rust = measured hot paths, gateways, parsers.",
+    "Agent codegen rules section is binding (from py-agent-codegen-rules); Anti-patterns section uses AP-* severity table (from py-anti-patterns).",
+    "SKILL.md frontmatter description: add FastAPI/Python services/workers/AI boundary and uv/ruff; adjust 'non-TS/Rust backends' exclusion to allow this stack's Python peer.",
+    "SKILL.md operating principle #2 expand: TS at product boundary; Python for services/workers/AI; Rust for hot paths only.",
+    "SKILL.md Routing table add high-frequency row: Python service/worker/AI API → python.md; disambiguate vs backend-api (Next) and rust.md.",
+    "SKILL.md hard gates add Python line: uv.lock; ruff+basedpyright+pytest; JWT algorithms=; lifespan; no secrets; durable jobs for money.",
+    "SKILL.md E2E flows add: Python service feature → python.md → api-data-flows → auth/supabase modules → enforcement.",
+    "MANIFEST.md Engineering & architecture table: add python.md | FastAPI services, workers, AI boundary, uv/ruff.",
+    "MANIFEST.md Research table: add research/python/ | Python peer-language corpus.",
+    "project-detect.md: detect pyproject.toml, uv.lock, .python-version, services/**/*.py, FastAPI imports; set language peer flags.",
+    "enforcement.md + engineer-scan: document --python or auto-detect; PY-* rule IDs; link templates/github python gates when added.",
+    "workflows.md greenfield: if monorepo needs AI/worker service, scaffold under services/ per python.md not as Next route.",
+    "docs/modules.md + CHANGELOG: human-facing module list update; suggest a skill version bump.",
+    "commands/engineer-api.md: note dual path — Next handlers (backend-api) vs FastAPI (python.md) based on project-detect.",
+    "Progressive disclosure: agents load python.md only when Python paths/tasks detected; never load research/python/results bulk.",
+    "Stub sections OK for unfinished leaves (docker deploy, perf→Rust gate, LLM gateway, MCP) with 'see research outline; TODO' — do not invent pins.",
+    "Cross-link gap-audit background-jobs.md P0: Python Taskiq/Temporal content may temporarily live in python.md until shared jobs module exists.",
+    "Brand/voice: concise tables and checklists like rust.md; code skeletons minimal and copy-pasteable.",
+    "Non-goals block: no Django/Notebook-first architecture; no replacing Next UI; no mainnet key handling."
+  ],
+  "action_items": [
+    "IMPLEMENT references/python.md using exact Contents outline in code_skeleton (populate from synthesis + leaf bullets; target readable length akin to rust.md+typescript.md combined, prefer tight).",
+    "Populate § Default stack snapshot from py_default_stack_snapshot.json pins table.",
+    "Populate § Agent codegen rules from py_agent_codegen_rules.json must_generate/must_not + PY-* IDs.",
+    "Populate § Anti-patterns from py_anti_patterns.json AP-* table (blockers first).",
+    "Populate domain sections by condensing leaf skill_module_bullets (fastapi, auth, sqlalchemy, jobs, testing, ci, etc.) — 5–12 bullets each max.",
+    "EDIT references/MANIFEST.md: Engineering row for python.md; Research row for research/python/.",
+    "EDIT SKILL.md: description, principle #2, routing row, hard gate, e2e flow; version bump when shipping.",
+    "EDIT references/project-detect.md: Python detection signals and stack summary fields.",
+    "EDIT references/enforcement.md: Python CI gates + scan invocation.",
+    "EDIT scripts/engineer-scan.sh: add Python blockers (minimum set from py-agent-codegen-rules).",
+    "EDIT references/workflows.md and docs/modules.md; CHANGELOG entry.",
+    "EDIT commands/engineer-api.md with FastAPI path note; optional greenfield workflow mention.",
+    "ADD templates/python/ minimal skeleton (optional same PR or follow-up) matching must_generate.",
+    "ADD research/python/report.md index linking results (human) — footer points agents to research/python/ only on demand.",
+    "Wire evals: plan FastAPI service → must load python.md; scaffold must pass scan.",
+    "After remaining outline leaves researched (docker, vs-ts-rust, ai-boundary), expand stub sections without renumbering scan IDs.",
+    "Update gap-audit.md: Python peer module status ✅ when shipped; note background jobs still dual-tracked.",
+    "Ensure AGENTS/Claude project instructions don't contradict Python peer (if any local skill notes)."
+  ],
+  "checklist": [
+    "python.md exists with all required H2 sections",
+    "MANIFEST lists python.md",
+    "SKILL routes and description mention Python peer",
+    "project-detect recognizes uv/FastAPI",
+    "Scan covers top blockers",
+    "Research footer present; no bulk-load",
+    "Cross-links to typescript.md and rust.md valid",
+    "Version/changelog updated on ship",
+    "Non-goals and when-to-use table clear",
+    "Pins as_of date matches research"
+  ],
+  "source_tier": "secondary",
+  "confidence": "high",
+  "conflicts_noted": [
+    "SKILL.md currently says do not use for non-TS/Rust backends — must be amended carefully to allow Python peer without opening Django/Rails",
+    "gap-audit lists background-jobs.md as missing product module — python.md can host Python job tiering until shared module exists",
+    "Interop research items not all complete — boundary section uses leaf ts_boundary fields as provisional",
+    "Whether python.md is a Router or leaf: treat as peer language leaf like rust.md (not a session-start router)"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/",
+    "https://docs.astral.sh/uv/",
+    "https://agentskills.io/what-are-skills"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/MANIFEST.md",
+    "./references/stack-rules.md",
+    "./SKILL.md",
+    "./research/python/outline.yaml",
+    "./research/python/results/",
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/MANIFEST.md",
+    "./SKILL.md",
+    "./research/gap-audit.md"
+  ]
+}

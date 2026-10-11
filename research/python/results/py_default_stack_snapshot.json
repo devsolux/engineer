@@ -1,0 +1,388 @@
+{
+  "name": "Blessed Python pin set as of 2026-07-13",
+  "item_id": "py-default-stack-snapshot",
+  "cluster": "synthesis",
+  "short_definition": "Opinionated blessed dependency and runtime pin snapshot for greenfield Python services in the engineer monorepo stack as of 2026-07-13, aggregated from leaf research versions_as_of fields. Default: CPython 3.13, uv 0.11.28, ruff 0.15.21, basedpyright 1.39.9, FastAPI 0.139.0, Pydantic 2.13.4, SQLAlchemy 2.0.51, asyncpg 0.31.0, uvicorn 0.51.0, httpx 0.28.1, pytest 9.1.1, plus auth/obs/worker companions. Labels are research pins — re-resolve with uv lock before ship; review_by 2026-10-13.",
+  "scope_in": [
+    "Runtime and tooling pins (Python, uv, ruff, basedpyright, ty status)",
+    "Web stack pins (FastAPI, Starlette, uvicorn, Granian optional, httpx)",
+    "Validation/settings (Pydantic, pydantic-settings)",
+    "Data (SQLAlchemy, asyncpg, Alembic, supabase-py)",
+    "Auth (PyJWT, cryptography, argon2/bcrypt)",
+    "Obs (structlog, OTel, Sentry)",
+    "Workers (Taskiq line; Celery/Temporal as tier notes)",
+    "Test/CI (pytest, pytest-asyncio, testcontainers, Schemathesis, setup-uv)",
+    "Explicit non-default / avoid list with replacements"
+  ],
+  "scope_out": [
+    "Application business dependencies (LLM SDKs vary by product)",
+    "Exact patch pins for every transitive (uv.lock is source of truth per app)",
+    "Node/pnpm or Cargo pin sets",
+    "Guaranteeing PyPI will still resolve these exact versions after review_by"
+  ],
+  "priority": "P0",
+  "defaults": {
+    "runtime": {
+      "cpython": "3.13 (default greenfield)",
+      "requires_python": ">=3.13",
+      "max_compat_requires_python": ">=3.12",
+      "python_version_file": ".python-version → 3.13",
+      "free_threading": "opt-in only (3.14 officially supported FT; not default for async APIs)",
+      "cpython_3_14": "bugfix OK when deps verified; not silent default"
+    },
+    "packaging": {
+      "manager": "uv",
+      "uv": "0.11.28",
+      "lock": "uv.lock committed",
+      "dependency_groups": "PEP 735 [dependency-groups] dev",
+      "exclude_newer": "7 days apps; 30 days high-security",
+      "malware_check": "UV_MALWARE_CHECK=1",
+      "ci_setup": "astral-sh/setup-uv pin commit SHA; version 0.11.x"
+    },
+    "quality": {
+      "ruff": "0.15.21",
+      "basedpyright": "1.39.9",
+      "ty": "0.0.58 beta editor only — not sole CI gate",
+      "pytest": "9.1.1",
+      "pytest_asyncio": "1.4.0",
+      "pytest_cov": "7.1.0",
+      "pytest_xdist": "3.8.0",
+      "testcontainers": "4.14.2",
+      "schemathesis": "4.x"
+    },
+    "web": {
+      "fastapi": "0.139.0",
+      "starlette": "1.3.1",
+      "uvicorn": "0.51.0",
+      "granian": "2.7.9 optional measured",
+      "gunicorn": "26.0.0 WSGI/hybrid only",
+      "httpx": "0.28.1",
+      "httpcore": "1.0.9",
+      "anyio": "4.14.1",
+      "tenacity": "9.1.4",
+      "python_multipart": "0.0.32",
+      "sse_starlette": "3.4.5 when needed"
+    },
+    "validation": {
+      "pydantic": "2.13.4",
+      "pydantic_settings": "2.14.2",
+      "msgspec": "0.21.1 hot-path only"
+    },
+    "data": {
+      "sqlalchemy": "2.0.51",
+      "asyncpg": "0.31.0",
+      "greenlet": "3.5.3",
+      "alembic": "1.18.5",
+      "supabase": "2.31.0",
+      "postgrest": "2.31.0",
+      "storage3": "2.31.0",
+      "realtime": "2.31.0",
+      "gotrue": "2.12.4"
+    },
+    "auth": {
+      "PyJWT": "2.13.0",
+      "cryptography": "49.0.0",
+      "authlib": "1.7.2",
+      "argon2_cffi": "25.1.0",
+      "bcrypt": "5.0.0"
+    },
+    "cache_ratelimit": {
+      "redis": "8.0.1",
+      "limits": "5.8.0",
+      "cashews": "7.5.0",
+      "hishel": "1.3.0"
+    },
+    "observability": {
+      "structlog": "26.1.0",
+      "opentelemetry_api_sdk_otlp": "1.43.0",
+      "opentelemetry_instrumentations": "0.64b0",
+      "sentry_sdk": "2.64.0",
+      "prometheus_client": "0.25.0"
+    },
+    "workers": {
+      "taskiq": "~0.12.4 greenfield async default",
+      "taskiq_fastapi": "0.5.x",
+      "arq": "0.28.0 maintenance-only — avoid new",
+      "celery": "5.6.x when org-standard",
+      "temporal": "pin SDK in lock when used"
+    },
+    "cli": {
+      "typer": "0.26.8",
+      "rich": "current line via uv lock"
+    }
+  },
+  "decision_gates": {
+    "use_when": [
+      "Greenfield Python service scaffold",
+      "Refreshing pins in python.md quarterly",
+      "Comparing PR dependency diffs to blessed set"
+    ],
+    "do_not_use_when": [
+      "Blindly upgrading brownfield without changelog review",
+      "Forcing Granian/msgspec/Temporal when tier doesn't need them",
+      "Pinning free-threaded builds by default"
+    ],
+    "alternatives": [
+      "App uv.lock always wins at runtime",
+      "Org private mirror may lag — document divergence"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Start from this snapshot then uv lock for exact transitive graph",
+      "Pin uv version in CI to match policy",
+      "Keep requires-python aligned with basedpyright pythonVersion and ruff target-version",
+      "Label optional tiers (Granian, msgspec, Temporal, Celery) clearly",
+      "Re-verify pins by review_by date"
+    ],
+    "dont": [
+      "Don't commit floating == without lock for apps",
+      "Don't install pydantic v1 alongside v2",
+      "Don't default python-jose, Black, Poetry, mypy-only",
+      "Don't use arq for brand-new systems without explicit reason",
+      "Don't treat research pins as eternal — they are as_of labeled"
+    ]
+  },
+  "code_skeleton": "# pyproject.toml — blessed greenfield skeleton (as_of 2026-07-13)\n\n[project]\nname = \"example-service\"\nversion = \"0.1.0\"\nrequires-python = \">=3.13\"\ndependencies = [\n  \"fastapi==0.139.0\",\n  \"pydantic==2.13.4\",\n  \"pydantic-settings==2.14.2\",\n  \"uvicorn[standard]==0.51.0\",\n  \"httpx==0.28.1\",\n  \"sqlalchemy[asyncio]==2.0.51\",\n  \"asyncpg==0.31.0\",\n  \"pyjwt[crypto]==2.13.0\",\n  \"structlog==26.1.0\",\n  # add redis/taskiq/supabase only when needed\n]\n\n[dependency-groups]\ndev = [\n  \"ruff==0.15.21\",\n  \"basedpyright==1.39.9\",\n  \"pytest==9.1.1\",\n  \"pytest-asyncio==1.4.0\",\n  \"httpx==0.28.1\",\n  \"testcontainers[postgres]==4.14.2\",\n]\n\n[tool.uv]\nexclude-newer = \"7 days\"\n\n[tool.ruff]\ntarget-version = \"py313\"\n\n[tool.basedpyright]\npythonVersion = \"3.13\"\ntypeCheckingMode = \"recommended\"\n\n[tool.pytest.ini_options]\nasyncio_mode = \"auto\"\nmarkers = [\"unit\", \"integration\"]\n\n# .python-version\n# 3.13\n\n# CI: UV_MALWARE_CHECK=1 uv sync --frozen --all-groups\n#     uv run ruff format --check . && uv run ruff check .\n#     uv run basedpyright && uv run pytest -m unit && uv audit\n",
+  "failure_modes": [
+    "Pins drift from lockfile → 'works on my machine' CI",
+    "Mixing pydantic v1/v2 → import and FastAPI errors",
+    "asyncpg + transaction pooler without mitigations → production incidents",
+    "CI uv older than 0.11.16 → malware check unavailable",
+    "Optional stacks (Celery/Granian) silently added → ops surprise"
+  ],
+  "anti_patterns": [
+    "Copying this snapshot into every service without removing unused deps (Taskiq/Supabase/OTel only when needed)",
+    "Upper-bounding requires-python without evidence",
+    "Dual Poetry+uv locks",
+    "Pinning ty as required prod dependency",
+    "Using gunicorn+uvicorn hybrid by cargo cult"
+  ],
+  "tools": {
+    "primary": [
+      "uv",
+      "ruff",
+      "basedpyright",
+      "pytest",
+      "FastAPI",
+      "Pydantic",
+      "SQLAlchemy",
+      "uvicorn",
+      "httpx"
+    ],
+    "optional_tiers": [
+      "granian",
+      "msgspec",
+      "taskiq",
+      "celery",
+      "temporal",
+      "supabase",
+      "schemathesis",
+      "opentelemetry"
+    ],
+    "avoid_greenfield": [
+      "poetry",
+      "black",
+      "isort",
+      "flake8",
+      "mypy-only",
+      "python-jose",
+      "arq-new",
+      "requests-as-default-async"
+    ]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "python": "3.13 default; 3.12 max-compat; 3.14 available",
+    "uv": "0.11.28",
+    "ruff": "0.15.21",
+    "basedpyright": "1.39.9",
+    "ty": "0.0.58 beta",
+    "fastapi": "0.139.0",
+    "starlette": "1.3.1",
+    "pydantic": "2.13.4",
+    "pydantic-settings": "2.14.2",
+    "uvicorn": "0.51.0",
+    "granian": "2.7.9",
+    "gunicorn": "26.0.0",
+    "httpx": "0.28.1",
+    "anyio": "4.14.1",
+    "sqlalchemy": "2.0.51",
+    "asyncpg": "0.31.0",
+    "alembic": "1.18.5",
+    "supabase": "2.31.0",
+    "PyJWT": "2.13.0",
+    "cryptography": "49.0.0",
+    "structlog": "26.1.0",
+    "opentelemetry": "1.43.0 / instr 0.64b0",
+    "sentry-sdk": "2.64.0",
+    "redis": "8.0.1",
+    "pytest": "9.1.1",
+    "pytest-asyncio": "1.4.0",
+    "testcontainers": "4.14.2",
+    "taskiq": "~0.12.4",
+    "typer": "0.26.8",
+    "msgspec": "0.21.1",
+    "sse-starlette": "3.4.5"
+  },
+  "config_snippets": {
+    "pins_markdown_table": "| Component | Blessed (2026-07-13) | Notes |\n|---|---|---|\n| CPython | 3.13 | requires-python >=3.13; .python-version |\n| uv | 0.11.28 | lock+sync+audit; malware check |\n| ruff | 0.15.21 | format+lint sole |\n| basedpyright | 1.39.9 | CI gate |\n| ty | 0.0.x beta | editor only |\n| FastAPI | 0.139.0 | default web |\n| Starlette | 1.3.1 | transitive awareness |\n| Pydantic | 2.13.4 | v2 only |\n| pydantic-settings | 2.14.2 | BaseSettings |\n| uvicorn | 0.51.0 | default ASGI |\n| Granian | 2.7.9 | optional measured |\n| httpx | 0.28.1 | default HTTP client |\n| SQLAlchemy | 2.0.51 | async 2.0 style |\n| asyncpg | 0.31.0 | PG driver |\n| Alembic | 1.18.5 | private DB only |\n| supabase-py | 2.31.0 | Auth/Storage/Realtime |\n| PyJWT | 2.13.0 | + cryptography 49 |\n| structlog | 26.1.0 | JSON logs |\n| OTel | 1.43.0 | instr 0.64b0 |\n| redis | 8.0.1 | rate limit/cache/queues |\n| Taskiq | ~0.12.4 | greenfield async jobs |\n| pytest | 9.1.1 | + asyncio 1.4.0 |\n| testcontainers | 4.14.2 | PG integration |\n",
+    "avoid_table": "| Avoid greenfield | Use instead |\n|---|---|\n| Poetry/Pipenv | uv |\n| Black/isort/flake8 | ruff |\n| mypy-only | basedpyright |\n| python-jose | PyJWT |\n| requests in async | httpx.AsyncClient |\n| SQLAlchemy 1.4 Query | 2.0 select() |\n| arq new systems | Taskiq |\n| pydantic v1 | v2 |\n| uWSGI ASGI | uvicorn/granian |\n"
+  },
+  "deprecation_watch": [
+    "uv audit still preview-ish since 2026-06 — pin uv CLI",
+    "ty pre-1.0 — do not make sole CI gate until stable",
+    "arq maintenance-only",
+    "python-jose / passlib legacy samples in blogs",
+    "Granian free-threaded experimental claims",
+    "setup-uv action major lines — pin commit SHA"
+  ],
+  "ts_boundary": "TS app keeps pnpm lock and Next pins (stack-rules). Shared contracts via OpenAPI versions, not shared Python pins. Node  version policy is independent.",
+  "rust_boundary": "Rust uses Cargo.lock/Axum stack in rust.md. No attempt to unify version numbers across languages. Handoff is architectural not pin-level.",
+  "supabase_boundary": "supabase-py 2.31.x for product APIs; SQLAlchemy/asyncpg for direct SQL. Supabase platform versions (JS client, CLI) follow TS modules — only Python client pins live here.",
+  "boundary_contracts": [
+    "OpenAPI generated from FastAPI version in this pin set",
+    "JWT algorithms compatible with Supabase/IdP issuer",
+    "Migration tool versions (Alembic vs supabase CLI) chosen per ownership model"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "What versions to scaffold for a new Python service?",
+    "python": "This blessed snapshot → uv lock",
+    "ts": "pnpm + stack-rules Next/Tailwind pins",
+    "rust": "rust.md crate versions / Cargo"
+  },
+  "threats": [
+    "Stale pins with known CVEs if audit skipped",
+    "Malicious new package versions within minutes of publish",
+    "Incompatible combo upgrades (FastAPI/Starlette/Pydantic)",
+    "Accidental free-threading or 3.14-only syntax on 3.13 pin"
+  ],
+  "mitigations": [
+    "uv audit + UV_MALWARE_CHECK + exclude-newer",
+    "CI frozen sync",
+    "basedpyright pythonVersion match",
+    "Quarterly review_by refresh of this snapshot",
+    "Integration tests on SQLAlchemy/asyncpg upgrades"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "requires-python and .python-version from snapshot default",
+      "Core deps from defaults.web/validation/quality when scaffolding API",
+      "Dev group: ruff, basedpyright, pytest, pytest-asyncio",
+      "as_of comment or docs table when documenting pins",
+      "Optional deps only when feature used (redis, taskiq, supabase, otel)"
+    ],
+    "must_not_generate": [
+      "Avoid-list tools as defaults",
+      "Unpinned fastapi without lock",
+      "pydantic<2",
+      "sqlalchemy<2 for greenfield",
+      "python-jose, black, poetry"
+    ]
+  },
+  "tests_required": [
+    "Fresh uv sync --frozen on skeleton pyproject",
+    "ruff/basedpyright/pytest smoke on template",
+    "uv audit clean or documented advisories"
+  ],
+  "ci_gates": [
+    "Pin uv in setup-uv",
+    "frozen sync",
+    "audit",
+    "tool versions roughly match snapshot (warn on major drift)"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "requires-python >=3.12 or >=3.13",
+      "ruff + basedpyright in dev group",
+      "fastapi and pydantic v2",
+      "uv.lock present",
+      "exclude-newer set for apps"
+    ],
+    "negative": [
+      "pydantic v1 constraint",
+      "poetry.lock primary",
+      "black dependency",
+      "python-jose dependency",
+      "sqlalchemy 1.4 only",
+      "no lockfile"
+    ]
+  },
+  "skill_module_bullets": [
+    "§ Default stack snapshot in references/python.md is the canonical pin table (as_of 2026-07-13); app uv.lock is runtime truth.",
+    "Runtime: CPython 3.13 default; requires-python >=3.13; .python-version committed; free-threading opt-in only.",
+    "Packaging: uv 0.11.28; commit uv.lock; PEP 735 dependency-groups; exclude-newer 7d; UV_MALWARE_CHECK=1; CI setup-uv SHA-pinned.",
+    "Quality: ruff 0.15.21 sole format/lint; basedpyright 1.39.9 CI; ty 0.0.x editor beta only; pytest 9.1.1 + pytest-asyncio 1.4.0.",
+    "Web: FastAPI 0.139.0 + Starlette 1.3.1 + uvicorn 0.51.0; Granian 2.7.9 optional after measure; httpx 0.28.1 client.",
+    "Validation: Pydantic 2.13.4 + pydantic-settings 2.14.2; msgspec 0.21.1 hot-path only.",
+    "Data: SQLAlchemy 2.0.51 + asyncpg 0.31.0 + greenlet 3.5.3; Alembic 1.18.5 for private DBs; supabase-py 2.31.0 for product APIs.",
+    "Auth: PyJWT 2.13.0 + cryptography 49.0.0; argon2-cffi/bcrypt for passwords; never python-jose greenfield.",
+    "Obs: structlog 26.1.0; OTel 1.43.0 / instr 0.64b0; sentry-sdk 2.64.0 optional.",
+    "Jobs: Taskiq ~0.12.4 greenfield async; Celery 5.6.x org-standard; Temporal pin when durable multi-step; arq maintenance-only.",
+    "Cache/limit: redis 8.0.1 + limits/cashews as needed; multi-worker requires Redis-backed limits.",
+    "CLI: Typer 0.26.8 for ops entrypoints.",
+    "Avoid table: Poetry, Black/isort/flake8, mypy-only, python-jose, requests-in-async, SA 1.4 Query, arq-new, pydantic v1, uWSGI.",
+    "Optional do not preinstall: Granian, msgspec, Temporal, full OTel, supabase, Taskiq — add when feature needs.",
+    "Re-verify by 2026-10-13; bump skill module pins and regenerate lock skeletons.",
+    "Workers×pool formula and Supabase :6543 mitigations are config policy not version pins — still document beside snapshot."
+  ],
+  "action_items": [
+    "Paste pins_markdown_table and avoid_table into references/python.md § Default stack snapshot.",
+    "Generate templates/python/pyproject.toml from code_skeleton; run uv lock; commit example lock or document uv lock step.",
+    "Add CI workflow template using setup-uv 0.11.x + frozen + audit + ruff + basedpyright + pytest.",
+    "Document optional dependency groups: jobs, otel, supabase in template comments.",
+    "Schedule review_by 2026-10-13 calendar reminder to re-resolve pins from PyPI.",
+    "Cross-check leaf versions_as_of for drift; if leaf updated, regenerate this snapshot.",
+    "Agent scaffold command/docs should reference this snapshot item_id for provenance.",
+    "Add Renovate/Dependabot note: cooldown aligned with exclude-newer 7d.",
+    "Never auto-PR major FastAPI/Pydantic/SQLAlchemy without integration tests.",
+    "Publish avoid list to scan negatives (poetry, black, jose, pydantic v1).",
+    "When py-docker-deploy research completes, add base image python:3.13-slim pin guidance.",
+    "Keep SKILL/module as_of date in sync when snapshot refreshes."
+  ],
+  "checklist": [
+    ".python-version 3.13 (or documented 3.12 max-compat)",
+    "uv.lock committed; CI frozen",
+    "ruff + basedpyright + pytest versions in dev group",
+    "fastapi+pydantic v2+uvicorn in main deps for API services",
+    "No avoid-list packages in greenfield",
+    "Optional tiers justified in README",
+    "uv audit clean or ticketed",
+    "Pins table in python.md matches this as_of date"
+  ],
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Local Homebrew uv may lag PyPI 0.11.28 (e.g. 0.11.23) — CI must pin recent uv for audit/malware",
+    "OTel instrumentation packages use 0.64b0 beta suffix while API/SDK 1.43.0 stable — pin together carefully",
+    "Taskiq version quoted as ~0.12.4 from research narrative; exact lock per app",
+    "supabase subpackages version together at 2.31.0 per leaf; gotrue 2.12.4 may differ — follow monorepo client release",
+    "Some leaves use string versions_as_of vs dict — snapshot normalizes",
+    "Missing leaves (docker base images, LiteLLM, MCP) not pinned here"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://pypi.org/project/fastapi/",
+    "https://pypi.org/project/uv/",
+    "https://pypi.org/project/ruff/",
+    "https://pypi.org/project/pydantic/",
+    "https://pypi.org/project/sqlalchemy/",
+    "https://docs.astral.sh/uv/",
+    "https://fastapi.tiangolo.com/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/MANIFEST.md",
+    "./references/stack-rules.md",
+    "./SKILL.md",
+    "./research/python/outline.yaml",
+    "./research/python/results/",
+    "./research/python/results/py_versions_and_runtime.json",
+    "./research/python/results/py_uv_packaging.json",
+    "./research/python/results/py_fastapi.json",
+    "./research/python/results/py_sqlalchemy_async.json",
+    "./research/python/results/py_ci_gates.json"
+  ]
+}

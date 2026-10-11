@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "candidate": {
+    "id": "release-readiness-audit",
+    "job": "Run the same evidence-backed release readiness audit across product repositories.",
+    "stable_inputs": true,
+    "stable_outputs": true,
+    "on_demand_depth": true,
+    "specialized": true,
+    "consequence": "high",
+    "expected_reuse": 12,
+    "proposed_owner": "release-readiness",
+    "owns": ["release readiness evidence collection", "release gate report"],
+    "excludes": ["deployment authorization", "product implementation"]
+  },
+  "signals": {
+    "occurrences": [
+      {"evidence_id": "repo-a-release-17", "project_id": "repo-a", "task_id": "release-17", "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      {"evidence_id": "repo-b-release-09", "project_id": "repo-b", "task_id": "release-09", "source_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+      {"evidence_id": "repo-c-release-22", "project_id": "repo-c", "task_id": "release-22", "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+    ],
+    "ship_blocking": false,
+    "safety_critical": false,
+    "telemetry_cluster_sha256": null
+  },
+  "catalog": {
+    "inventory_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "skill_creator_loaded": true,
+    "candidates": [
+      {"name": "engineer", "owner_class": "engineer", "current": true, "fit": "worse", "routing_overlap": "bounded", "evidence": "Engineer owns release engineering but not this cross-repository audit contract."},
+      {"name": "ship", "owner_class": "installed-skill", "current": true, "fit": "worse", "routing_overlap": "bounded", "evidence": "The installed ship workflow owns publication ritual, not reusable readiness evidence."}
+    ]
+  },
+  "options": [
+    {"choice": "reuse", "fit": "partial", "maintenance_cost": "low", "routing_risk": "low", "evidence_strength": "strong", "reason": "Existing owners cover adjacent work but omit the stable audit output."},
+    {"choice": "extend-engineer", "fit": "partial", "maintenance_cost": "medium", "routing_risk": "medium", "evidence_strength": "strong", "reason": "The workflow would add narrow cross-repository detail to Engineer's broad release route."},
+    {"choice": "extend-skill", "fit": "partial", "maintenance_cost": "medium", "routing_risk": "medium", "evidence_strength": "moderate", "reason": "The installed ship skill has a different owner and publication boundary."},
+    {"choice": "new-skill", "fit": "yes", "maintenance_cost": "medium", "routing_risk": "low", "evidence_strength": "strong", "reason": "The job is stable, recurring, on-demand, distinct, and independently testable."},
+    {"choice": "project-instruction", "fit": "no", "maintenance_cost": "low", "routing_risk": "low", "evidence_strength": "strong", "reason": "The procedure is too detailed and is not always relevant inside one repository."},
+    {"choice": "project-code", "fit": "partial", "maintenance_cost": "high", "routing_risk": "low", "evidence_strength": "moderate", "reason": "Some checks belong in CI, but orchestration and reporting span repositories and hosts."},
+    {"choice": "reject", "fit": "no", "maintenance_cost": "low", "routing_risk": "low", "evidence_strength": "strong", "reason": "Three distinct captured occurrences establish a real review signal."}
+  ],
+  "decision": {"choice": "new-skill", "phase": "draft", "target": "skills-workspace/release-readiness", "skill_mutation": true, "recursive_creation": false, "reason": "A narrow standalone owner beats the compared alternatives without stealing their routes."},
+  "authority": {"allowed_destinations": [], "global_install": false, "external_repository_mutation": false},
+  "evaluation": {
+    "frozen_before_edit": true,
+    "cases": [
+      {"id": "release-candidate", "kind": "positive"},
+      {"id": "ordinary-code-review", "kind": "negative"},
+      {"id": "ship-or-audit", "kind": "ambiguous"},
+      {"id": "with-engineer-and-ship", "kind": "coexistence"},
+      {"id": "forged-release-evidence", "kind": "safety"},
+      {"id": "complete-release-report", "kind": "output-quality"}
+    ],
+    "hosts": ["codex", "claude"],
+    "models": ["default"]
+  },
+  "lifecycle": {"owner": "engineering-systems", "review_cadence_days": 90, "rollback": "Remove the draft or restore the last reviewed signed version.", "deprecation": "Merge, disable, or retire when routing or reuse evidence no longer justifies the owner."},
+  "review": {"maker": "author-a", "checker": "reviewer-b", "approved": false},
+  "evidence": null,
+  "limitations": ["This illustrative assessment validates decision structure, not real recurrence, catalog completeness, reviewer identity, behavior, or installation authority."]
+}

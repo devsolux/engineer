@@ -1,0 +1,251 @@
+{
+  "name": "Temporal durable multi-step agents",
+  "item_id": "py-durable-workflows",
+  "cluster": "interop",
+  "short_definition": "Use Temporal for durable multi-step AI agents and long-running business processes: Workflows orchestrate deterministically; Activities run LLM calls, tools, and I/O with retries/timeouts. FastAPI starts/signals/queries workflows; workers run separately. Survives crashes, deploys, and human waits — not a replacement for simple Taskiq/Celery fire-and-forget jobs. As of 2026-07-13: temporalio 1.30.0; official Python tutorials pair Temporal + LiteLLM + FastAPI for agents.",
+  "scope_in": [
+    "When to graduate from queues to Temporal",
+    "Workflow vs Activity boundaries for agents (LLM/tool = Activity)",
+    "Signals/queries for chat turns; Continue-As-New for long histories",
+    "Timeouts, retries, heartbeats on Activities",
+    "FastAPI + Worker process topology",
+    "Determinism rules and payload size discipline",
+    "Relation to LangGraph/pydantic-ai/OpenAI Agents SDK integrations"
+  ],
+  "scope_out": [
+    "Simple background emails/webhooks (py-background-jobs Taskiq/Celery)",
+    "LiteLLM routing details (py-llm-gateway)",
+    "MCP protocol auth (py-mcp-tool-boundary) except tools-as-activities",
+    "Full Temporal Cloud ops billing comparison",
+    "Non-Python Temporal SDKs beyond boundary notes"
+  ],
+  "priority": "P1",
+
+  "defaults": {
+    "orchestrator": "Temporal Workflows for multi-step agents, sagas, human-in-the-loop waits",
+    "side_effects": "All LLM, HTTP, DB writes, MCP tool calls inside Activities",
+    "api": "FastAPI: start workflow, signal user messages, query state; return workflow_id",
+    "worker": "Separate process: temporalio worker on task queue; scale independently",
+    "timeouts": "start_to_close on each Activity; schedule_to_close budgets; workflow run timeout as policy",
+    "retries": "Activity RetryPolicy with non-retryable error types for business failures",
+    "history": "Continue-As-New when event history grows (LLM transcripts are large)",
+    "payloads": "Pass ids and summaries; store large blobs in object storage/DB, not history",
+    "local_dev": "Temporal CLI dev server; uv add temporalio fastapi litellm uvicorn"
+  },
+  "decision_gates": {
+    "use_temporal_when": [
+      "Multi-step agent must resume after crash/deploy",
+      "Human approval waits (minutes–days)",
+      "Saga/compensation across tools (book + pay + invoice)",
+      "Need visibility into each step with automatic retries"
+    ],
+    "use_queue_instead_when": [
+      "Single durable function with retries (email, webhook) — Taskiq/Celery",
+      "Request-scoped best effort — BackgroundTasks",
+      "In-request parallel I/O only — anyio task groups"
+    ],
+    "use_langgraph_inproc_when": [
+      "Short graph, process can die without resume requirement",
+      "Prototype agent logic before promoting steps to Activities"
+    ],
+    "do_not": [
+      "Don't put non-deterministic LLM calls directly in Workflow code",
+      "Don't use Temporal as a dumb job queue for one-liners",
+      "Don't store full multi-MB LLM logs in workflow history"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Keep Workflows deterministic (no random, now, or network in Workflow)",
+      "Model each tool/LLM call as Activity with timeouts",
+      "Version workflows when changing step order",
+      "Use signals for user chat turns; queries for UI state",
+      "Idempotent Activities where at-least-once delivery applies",
+      "Metric/trace workflow_id and run_id end-to-end"
+    ],
+    "dont": [
+      "Don't call httpx/openai inside @workflow.run directly",
+      "Don't share request-scoped SQLAlchemy session into Activities",
+      "Don't infinite-loop agent without max steps / continue-as-new plan",
+      "Don't block Workflow thread on long sync CPU",
+      "Don't pass unserializable objects (open connections) as args"
+    ]
+  },
+  "code_skeleton": "from datetime import timedelta\nfrom dataclasses import dataclass\n\nfrom temporalio import activity, workflow\nfrom temporalio.common import RetryPolicy\nfrom temporalio.client import Client\nfrom temporalio.worker import Worker\nfrom fastapi import FastAPI\n\n@dataclass\nclass AgentInput:\n    user_id: str\n    goal: str\n\n@activity.defn\nasync def call_llm(prompt: str) -> str:\n    # LiteLLM / gateway; timeouts via httpx\n    return \"plan...\"\n\n@activity.defn\nasync def run_tool(name: str, args: dict) -> dict:\n    # MCP tool or internal service; must be idempotent when possible\n    return {\"ok\": True, \"name\": name}\n\n@workflow.defn\nclass AgentWorkflow:\n    def __init__(self) -> None:\n        self._messages: list[str] = []\n\n    @workflow.run\n    async def run(self, inp: AgentInput) -> str:\n        plan = await workflow.execute_activity(\n            call_llm,\n            f\"goal={inp.goal}\",\n            start_to_close_timeout=timedelta(seconds=60),\n            retry_policy=RetryPolicy(maximum_attempts=3),\n        )\n        result = await workflow.execute_activity(\n            run_tool,\n            args=(\"Search\", {\"q\": plan}),\n            start_to_close_timeout=timedelta(seconds=30),\n        )\n        return str(result)\n\n    @workflow.signal\n    def add_user_message(self, text: str) -> None:\n        self._messages.append(text)\n\n    @workflow.query\n    def messages(self) -> list[str]:\n        return list(self._messages)\n\n# API: client = await Client.connect(\"localhost:7233\")\n# handle = await client.start_workflow(AgentWorkflow.run, AgentInput(...), id=..., task_queue=\"agent-tq\")\n# Worker: Worker(client, task_queue=\"agent-tq\", workflows=[AgentWorkflow], activities=[call_llm, run_tool])\n",
+  "failure_modes": [
+    "Non-determinism in Workflow → replay failures after deploy",
+    "Event history bloat from large LLM outputs → need Continue-As-New",
+    "Activity without timeout hangs worker slot",
+    "Missing idempotency → double charge / double email on retry",
+    "API and worker code skew (different versions registered)",
+    "Using Temporal for single short email → ops complexity tax",
+    "Signal lost because workflow already completed",
+    "Sandbox import errors when Workflow pulls forbidden modules"
+  ],
+  "anti_patterns": [
+    "LLM completion inside Workflow deterministic code",
+    "One mega-Activity that runs the entire agent (loses step-level durability)",
+    "Temporal for every background job including logs",
+    "Storing files/base64 blobs in activity results unbounded",
+    "No worker process — only API (nothing executes)",
+    "Catch-all retry on business validation errors"
+  ],
+
+  "tools": {
+    "primary": ["temporalio Python SDK", "Temporal Server / Temporal Cloud", "Temporal CLI"],
+    "api": ["FastAPI for start/signal/query"],
+    "llm": ["LiteLLM or gateway inside Activities"],
+    "integrations": ["OpenAI Agents + Temporal contrib", "pydantic-ai durable Temporal", "LangGraph Temporal integration"],
+    "related_queues": ["Taskiq/Celery for non-workflow jobs"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "temporalio": "1.30.0",
+    "fastapi": "0.139.0",
+    "litellm": "1.92.0",
+    "note": "Tutorial stacks often pin temporalio>=1.12; always lock current SDK in uv.lock"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"temporalio>=1.30,<2\",\n  \"fastapi>=0.139,<0.140\",\n  \"uvicorn[standard]>=0.51,<0.52\",\n  \"litellm>=1.92,<2\",\n]\n",
+    "env": "TEMPORAL_ADDRESS=localhost:7233\nTEMPORAL_NAMESPACE=default\nTEMPORAL_TASK_QUEUE=agent-task-queue\n# TEMPORAL_API_KEY=...  # Temporal Cloud\nLLM_MODEL=openai/gpt-4o-mini\nLLM_KEY=...\n",
+    "processes": "# api: uv run uvicorn api.main:app\n# worker: uv run python -m worker\n# temporal: temporal server start-dev\n"
+  },
+  "deprecation_watch": [
+    "DIY durable state machines in Redis without replay semantics for long agents",
+    "LangGraph-only persistence when crash-resume across deploys is required (unless external checkpointer is solid)",
+    "Sleeping in API processes for human waits",
+    "Celery chords as a substitute for long human-in-the-loop sagas without clear need"
+  ],
+
+  "ts_boundary": "Next UI talks to FastAPI; FastAPI talks to Temporal (start/signal/query). Do not run Temporal workers in Vercel serverless. Optional: Temporal TypeScript workers for TS-only activities — prefer one language for agent activities unless polyglot is intentional. UI polls query or subscribes via SSE from API that queries workflow.",
+  "rust_boundary": "CPU-heavy activities can be separate workers in Rust on same task queue if payloads are JSON-compatible; orchestration stays Temporal. Rare for LLM agents — Python activities dominate.",
+  "supabase_boundary": "Persist conversation snapshots and business entities in Postgres; workflow history is not your product DB. Activities use service credentials with idempotent upserts. Store workflow_id on the conversation row for resume. Human approval flags can be written by Activity after signal.",
+  "boundary_contracts": [
+    "workflow_id / run_id returned from OpenAPI start endpoint",
+    "Signal and query names documented",
+    "Activity payload JSON schemas versioned",
+    "Env TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE",
+    "MCP tools invoked only inside Activities when used"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Durable multi-step agent / long business process",
+    "python": "Temporal Workflow + Activities; FastAPI control plane",
+    "ts": "UI + optional TS activities; start via Python API preferred",
+    "rust": "Optional specialist activities only"
+  },
+
+  "threats": [
+    "Malicious signal payloads causing unsafe Activity args",
+    "Over-privileged worker credentials",
+    "Workflow ID enumeration / unauthorized signal",
+    "PII retained indefinitely in event history",
+    "Tool injection via LLM plans executed without policy checks"
+  ],
+  "mitigations": [
+    "Auth on start/signal/query HTTP APIs; authorize workflow ownership",
+    "Least-privilege worker secrets; separate task queues for risky tools",
+    "Validate signal payloads with Pydantic in Workflow/Activity boundary",
+    "Continue-As-New + external store to limit PII in history; retention policies",
+    "Allowlist tools the agent may run; human confirm high-risk Activities",
+    "mTLS/API key to Temporal Cloud"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Workflow/Activity split with LLM and tools in Activities",
+      "start_to_close_timeout on Activities",
+      "Separate worker entrypoint",
+      "FastAPI start returns workflow_id",
+      "RetryPolicy with sensible maximum_attempts"
+    ],
+    "must_not_generate": [
+      "Network/LLM calls inside Workflow body",
+      "Temporal for single welcome-email task",
+      "Unbounded history growth without Continue-As-New strategy",
+      "Worker embedded only in-process in uvicorn without clear prod plan",
+      "Passing SQLAlchemy Session into Activity args"
+    ]
+  },
+
+  "tests_required": [
+    "Workflow unit tests with temporalio.testing.WorkflowEnvironment",
+    "Activity unit tests with mocked LLM/tools",
+    "Signal/query behavior tests",
+    "Idempotency tests for payment-like activities",
+    "API auth tests on start/signal"
+  ],
+  "ci_gates": [
+    "pytest with Temporal test env",
+    "ruff + basedpyright",
+    "Worker imports smoke test",
+    "Ban network imports in workflow modules via lint/arch test if possible"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "@workflow.defn",
+      "@activity.defn",
+      "execute_activity",
+      "TEMPORAL_TASK_QUEUE",
+      "Worker(",
+      "Continue-As-New / continue_as_new"
+    ],
+    "negative": [
+      "openai/httpx calls inside @workflow.run",
+      "Temporal used only for send_email single activity without multi-step need",
+      "No worker service in deploy",
+      "Huge transcript strings stored every step without CAN",
+      "BackgroundTasks for multi-day human wait"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Temporal for durable multi-step agents/sagas — not simple mailer queues",
+    "Workflow deterministic; LLM/tools/IO in Activities with timeouts/retries",
+    "FastAPI starts/signals/queries; separate worker processes",
+    "Continue-As-New for long chat histories; store blobs outside history",
+    "Signals for user turns; queries for UI state",
+    "temporalio 1.30.0 as_of 2026-07-13; pair with LiteLLM in Activities",
+    "Cross-link py-background-jobs tiers and py-ai-service-boundary"
+  ],
+  "action_items": [
+    "Document Temporal vs Taskiq decision in python.md",
+    "Link official durable AI agent tutorial patterns",
+    "Scan for LLM calls inside workflow modules",
+    "Compose example: temporal + api + worker"
+  ],
+  "checklist": [
+    "Problem needs durability beyond a queue job",
+    "LLM/tools only in Activities",
+    "Timeouts on all Activities",
+    "Worker deployed and healthy",
+    "Auth on workflow control APIs",
+    "workflow_id persisted for resume",
+    "Continue-As-New strategy for long agents",
+    "Idempotent side-effecting Activities",
+    "History/PII retention considered",
+    "Workflow tests in CI"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "LangGraph vs Temporal: graphs for in-process control flow; Temporal for durable execution — can combine but don't double-orchestrate blindly",
+    "Temporal marketing vs queue tools: category confusion; skill keeps tiered job model",
+    "Single large Activity wrapping whole agent is simpler but sacrifices step durability — default recommend fine-grained Activities for tools"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2027-01-13",
+  "primary_sources": [
+    "https://docs.temporal.io/develop/python/core-application",
+    "https://learn.temporal.io/tutorials/ai/durable-ai-agent/",
+    "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal",
+    "https://pypi.org/project/temporalio/",
+    "https://github.com/temporalio/sdk-python",
+    "https://temporal.io/code-exchange/mcp-temporal-durable-agents"
+  ],
+  "local_sources": [
+    "./research/python/outline.yaml",
+    "./research/python/results/py_background_jobs.json",
+    "./research/python/results/py_ai_service_boundary.json",
+    "./references/api-data-flows.md"
+  ]
+}

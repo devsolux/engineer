@@ -1,0 +1,78 @@
+{
+  "name": "typer/click ops CLIs for services and workers",
+  "item_id": "py-cli-scripts",
+  "cluster": "workers",
+  "priority": "P1",
+  "short_definition": "Operational command-line entrypoints for Python services and workers: greenfield default is Typer (type-hint driven, Rich help, vendored Click under the hood as of Typer 0.26+), with Click reserved for legacy or maximum decorator control. Ship as [project.scripts] console scripts under uv, never as ad-hoc argparse one-offs scattered in repo root.",
+  "scope_in": "Typer apps, multi-command groups, options/args with Annotated types, exit codes, Rich output, packaging via project.scripts / uv run, ops commands (migrate, seed, backfill, health, replay-job), env/settings injection via pydantic-settings, testing CLIs with CliRunner or typer.testing.",
+  "scope_out": "HTTP APIs (py-fastapi); long-running job queues (arq/Celery/Temporal — py-background-jobs); interactive TUI frameworks beyond Rich print; shell scripts as product surface; shipping notebooks as ops tools.",
+
+  "defaults": "Greenfield ops CLI: Typer + Rich. Structure: src/<pkg>/cli.py with app = typer.Typer(no_args_is_help=True, add_completion=True); subcommands via @app.command or app.add_typer for domains (db, jobs, admin). Package with [project.scripts] name = \"pkg.cli:app\" (Typer app is callable). Prefer Annotated[T, typer.Option(...)] / Argument for help text and validation. Read config only through pydantic-settings (env), never hardcode secrets. Exit non-zero on failure (typer.Exit(code=1) or raise). Log structured via structlog to stderr; human messages to stdout with Rich. Install/run: uv sync && uv run <cmd>. Prefer one multi-command binary over many root-level scripts.",
+  "decision_gates": "USE Typer: new ops CLIs, admin tools, migration helpers, AI/worker control planes that need typed options and fast help UX. USE Click: existing Click codebases, plugins expecting click.Command, or rare low-level Context features Typer does not expose cleanly. USE argparse: stdlib-only tiny scripts with zero deps — still prefer Typer once the package already has Typer. DO NOT use Fire for production ops (too magic, weak typing). DO NOT block the event loop inside CLI for long jobs — spawn worker/queue or use asyncio.run carefully with timeouts. Hand off multi-step durable work to Temporal/arq rather than growing a 50-flag CLI.",
+  "do_dont": "DO: type every option; document help=; use subcommands; map failures to exit codes; inject settings via factory; add --dry-run for destructive ops; pin Typer in lockfile; test happy path + bad args. DON'T: parse sys.argv by hand; print secrets; put migrate logic only in Dockerfile ENTRYPOINT without CLI; use input() for non-interactive CI; swallow exceptions with bare except; invent parallel Click+Typer entrypoints for the same tool.",
+  "code_skeleton": "# pyproject.toml\n[project]\nname = \"svc-api\"\nrequires-python = \">=3.13\"\ndependencies = [\"typer>=0.26\", \"rich\", \"pydantic-settings\"]\n\n[project.scripts]\nsvc = \"svc_api.cli:app\"\n\n# src/svc_api/cli.py\nfrom typing import Annotated\nimport typer\nfrom rich import print as rprint\nfrom svc_api.settings import get_settings\n\napp = typer.Typer(no_args_is_help=True, help=\"svc-api ops CLI\")\ndb_app = typer.Typer(help=\"Database ops\")\napp.add_typer(db_app, name=\"db\")\n\n@db_app.command(\"migrate\")\ndef migrate(\n    dry_run: Annotated[bool, typer.Option(\"--dry-run\", help=\"Plan only\")] = False,\n) -> None:\n    settings = get_settings()\n    if dry_run:\n        rprint(\"[yellow]dry-run[/] would migrate\", settings.database_url.host)\n        raise typer.Exit(0)\n    # run alembic / migrations\n    rprint(\"[green]ok[/] migrated\")\n\n@app.command(\"health\")\ndef health() -> None:\n    \"\"\"Check process + dependency readiness.\"\"\"\n    # ping db/redis; exit 1 on fail\n    rprint(\"[green]healthy[/]\")\n\nif __name__ == \"__main__\":\n    app()\n\n# uv run svc db migrate --dry-run\n# uv run svc health",
+  "failure_modes": "1) CLI imports full FastAPI app graph → 10s cold start and accidental side effects at import. 2) Missing exit codes → CI green on failed migrate. 3) Secrets echoed in --help defaults or debug logs. 4) Blocking HTTP/DB without timeout hangs deploy. 5) Typer app not exposed as project.scripts so only `python -m` works inconsistently. 6) Dual Click/Typer packages confuse operators. 7) Destructive commands without --dry-run/--yes.",
+  "anti_patterns": "Agents must not: generate argparse for greenfield service ops when Typer is available; put secrets in CLI default values; use print() of env dumps; create bare scripts/ without packaging; recommend Fire; implement long multi-day workflows only as CLI flags; block asyncio event loop with time.sleep in health checks without timeout.",
+
+  "tools": "Primary: Typer 0.26.x (+ Rich). Underlying: Click vendored inside Typer since 0.26.0 (not always a separate runtime dep). Alternatives: Click 8.x direct; argparse (stdlib). Testing: typer.testing.CliRunner / click.testing. Packaging: uv, hatchling/uv_build, project.scripts.",
+  "versions_as_of": "as_of 2026-07-13 — Typer 0.26.8 (PyPI; vendored Click 8.3.1 lineage per Typer docs); standalone Click 8.4.2 still published for direct users; Rich current line. Re-pin via uv.lock; do not assume external click install when only typer is declared.",
+  "config_snippets": "# pyproject.toml\n[project.scripts]\nsvc = \"svc_api.cli:app\"\nops = \"svc_api.cli:app\"  # alias ok if same app\n\n# Optional completion install documented in README:\n# svc --install-completion\n\n# CI smoke\n# - run: uv run svc --help\n# - run: uv run svc health\n\n# Dockerfile ops\n# ENTRYPOINT [\"svc\"]\n# CMD [\"health\"]",
+  "deprecation_watch": "Fire as default; setuptools console_scripts only without src layout; @app.on_event style coupled to CLI; Typer pre-0.26 guides that require separate click pin without noting vendor; argparse mega-scripts; committing shell wrappers that hardcode .venv paths.",
+
+  "ts_boundary": "Next/TS BFF does not replace Python ops CLIs — keep migrate/seed/backfill in Python next to SQLAlchemy/Alembic. Expose human ops via CLI; expose product ops via API. Do not call `uv run` from Next Server Actions for production control planes without hard auth and isolation.",
+  "rust_boundary": "Use Rust CLI (clap) when the binary must be a static single-file tool with no Python runtime (edge agents, installers). Keep Python Typer when ops need DB models, Alembic, or LLM Python stack. Dual CLIs only with clear ownership.",
+  "supabase_boundary": "CLI may run SQL migrations or admin tasks against Postgres/Supabase using service role only from secure CI/operator machines — never embed service role in distributed CLI defaults. Prefer migration files + least-privilege DB URL for routine migrate.",
+  "boundary_contracts": "CLI flags are not the public product contract; OpenAPI is. Env vars via pydantic-settings shared with the API process. Document required env in --help and README. Exit codes: 0 ok, 1 operational failure, 2 usage error (Typer default patterns).",
+  "decision_matrix_row": "Problem: service ops (migrate/seed/health) → Python Typer CLI. Problem: product HTTP → FastAPI. Problem: durable multi-step → Temporal/worker not mega-CLI. Problem: portable single static binary → Rust clap. Problem: frontend scripts → pnpm/tsx, not Python.",
+
+  "threats": "CLI as privilege escalation (ops binary with broad DB rights); argument injection into shelled-out tools; secrets in argv visible via process list; malicious completion scripts; dependency compromise in Typer/Rich install path.",
+  "mitigations": "Least-privilege DB roles for CLI; never shell=True; load secrets from env/files not flags when possible; audit destructive commands; pin deps + uv audit; require --yes for destroy; CI uses non-production credentials for smoke --help only.",
+  "agent_codegen_policy": "MUST: Typer app with project.scripts; typed Options; non-zero exit on failure; settings via pydantic-settings; --dry-run for destructive ops. MUST NOT: argparse greenfield for service ops; hardcode secrets; import create_app() with network side effects at module import; Fire; untested migrate command.",
+
+  "tests_required": "CliRunner tests for --help, required options, failure exit codes; unit tests for pure command logic; optional integration against testcontainers for migrate. Do not require live prod DB in unit CI.",
+  "ci_gates": "uv run <cli> --help exits 0; package entrypoint importable; ruff/typecheck cover cli module; optional smoke migrate --dry-run against ephemeral DB.",
+  "skill_scan_signals": "POSITIVE: [project.scripts] + Typer app; subcommands; settings injection; dry-run on destructive. NEGATIVE: root *.py argparse sprawl; Fire; secrets in defaults; no exit codes; CLI imports app lifespan with side effects; Click+Typer duplicate tools without reason.",
+
+  "skill_module_bullets": [
+    "Default ops CLI: Typer (+ Rich), packaged via [project.scripts].",
+    "Subcommands for db/jobs/admin; Annotated options with help=.",
+    "pydantic-settings for config; never secret defaults on flags.",
+    "Non-zero exit codes; --dry-run for destructive ops.",
+    "Keep import graph light — do not boot full ASGI app for --help.",
+    "Click only for legacy; Fire not for production ops."
+  ],
+  "action_items": [
+    "Add Typer CLI section to references/python.md with project.scripts skeleton.",
+    "Template svc CLI: health + db migrate --dry-run.",
+    "Scan signal: argparse/Fire in services without justification.",
+    "Document Typer 0.26 Click vendoring so agents do not dual-pin wrongly."
+  ],
+  "checklist": [
+    "[project.scripts] entry points defined",
+    "Typer app with no_args_is_help",
+    "Settings from env only",
+    "Destructive commands have dry-run/confirm",
+    "Exit codes correct",
+    "CliRunner tests for core commands",
+    "Import is side-effect free enough for --help",
+    "Pinned in uv.lock"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Some 2025–2026 guides still say 'Typer builds on installed Click'; Typer >=0.26 vendors Click and may diverge — follow current Typer packaging docs. Click remains better documented for advanced Context/plugin ecosystems. Preference Typer vs Click is team taste; this stack standardizes Typer for greenfield.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://typer.tiangolo.com/",
+    "https://typer.tiangolo.com/tutorial/package/",
+    "https://typer.tiangolo.com/alternatives/",
+    "https://github.com/fastapi/typer",
+    "https://click.palletsprojects.com/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

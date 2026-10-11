@@ -1,0 +1,249 @@
+{
+  "name": "Redis rate limiting and response caching for FastAPI",
+  "item_id": "py-rate-limit-cache",
+  "cluster": "web",
+  "short_definition": "Protect Python HTTP APIs with distributed rate limits and cache hot read responses using Redis as the shared store across workers. Prefer sliding/fixed window limits keyed by user id (authenticated) or IP (anonymous), return 429 with Retry-After, and cache only safe GETs with explicit TTLs and identity-aware keys. As of 2026-07-13: redis-py 8.0.1, limits 5.8.0, slowapi 0.1.10, fastapi-limiter 0.2.0, cashews 7.5.0, hishel 1.3.0.",
+  "scope_in": [
+    "Application-layer rate limiting (per route, per user, per IP)",
+    "Redis-backed limiters for multi-worker/multi-instance",
+    "HTTP response caching for idempotent reads",
+    "Cache key design, TTL, invalidation hooks",
+    "429 semantics and headers",
+    "Testing with fakeredis / redis testcontainers"
+  ],
+  "scope_out": [
+    "CDN/WAF/edge rate limits (Cloudflare etc.) as primary — complementary",
+    "Next.js Upstash patterns (backend-api.md) except interop notes",
+    "Full Redis ops (persistence, cluster topology deep dive)",
+    "LLM token bucket billing systems (product-specific)",
+    "Browser HTTP cache / service workers"
+  ],
+  "priority": "P1",
+
+  "defaults": {
+    "store": "Redis (redis.asyncio) shared across uvicorn workers",
+    "rate_limit_lib": "slowapi + limits Redis storage OR fastapi-limiter / custom Lua token bucket — pick one stack per service",
+    "keying": "auth: user_id (or sub); anon: hashed IP + route; never trust raw X-Forwarded-For without proxy trust",
+    "algorithms": "sliding window or fixed window for APIs; token bucket for bursty LLM routes",
+    "response_429": "status 429, code RATE_LIMIT, optional Retry-After; do not leak internal keys",
+    "order": "auth (if required) → rate limit → validate → handler (aligns with backend-api gates)",
+    "cache": "cashews or manual redis.get/set for app cache; hishel for outbound HTTP cache",
+    "cache_when": "Only GET/HEAD public or per-user responses; never cache authenticated responses under shared keys",
+    "ttl": "Short TTLs (seconds–minutes) with explicit invalidation on writes",
+    "local_dev": "memory backend OK for single-process; CI must not assume multi-instance fairness"
+  },
+  "decision_gates": {
+    "rate_limit_when": [
+      "Auth, signup, password reset, billing, contact, AI generation, expensive search",
+      "Public unauthenticated endpoints",
+      "Any endpoint abusable for cost amplification"
+    ],
+    "cache_when": [
+      "Read-heavy reference data with tolerable staleness",
+      "Expensive computed GET with invalidation path",
+      "Outbound idempotent HTTP (hishel) to third parties"
+    ],
+    "do_not_cache_when": [
+      "Responses with user PII under global keys",
+      "POST/PATCH/DELETE responses",
+      "SSE/streaming bodies",
+      "Security-sensitive decisions that must be real-time"
+    ],
+    "alternatives": {
+      "edge_waf": "Cloudflare/nginx limit_req for coarse IP limits",
+      "upstash_ts": "Next BFF uses @upstash/ratelimit; Python uses redis-py against same Redis if shared",
+      "in_process_aiolimiter": "Single-process only; wrong for multi-worker prod"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Key by authenticated principal first, IP second",
+      "Use Redis from lifespan; health-check Redis for readiness if required for correctness",
+      "Document limit budgets per route class in OpenAPI/description",
+      "Include route name in rate limit key",
+      "Invalidate or namespace-bump caches on mutations",
+      "Fail policy: decide closed (429/503 if Redis down) vs open (fail-open) explicitly — prefer fail-closed for auth"
+    ],
+    "dont": [
+      "Don't use pure in-memory limits as the only prod control with multiple workers",
+      "Don't rate-limit solely on client-supplied user id header",
+      "Don't cache Set-Cookie or Authorization-varying responses without Vary and private keys",
+      "Don't infinite TTL without eviction plan",
+      "Don't put unbounded request bodies into cache keys",
+      "Don't skip limits on 'internal' routes exposed publicly"
+    ]
+  },
+  "code_skeleton": "import time\nfrom collections.abc import AsyncIterator, Callable\nfrom contextlib import asynccontextmanager\nfrom typing import Annotated\n\nimport redis.asyncio as redis\nfrom fastapi import Depends, FastAPI, HTTPException, Request, status\nfrom pydantic import BaseModel\n\nWINDOW_SEC = 60\nLIMIT = 30\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    app.state.redis = redis.from_url(\"redis://localhost:6379/0\", decode_responses=True)\n    yield\n    await app.state.redis.aclose()\n\napp = FastAPI(lifespan=lifespan)\n\nasync def get_redis() -> redis.Redis:\n    return app.state.redis\n\nRedisDep = Annotated[redis.Redis, Depends(get_redis)]\n\nasync def rate_limit_user(r: redis.Redis, *, key: str, limit: int = LIMIT, window: int = WINDOW_SEC) -> None:\n    # simple fixed window; production often uses sliding window or INCR+EXPIRE patterns / Lua\n    bucket = f\"rl:{key}:{int(time.time()) // window}\"\n    count = await r.incr(bucket)\n    if count == 1:\n        await r.expire(bucket, window)\n    if count > limit:\n        raise HTTPException(\n            status_code=status.HTTP_429_TOO_MANY_REQUESTS,\n            detail={\"error\": \"Too many requests\", \"code\": \"RATE_LIMIT\"},\n            headers={\"Retry-After\": str(window)},\n        )\n\nclass Item(BaseModel):\n    id: str\n    name: str\n\n@app.get(\"/v1/items/{item_id}\")\nasync def get_item(item_id: str, request: Request, r: RedisDep) -> Item:\n    user = request.headers.get(\"x-user-id\", \"anon\")  # replace with JWT sub\n    await rate_limit_user(r, key=f\"user:{user}:get_item\")\n    cache_key = f\"cache:item:{item_id}\"\n    cached = await r.get(cache_key)\n    if cached:\n        return Item.model_validate_json(cached)\n    item = Item(id=item_id, name=\"demo\")  # DB fetch\n    await r.set(cache_key, item.model_dump_json(), ex=60)\n    return item\n",
+  "failure_modes": [
+    "In-memory limiter per worker → effective limit × N workers",
+    "Redis outage: unhandled exceptions → 500 storms; or silent fail-open abuse",
+    "X-Forwarded-For spoofing → wrong tenant limited or attacker bypass",
+    "Cache key collision across tenants (IDOR via cache)",
+    "Stale cache after write without invalidation",
+    "Hot key thundering herd on expiry",
+    "Rate limit key cardinality explosion (unique key per request body hash)"
+  ],
+  "anti_patterns": [
+    "Global single counter for all users",
+    "Caching error responses long-term",
+    "Storing full sensitive payloads in Redis without TTL/encryption policy",
+    "slowapi in-memory only in multi-replica k8s",
+    "Client-side only rate limits"
+  ],
+
+  "tools": {
+    "primary": ["redis", "limits"],
+    "fastapi_helpers": ["slowapi", "fastapi-limiter"],
+    "app_cache": ["cashews", "manual redis"],
+    "http_cache": ["hishel"],
+    "testing": ["fakeredis", "testcontainers redis", "pytest"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "redis": "8.0.1",
+    "limits": "5.8.0",
+    "slowapi": "0.1.10",
+    "fastapi-limiter": "0.2.0",
+    "cashews": "7.5.0",
+    "hishel": "1.3.0",
+    "aiolimiter": "1.2.1 (in-process only)",
+    "cachetools": "7.1.4 (process-local)"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"redis>=5.0,<9\",\n  \"limits>=5.8,<6\",\n  \"slowapi>=0.1.9,<0.2\",\n  # optional: \"cashews[redis]>=7.5,<8\",\n]\n",
+    "env": "REDIS_URL=redis://localhost:6379/0\nRATE_LIMIT_DEFAULT=60/minute\n",
+    "slowapi_sketch": "# from slowapi import Limiter\n# from slowapi.util import get_remote_address\n# limiter = Limiter(key_func=get_remote_address, storage_uri=os.environ['REDIS_URL'])\n# app.state.limiter = limiter\n"
+  },
+  "deprecation_watch": [
+    "redis-py-cluster package (old) — use redis-py cluster support",
+    "Process-local cachetools as only cache in multi-instance APIs",
+    "fastapi-cache2 lightly maintained patterns without review",
+    "Fail-open rate limits on login without monitoring"
+  ],
+
+  "ts_boundary": "Next Server Actions use Upstash Ratelimit (backend-api.md). If Python and Next share abuse surface, use consistent key namespaces (e.g. rl:login:user:) and preferably same Redis. Do not double-charge users with unrelated tight limits on BFF and Python without design. Browser never talks to Redis.",
+  "rust_boundary": "Edge rate limit / high QPS gateways may live in Axum+Redis or infra (envoy). Python app limits remain defense in depth for expensive AI routes.",
+  "supabase_boundary": "Don't use Postgres as a general rate-limit store (row churn). Redis is appropriate. Cache invalidation on Supabase writes may need webhooks or application-level deletes. Never cache service_role results into a public key space.",
+  "boundary_contracts": [
+    "429 JSON {error, code: RATE_LIMIT, request_id}",
+    "Retry-After header when known",
+    "REDIS_URL in settings; separate DB index for rl vs cache if needed",
+    "Document limit tiers per API product",
+    "Cache-Control on public GETs when CDN involved"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Abuse control and hot-read caching",
+    "python": "Redis + slowapi/limits or custom; cashews/redis cache",
+    "ts": "Upstash ratelimit in Server Actions; Next cache tags",
+    "rust": "Edge limiter for ultra-high QPS"
+  },
+
+  "threats": [
+    "DoS / cost amplification on AI and search",
+    "Credential stuffing without login limits",
+    "Cache poisoning / cross-tenant data leak via bad keys",
+    "Bypass via IP spoof headers",
+    "Redis as unauthenticated open service on network"
+  ],
+  "mitigations": [
+    "Authenticated keys + trusted proxy config",
+    "Fail-closed on auth endpoints when Redis down",
+    "Tenant-scoped cache keys; private Cache-Control",
+    "Network ACL + AUTH on Redis; TLS in cloud",
+    "WAF/edge limits as outer layer",
+    "Monitor 429 rates and Redis errors"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Rate limit on auth and expensive routes",
+      "Redis client lifecycle in lifespan",
+      "429 with stable error code",
+      "Cache keys including tenant/user when data is not public"
+    ],
+    "must_not_generate": [
+      "In-memory only limiter for multi-worker prod default",
+      "Global cache key for user-specific data",
+      "Cache POST bodies as public responses",
+      "Hardcoded redis:// without settings"
+    ]
+  },
+
+  "tests_required": [
+    "N+1th request returns 429",
+    "Different users independent budgets",
+    "Cache hit does not call DB (mock)",
+    "Mutation invalidates or bumps cache",
+    "Redis down behavior (expected 503/429 vs documented fail-open)",
+    "Proxy header spoof unit test for key func"
+  ],
+  "ci_gates": [
+    "pytest with fakeredis or testcontainers",
+    "ruff + basedpyright",
+    "No secrets in redis URLs committed"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "redis.asyncio or redis.from_url in lifespan",
+      "HTTP 429 RATE_LIMIT handling",
+      "rate limit key includes user or route",
+      "cache key with tenant/user for private data"
+    ],
+    "negative": [
+      "only collections.Counter / dict rate limit in prod settings",
+      "cache key = f\"item:{id}\" for per-user inventory without user",
+      "except Exception: pass on rate limit errors",
+      "TTL missing on set()"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Redis-backed rate limits required for multi-worker FastAPI as_of 2026-07-13",
+    "Key by user id when authenticated; trusted IP when not",
+    "429 + Retry-After + stable error code",
+    "Cache only safe reads; tenant-safe keys; TTL + invalidation",
+    "Order: auth → rate limit → validate → mutate (backend-api aligned)",
+    "Edge/WAF complements but does not replace app limits on expensive routes"
+  ],
+  "action_items": [
+    "Document default budgets in python.md",
+    "Scan for in-memory-only limiters in prod configs",
+    "Sample Redis rate limit + cache snippet",
+    "Cross-link backend-api Upstash section"
+  ],
+  "checklist": [
+    "Sensitive routes limited",
+    "Redis AUTH/network secure",
+    "Keys include principal",
+    "429 shape stable",
+    "Cache TTLs set",
+    "Invalidation on writes",
+    "Redis failure mode documented",
+    "Tests for 429 and cache hit"
+  ],
+
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": [
+    "slowapi still labels alpha-quality API in docs while widely used; fastapi-limiter API differs — pick one and standardize",
+    "Fail-open vs fail-closed on Redis outage is product-specific; skill defaults fail-closed for auth, configurable for public reads",
+    "CDN caching vs app Redis cache responsibilities often dual — document layers"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://redis.readthedocs.io/",
+    "https://limits.readthedocs.io/",
+    "https://slowapi.readthedocs.io/",
+    "https://github.com/laurentS/slowapi",
+    "https://github.com/long2ice/fastapi-limiter",
+    "https://github.com/Krukov/cashews",
+    "https://hishel.com",
+    "https://pypi.org/project/redis/"
+  ],
+  "local_sources": [
+    "./references/backend-api.md",
+    "./references/backend-security.md",
+    "./references/api-data-flows.md",
+    "./research/python/outline.yaml"
+  ]
+}

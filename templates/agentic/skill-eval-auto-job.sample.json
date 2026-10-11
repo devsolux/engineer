@@ -1,0 +1,57 @@
+{
+  "schema_version": 5,
+  "run_kind": "illustrative_fixture",
+  "run_id": "engineer-routing-auto-smoke-001",
+  "host": "codex",
+  "host_inventory": {
+    "path": "templates/agentic/host-capabilities.sample.json",
+    "sha256": "486ade57ddc223ce3c4c8efb315b1140bd6045ee9b3ab6214027b9618d34a061",
+    "host": "codex",
+    "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "version_output_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "help_output_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "required_capabilities": ["approvals", "non_interactive", "sandbox", "strict_config"]
+  },
+  "authentication": {
+    "mode": "api_key_env",
+    "api_key_env": "CODEX_API_KEY",
+    "isolated_home": true,
+    "cached_credentials_allowed": false,
+    "keyring_allowed": false
+  },
+  "skill_bundle": {
+    "source_root": ".",
+    "sha256": "c091783966490a62325a0371cb5e6fb915dd9214599584f8cb5b7b7bfb8aced4",
+    "version": "1.0.0",
+    "include": ["SKILL.md", "COMPAT.md", "agents", "commands", "references", "scripts", "templates"],
+    "exclude_prefixes": ["scripts/capture-skill-eval.py", "scripts/test-skill-eval-capture", "scripts/validate-skill-eval-capture.py", "templates/agentic/host-capabilities", "templates/agentic/skill-eval", "templates/agentic/engineer-telemetry", "templates/fixtures/skill-eval"],
+    "expectations_excluded": true
+  },
+  "model": "default",
+  "scenario": {
+    "id": 121,
+    "activation_mode": "implicit",
+    "invocation": null,
+    "activation_probe": {
+      "request": "[routing-probe:alpha]",
+      "response_sha256": "709f2acbfcb7c0d2116270a51370509249e45c791c5f589e7be4b0241988e434"
+    },
+    "source_path": "evals/evals.json",
+    "source_sha256": "9525f39f8234954d378a3f4e03596fb4dcbaf5370732a0a90120dba494ad1990",
+    "expectations_exposed": false
+  },
+  "workspace": "templates/fixtures/skill-eval/workspace",
+  "fixture_marker": ".engineer-eval-fixture",
+  "permissions": {
+    "sandbox": "read_only",
+    "network": "deny",
+    "allowed_tools": ["Read", "Glob", "Grep"],
+    "external_writes": false
+  },
+  "budgets": {
+    "timeout_seconds": 300,
+    "max_turns": 12,
+    "max_cost_usd": 1.0
+  },
+  "output_dir": ".engineer/eval-captures/engineer-routing-auto-smoke-001"
+}

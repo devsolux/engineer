@@ -1,0 +1,57 @@
+{
+  "name": "uv audit + malware check + lock discipline",
+  "item_id": "py-uv-audit-supply-chain",
+  "cluster": "tooling",
+  "priority": "P0",
+  "short_definition": "Supply-chain hardening for uv-managed Python: commit and freeze on uv.lock, run `uv audit` for known vulnerabilities/adverse statuses, enable install-time OSV MAL malware checks (UV_MALWARE_CHECK), and apply dependency cooldowns (`exclude-newer`) so brand-new PyPI uploads cannot enter the tree before ecosystem detection windows close.",
+  "scope_in": "uv.lock discipline (locked/frozen CI); uv audit (preview as of 2026-06); UV_MALWARE_CHECK / malware-check; exclude-newer cooldowns and exclude-newer-package exceptions; hash-backed lock trust; index strategy (first-index); Renovate/Dependabot cooldown alignment; incident lessons (e.g. LiteLLM/Telnyx-class attacks); agent rules for adding deps.",
+  "scope_out": "Application auth/SSRF (py-auth-security); full SBOM legal program; non-Python npm supply chain; runtime sandboxing of untrusted code; replacing human review of new direct dependencies.",
+
+  "defaults": "Always: commit uv.lock; CI `uv sync --frozen` (or --locked on verify). Enable project cooldown `[tool.uv] exclude-newer = \"7 days\"` for apps (30 days for high-security/prod-only internal tools). CI + release: `uv audit` fails build on known vulns (triage allowlist only with ticket). Dev+CI: `UV_MALWARE_CHECK=1` on sync/add (requires uv>=0.11.16; experimental — still enable). Prefer single default index (PyPI) with first-index strategy; private index carefully ordered. Never install from unpinned main branch of deps. Weekly automated lock refresh behind cooldown + audit. Document `exclude-newer-package = { critical = false }` only for emergency CVE patches inside window.",
+  "decision_gates": "USE uv audit: all services and libraries with lockfiles. USE malware check: all CI and developer machines that sync prod-like trees. USE 7d cooldown: default apps; 30d: regulated/high-risk. DISABLE cooldown temporarily: only with explicit security patch exception on named packages. USE pip-audit: legacy if uv audit unavailable (older uv) — migrate. DO NOT treat audit clean as 'safe code' — reachability/malware zero-days remain. DO NOT run only audit without lock+cooldown (detection lag).",
+  "do_dont": "DO: commit lock; frozen sync in CI/Docker; UV_MALWARE_CHECK=1; exclude-newer 7 days; uv audit in CI; review new direct deps (maintainer, age, downloads, typosquat); align Dependabot/Renovate cooldown with exclude-newer. DON'T: `uv add` random packages from chat without pin intent; delete lock to 'fix CI'; use --index-strategy unsafe-best-match casually; trust PyPI quarantine alone (lock may still fetch object storage); disable malware check to silence errors; put secrets in dependency URLs.",
+  "code_skeleton": "# pyproject.toml\n[project]\nname = \"acme-api\"\nrequires-python = \">=3.12\"\ndependencies = [\"fastapi>=0.115\", \"httpx>=0.27\"]\n\n[tool.uv]\nexclude-newer = \"7 days\"\n# Emergency CVE override example:\n# exclude-newer-package = { \"vulnerable-lib\" = false }\n\n# CI\n# env:\n#   UV_MALWARE_CHECK: \"1\"\n# steps:\n#   - uv sync --frozen\n#   - uv audit\n#   - uv run pytest\n\n# Local\n# export UV_MALWARE_CHECK=1\n# uv lock\n# uv sync\n# uv audit\n\n# Docker build\n# RUN UV_MALWARE_CHECK=1 uv sync --frozen --no-dev",
+  "failure_modes": "1) Lockfile pins compromised version quarantined on index but still installable via direct URL/object storage without malware check. 2) Alert fatigue if audit not triaged → team ignores real CVEs. 3) exclude-newer causes cryptic 'no version' resolution errors. 4) Dependabot opens PR for package newer than cooldown → lock fight. 5) Preview audit CLI flags change (unstable). 6) Transitive malware in unused extra still installs. 7) Offline CI without OSV cache fails closed or open incorrectly.",
+  "anti_patterns": "Agents must not: omit uv.lock; suggest `pip install` without lock for apps; add deps without updating lock; disable UV_MALWARE_CHECK in templates; use exclude-newer false globally for convenience; recommend safety/pip-audit as primary when uv audit available; install pre-release by default; pull git deps at floating branch.",
+
+  "tools": "Primary: uv lock/sync/audit, UV_MALWARE_CHECK, OSV/MAL advisories, exclude-newer. Secondary: pip-audit (legacy), Socket/uv-secure (uv-secure deprecated in favor of uv audit), GitHub Dependabot/Renovate with cooldown, optional SBOM export. Not default: full commercial SCA unless org requires.",
+  "versions_as_of": "as_of 2026-07-13: uv 0.11.28 latest PyPI; uv audit + malware checks announced 2026-06-08 (preview/unstable); malware check needs uv>=0.11.16; UV_MALWARE_CHECK=1 opt-in (default enable under evaluation by Astral). Local brew may be 0.11.23 — ensure CI uses recent uv for audit.",
+  "config_snippets": "# pyproject.toml\n[tool.uv]\nexclude-newer = \"7 days\"\n\n# dependabot.yml fragment\n# updates:\n#   - package-ecosystem: \"uv\"\n#     directory: \"/\"\n#     schedule: { interval: \"weekly\" }\n#     cooldown: { default-days: 7 }\n\n# GHA\n# - name: Supply chain\n#   env:\n#     UV_MALWARE_CHECK: \"1\"\n#   run: |\n#     uv sync --frozen\n#     uv audit\n\n# User-wide hardening ~/.config/uv/uv.toml\n# exclude-newer = \"7 days\"",
+  "deprecation_watch": "uv-secure (author deprecated for uv audit); relying solely on pip-audit for uv.lock workflows; floating requirements.txt without lock for deployable services; poetry.lock dual management; unsafe multi-index resolution; post-install-only scanning without install-time malware gate.",
+
+  "ts_boundary": "npm/pnpm supply chain is separate (pnpm overrides, lockfile, audit). BFF in Next must not shell out to `uv add` at runtime. Shared: both ecosystems need lock+cooldown discipline. Python service deps audited in Python CI; do not assume npm audit covers PyPI.",
+  "rust_boundary": "Cargo.lock + cargo audit/deny for Rust services — parallel discipline, different tooling. Prefer Rust for security-sensitive parsers when threat model warrants. Cross-ecosystem: compromise in Python LLM gateway (historical LiteLLM-class) can still steal secrets used by Rust — isolate credentials per service.",
+  "supabase_boundary": "Never put Supabase service role keys in package deps or PyPI-published code. Compromised dependency with import-time code execution can exfiltrate env — minimize env in process; use short-lived secrets; malware check reduces but does not eliminate risk. DB access from least-privilege roles.",
+  "boundary_contracts": "Lockfile is the deploy contract for Python deps. Document allowed indexes in pyproject. CI gate = sync frozen + audit + tests. MCP/tool servers: same audit on their locks; never dynamic pip install of user-specified packages without allowlist.",
+  "decision_matrix_row": "Problem: reproducible secure install → uv.lock + frozen sync (Python). Problem: known CVEs in tree → uv audit CI fail. Problem: brand-new malicious publish → exclude-newer + UV_MALWARE_CHECK. Problem: TS app deps → pnpm lock + npm audit ecosystem. Problem: ultra-hot path crypto parser → Rust + cargo audit, not more Python deps.",
+
+  "threats": "Typosquatting; dependency confusion (multi-index); malicious updates to popular packages; lockfile pinning post-quarantine artifacts; compromised maintainer accounts; install-time code execution (setup/wheel); credential theft from env during import; LLM-generated copycat packages on PyPI; transitive dark deps.",
+  "mitigations": "Lock + frozen; first-index strategy; exclude-newer 7d; UV_MALWARE_CHECK=1; uv audit CI; review direct deps; pin CI action SHAs; least-privilege tokens; separate build vs runtime deps; no arbitrary package install from user input; cooldown on hook/tool updates too (prek --cooldown-days).",
+  "agent_codegen_policy": "MUST: commit uv.lock; CI frozen sync; include uv audit step; set exclude-newer for apps; document UV_MALWARE_CHECK=1. MUST NOT: add dependency without lock update; suggest ignoring audit failures; generate multi-index unsafe strategies; recommend pip install -r without hashes for production services.",
+
+  "tests_required": "CI integration: audit job on every PR; optional known-vuln fixture in policy tests. Build smoke: clean Docker uv sync --frozen with malware check. No unit test substitutes for OSV freshness.",
+  "ci_gates": "uv sync --frozen; UV_MALWARE_CHECK=1; uv audit (fail on high/critical or any per policy); lockfile present and not dirty; optional license/deny lists later.",
+  "skill_scan_signals": "POSITIVE: uv.lock committed; exclude-newer set; CI audit + frozen; UV_MALWARE_CHECK in CI env. NEGATIVE: no lock; requirements.txt only for apps; poetry+uv dual; audit skipped; unsafe-best-match; floating git deps; agents adding deps in README without lock.",
+
+  "skill_module_bullets": "- Commit uv.lock; CI: uv sync --frozen + uv audit.\n- Enable UV_MALWARE_CHECK=1 on sync (preview; still required for greenfield policy).\n- exclude-newer = \"7 days\" default; 30 days high-security; per-package break-glass.\n- Align Renovate/Dependabot cooldowns with exclude-newer.\n- Lock does not see PyPI quarantine — malware check closes that gap; cooldown covers detection lag.\n- Agents: never add deps without lock + human-worthy review cues.",
+  "action_items": "1) Document supply-chain triad in python.md. 2) CI template: frozen+audit+malware env. 3) Default pyproject snippet with exclude-newer. 4) Scan: missing lock / missing audit job. 5) Track uv audit preview→stable for flag renames.",
+  "checklist": "[ ] uv.lock committed\n[ ] CI uv sync --frozen\n[ ] UV_MALWARE_CHECK=1 in CI (and recommended locally)\n[ ] uv audit in CI\n[ ] exclude-newer configured\n[ ] Dependabot/Renovate cooldown aligned\n[ ] Index strategy safe (first-index)\n[ ] No floating git deps for prod\n[ ] Break-glass package exceptions documented\n[ ] Secrets not in install-time import path beyond need",
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "uv audit and malware check are preview (2026-06); flags/UX may break — pin uv in CI. Malware check not default-on yet; policy enables anyway. pip-audit still appears in older guides; prefer uv audit on modern uv. Cooldown vs need-for-speed: product teams may push 3 days — 7 remains default recommendation post LiteLLM-class 2026 incidents.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://astral.sh/blog/uv-audit",
+    "https://docs.astral.sh/uv/reference/cli/#uv-audit",
+    "https://docs.astral.sh/uv/concepts/resolution/#dependency-cooldowns",
+    "https://pydevtools.com/handbook/how-to/how-to-protect-against-python-supply-chain-attacks-with-uv/",
+    "https://blog.pypi.org/posts/2026-04-02-incident-report-litellm-telnyx-supply-chain-attack/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

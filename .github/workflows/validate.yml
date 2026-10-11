@@ -1,0 +1,50 @@
+name: Validate Engineer
+on:
+  workflow_dispatch:
+  # push:
+  # pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+            typescript: '5.8.3'
+          - os: ubuntu-latest
+            python: '3.13'
+            typescript: '7.0.2'
+          - os: macos-latest
+            python: '3.13'
+            typescript: '7.0.2'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install fixture toolchain
+        run: |
+          python -m pip install -r requirements-dev.txt
+          npm install --no-save --ignore-scripts --package-lock=false typescript@${{ matrix.typescript }}
+      - name: Static checks
+        run: make check
+      - name: All offline fixtures
+        run: make test JOBS=4
+      - name: Reproducible release check
+        run: |
+          make verify-build
+          make package

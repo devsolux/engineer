@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_kind": "illustrative_fixture",
+  "run_id": "browser_multilane_fixture_001",
+  "concurrency": {
+    "max_parallel": 4,
+    "shared_write_max_parallel": 1,
+    "cross_lane_account_overlap": "deny_when_any_lane_writes",
+    "artifact_roots_unique": true,
+    "cleanup_required": true
+  },
+  "lanes": [
+    {
+      "id": "public-read-fixture",
+      "mode": "public_read",
+      "worker_id": "worker-0",
+      "namespace": "browser-fixture-0",
+      "account_id_sha256": null,
+      "tenant_id_sha256": null,
+      "mutation_scope": "read_only",
+      "artifact_root": "browser-session-evidence",
+      "receipt_path": "browser-session.sample.json",
+      "receipt_sha256": "bee2c81a5e73c4b4c1ff1b2d3d5239ebe748c91773bbfbd925c964b3b5819db2"
+    }
+  ],
+  "review": {
+    "reviewer": "fixture-lane-reviewer",
+    "all_sessions_reviewed": true,
+    "isolation_reviewed": true,
+    "cleanup_reviewed": true,
+    "approved": false,
+    "notes": "Illustrative aggregate validates structure but cannot authorize a browser run."
+  },
+  "decision": {
+    "outcome": "fail",
+    "reasons": ["Illustrative aggregate only."],
+    "unresolved_risks": ["No real parallel sessions were captured."]
+  }
+}

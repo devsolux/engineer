@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engineer.local/plan-artifact.schema.json",
+  "title": "engineer Plan artifact (Plan → Validate → Execute)",
+  "type": "object",
+  "required": ["schema_version", "kind", "title", "status"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "kind": {
+      "type": "string",
+      "enum": ["feature", "schema", "scan-fix", "ship"]
+    },
+    "title": { "type": "string", "minLength": 3 },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "approved", "executing", "in_progress", "done", "verified", "completed", "abandoned", "superseded"],
+      "description": "Lifecycle: draft → approved → executing/in_progress → done (→ verified). completed is an accepted alias of done; superseded means replaced by the plan named in superseded_by. Terminal plans stay in place as receipts."
+    },
+    "venture_or_app": { "type": "string" },
+    "stream": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Optional ownership/scope slug for the workstream this plan owns. For named plans (.engineer/plans/<slug>.json) it must equal the file slug. Absent on a shared .engineer/plan.json means legacy shared plan: a session whose scope does not match must split off its own named plan and never contest this file."
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["planned", "adopted-mid-session", "sidequest"],
+      "description": "Provenance: planned (written before execution); adopted-mid-session (created retroactively for work already in flight; requires resume_context capturing what was already done — an honest receipt, never a pretend pre-dated plan); sidequest (halt-and-return detour opened by an explicit user 'sidequest' trigger; should name the halted parent stream in interrupts)."
+    },
+    "interrupts": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Parent stream slug this sidequest halted (LIFO stack discipline: the parent resumes from its resume_context only after this plan is terminal). Valid only with origin: sidequest — general plan hierarchy is deliberately unsupported."
+    },
+    "resume_context": {
+      "type": "string",
+      "minLength": 10,
+      "description": "What a fresh session needs to pick up this stream: state of work, decisions taken, next step, verify status."
+    },
+    "session_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Append-only per-session breadcrumbs for multi-session streams."
+    },
+    "superseded_by": {
+      "type": "string",
+      "description": "Path or slug of the plan that replaces this one (plan chaining). Set it on the old plan only if this session owns that plan."
+    },
+    "summary": { "type": "string" },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "files_touch": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "verify_commands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Commands that must pass after execute"
+    },
+    "complexity": {
+      "type": "object",
+      "required": ["need_now", "simplest_viable_design", "evidence", "new_abstractions", "new_runtime_components", "rejected_options", "reversibility", "solid_justifications"],
+      "properties": {
+        "need_now": { "type": "string", "minLength": 10 },
+        "simplest_viable_design": { "type": "string", "minLength": 10 },
+        "evidence": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 3 } },
+        "new_abstractions": { "type": "array", "items": { "type": "string" } },
+        "new_runtime_components": { "type": "array", "items": { "type": "string" } },
+        "rejected_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["option", "reason"],
+            "properties": { "option": { "type": "string" }, "reason": { "type": "string" } }
+          }
+        },
+        "reversibility": {
+          "type": "object",
+          "required": ["class", "rollback", "decision_record"],
+          "properties": {
+            "class": { "enum": ["reversible", "costly", "irreversible"] },
+            "rollback": { "type": "string" },
+            "decision_record": { "type": ["string", "null"] }
+          }
+        },
+        "solid_justifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["principle", "observed_pressure", "boundary"],
+            "properties": {
+              "principle": { "enum": ["SRP", "OCP", "LSP", "ISP", "DIP"] },
+              "observed_pressure": { "type": "string" },
+              "boundary": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "columns": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "rls_policies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table", "name"],
+        "properties": {
+          "table": { "type": "string" },
+          "name": { "type": "string" },
+          "ops": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "migrations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tests": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "rule_id", "proposed_fix", "verify_command"],
+        "properties": {
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "rule_id": { "type": "string" },
+          "proposed_fix": { "type": "string" },
+          "verify_command": { "type": "string" }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Observable conditions that define done, checkable without interpreting intent."
+    },
+    "verification": {
+      "type": "object",
+      "required": ["result", "evidence"],
+      "properties": {
+        "result": { "type": "string", "enum": ["passed", "failed", "partial"] },
+        "evidence": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "verified_at": { "type": "string" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      },
+      "description": "Canonical verification receipt. Legacy improvised spellings (verification_result, verification_results, verification_notes, verification_evidence, top-level evidence) still validate but are deprecated — write this object going forward."
+    },
+    "integration": {
+      "type": "object",
+      "properties": {
+        "branch": { "type": "string", "description": "Plan branch; convention plan/<slug>" },
+        "worktree": { "type": "string", "description": "Durable linked worktree; convention .worktrees/<repo>/<slug> per the workspace registry" },
+        "base": { "type": "string", "description": "Integration base branch (default main); rebase on it at session start and before merge" },
+        "rebased_at": { "type": "string" },
+        "merge_commit": { "type": "string" },
+        "merged_at": { "type": "string" },
+        "disposition": {
+          "type": "string",
+          "enum": ["merged", "parked", "discarded"],
+          "description": "Terminal fate of the plan branch. done + branch requires merge_commit (merged) or an explicit parked/discarded disposition — orphaned plan/ branches are a finding."
+        }
+      },
+      "description": "Branch-per-plan integration state. Proportionality: single stream in a single session works on main with no branch; a branch is required when a second stream activates or the plan is multi-session (workflows.md)."
+    },
+    "approved_at": { "type": "string" },
+    "approved_by": { "type": "string" },
+    "completed_at": { "type": "string" },
+    "verified_at": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["approved", "executing", "in_progress", "done"] } } },
+      "then": { "required": ["complexity"] }
+    },
+    {
+      "if": { "required": ["origin"], "properties": { "origin": { "const": "adopted-mid-session" } } },
+      "then": { "required": ["resume_context"] }
+    },
+    {
+      "if": { "required": ["interrupts"] },
+      "then": { "required": ["origin"], "properties": { "origin": { "const": "sidequest" } } }
+    },
+    {
+      "if": {
+        "required": ["integration"],
+        "properties": {
+          "status": { "enum": ["done", "verified", "completed"] },
+          "integration": { "required": ["branch"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "integration": {
+            "anyOf": [
+              { "required": ["merge_commit"] },
+              { "properties": { "disposition": { "enum": ["parked", "discarded"] } }, "required": ["disposition"] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "schema" } } },
+      "then": {
+        "required": ["tables", "rls_policies", "migrations", "tests", "risks"]
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "scan-fix" } } },
+      "then": { "required": ["findings"] }
+    }
+  ]
+}

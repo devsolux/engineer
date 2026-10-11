@@ -1,0 +1,63 @@
+# Engineering preset: security landscape / control evaluation
+evidence_policy:
+  mode: claim_v1
+  semantic_review: required
+  identity_fields: [name, sources]
+field_categories:
+  - category: Basic Info
+    fields:
+      - name: name
+        description: Control, threat class, or vendor name
+        detail_level: brief
+        required: true
+      - name: category
+        description: threat | control | vendor | standard
+        detail_level: brief
+        required: true
+      - name: references
+        description: Spec or vendor docs URLs
+        detail_level: moderate
+  - category: Threat / Control
+    fields:
+      - name: description
+        description: What it is in plain language
+        detail_level: moderate
+        required: true
+      - name: attack_surface
+        description: Where it shows up in a SaaS (auth, webhooks, deps…)
+        detail_level: moderate
+      - name: severity_if_missed
+        description: Practical impact if ignored
+        detail_level: moderate
+        required: true
+  - category: Implementation
+    fields:
+      - name: recommended_controls
+        description: Concrete mitigations for TS/Next/Supabase stacks
+        detail_level: detailed
+        required: true
+      - name: tooling
+        description: Libraries, scanners, managed services
+        detail_level: moderate
+      - name: verification
+        description: How to test or prove the control works
+        detail_level: moderate
+  - category: Compliance Linkage
+    fields:
+      - name: maps_to
+        description: OWASP, SOC2 criteria, GDPR article if relevant
+        detail_level: moderate
+      - name: residual_risk
+        description: What remains after controls
+        detail_level: moderate
+  - category: Decision
+    fields:
+      - name: priority
+        description: P0 | P1 | P2 for a typical SaaS
+        detail_level: brief
+        required: true
+      - name: sources
+        description: Primary URLs
+        detail_level: detailed
+        required: true
+uncertain: []

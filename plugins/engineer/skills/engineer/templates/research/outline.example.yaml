@@ -1,0 +1,22 @@
+# Example outline — library evaluation
+topic: "Background job systems for Next.js SaaS 2026"
+preset: library-eval
+as_of: "2026-07-13"
+items:
+  - name: Inngest
+    category: managed-queue
+    description: Event-driven durable functions; strong Vercel story
+  - name: Trigger.dev
+    category: managed-queue
+    description: Background jobs oriented to Next.js developers
+  - name: pg-boss
+    category: postgres-queue
+    description: Postgres-backed job queue for Node
+  - name: BullMQ
+    category: redis-queue
+    description: Redis-backed queues; high throughput
+execution:
+  batch_size: 2
+  items_per_agent: 1
+  output_dir: ./results
+  agent: web-search-agent

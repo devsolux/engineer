@@ -1,0 +1,79 @@
+{
+  "name": "Schemathesis OpenAPI contract testing",
+  "item_id": "py-contract-testing",
+  "cluster": "quality",
+  "priority": "P1",
+  "short_definition": "Property-based and conformance testing of HTTP APIs from the OpenAPI document: Schemathesis 4.x generates examples, fuzz inputs, coverage cases, and optional stateful chains, then validates responses against the schema — catching 500s, schema drift, and edge cases hand-written pytest misses.",
+  "scope_in": "Schemathesis CLI and pytest integration; OpenAPI 3.x from FastAPI (from_asgi / exported JSON); checks (status, response schema, content-type); phases (examples, fuzzing, coverage, stateful); auth headers for protected routes; CI job patterns; relationship to hand-written tests and consumer-driven contracts.",
+  "scope_out": "Unit/fixture design (py-testing); full CI matrix (py-ci-gates); GraphQL-only deep dive unless using Schemathesis GraphQL mode; Pact broker enterprise setup as default; load testing/k6.",
+
+  "defaults": "For FastAPI services: generate/export OpenAPI as source of truth (app.openapi() or /openapi.json). Prefer in-process testing via schemathesis.openapi.from_asgi(\"/openapi.json\", app) in pytest for speed and no port binding; use CLI `uvx schemathesis run <schema> -u <base>` against ephemeral compose stack for staging-like runs. Enable core checks (defaults in v4 run all available checks). Start with examples+fuzzing phases; add stateful when OpenAPI links exist for write→read flows. Authenticate test client with test JWTs/API keys via headers or hooks — never skip auth by disabling middleware globally in a way that diverges from prod. Keep Schemathesis in dev/CI dependency-group, not runtime. Fail CI on new server errors and response_schema_conformance violations; triage flaky health-checks carefully.",
+  "decision_gates": "USE Schemathesis: any public or BFF-facing OpenAPI service, especially FastAPI. USE pytest integration: local/CI without network. USE CLI against running service: multi-language APIs (Go/Rust) with published OpenAPI. USE Pact/consumer-driven: when multiple consumer teams need independent deploy contracts beyond provider schema fuzz. SKIP heavy stateful fuzz on every PR if slow — nightly + examples/coverage on PR. DO NOT treat Schemathesis as replacement for authz unit tests or business-rule tests. DO NOT run destructive stateful tests against shared staging without isolation.",
+  "do_dont": "DO: keep OpenAPI accurate (response_model, status codes); pin schemathesis; record curl reproducers from failures; exclude truly unsafe ops (DELETE all) via include/exclude filters; seed DB for required fixtures. DON'T: hand-edit generated OpenAPI out of band as only source; ignore schema failures as 'noise'; use discontinued Schemathesis.io SaaS flags from v3 guides; pass production tokens in CI logs; fuzz unlimited on paid third-party APIs.",
+  "code_skeleton": "# tests/contract/test_openapi.py\nimport pytest\nimport schemathesis\nfrom svc_api.main import create_app\n\napp = create_app()\nschema = schemathesis.openapi.from_asgi(\"/openapi.json\", app)\n\n@schema.parametrize()\ndef test_api(case):\n    # Optional: case.headers = {\"Authorization\": f\"Bearer {test_token}\"}\n    case.call_and_validate()\n\n# Fixture-based (DB-backed app)\n# schema = schemathesis.pytest.from_fixture(\"api_schema\")\n\n# CLI (v4)\n# uvx schemathesis run ./openapi.json -u http://127.0.0.1:8000 \\\n#   --checks all \\\n#   --header \"Authorization: Bearer $TEST_TOKEN\" \\\n#   --phases examples,fuzzing,coverage \\\n#   --max-examples 100\n\n# GitHub Action option:\n# - uses: schemathesis/action@v3  # pin SHA in real templates\n#   with:\n#     schema: \"http://localhost:8000/openapi.json\"\n#     base-url: \"http://localhost:8000\"",
+  "failure_modes": "1) Incomplete OpenAPI (missing response models) → false confidence. 2) Auth not applied → only public routes tested. 3) Stateful tests corrupt shared DB. 4) v3 CLI flags copied into v4 (removed --base-url style, Schemathesis.io options) → broken CI. 5) Flaky over-strict checks on undocumented error bodies. 6) Rate limits / WAF block fuzzer. 7) from_asgi app missing lifespan resources → false 500s.",
+  "anti_patterns": "Agents must not: invent v3-only APIs (schemathesis.from_asgi top-level without openapi namespace); recommend Schemathesis.io upload; disable all checks to go green; replace unit tests with fuzz only; commit production bearer tokens; run unbounded fuzz in PR without max-examples; claim GraphQL coverage without configuring GraphQL schema source.",
+
+  "tools": "Primary: Schemathesis 4.x (Hypothesis-powered). Complementary: openapi-spec-validator / spectral for static schema lint; schemathesis pytest plugin; optional Pact for consumer-driven. Alternatives: Dredd (aging), Postman monitors, manual httpx golden tests — weaker property coverage.",
+  "versions_as_of": "as_of 2026-07-13 — Schemathesis 4.22.4 on PyPI; Hypothesis 6.156.x typically co-installed. v4 is a major rewrite (CLI phases, openapi.* loaders, Schemathesis.io removed). Prefer docs.schemathesis.io migration guide when updating from 3.x. OpenAPI 3.0/3.1/3.2 supported per project docs.",
+  "config_snippets": "# pyproject dev group\n# schemathesis>=4.22\n\n# pytest: tests/contract marked\n# [tool.pytest.ini_options]\n# markers = [\"contract: openapi schemathesis\"]\n\n# CI sketch\n# - uv sync --frozen --all-groups\n# - uv run pytest tests/contract -m contract\n# # or\n# - uv run uvicorn svc_api.main:app --port 8000 &\n# - uvx schemathesis run http://127.0.0.1:8000/openapi.json -u http://127.0.0.1:8000 --max-examples 50\n\n# Config file (v4): schemathesis.toml for phases, headers, excludes — see official configuration reference",
+  "deprecation_watch": "Schemathesis v3 Python API (schemathesis.from_uri, from_asgi at top level); Schemathesis.io token/upload flags; --app CLI option; aiohttp loader; treating experimental flags still required; Dredd as greenfield default; hand-maintained Postman collections as only contract test.",
+
+  "ts_boundary": "Next/TS BFF should consume the same OpenAPI (codegen zod/types). Run Schemathesis against Python provider; optional TS consumer tests assert client types match. Do not re-specify the contract twice by hand. When BFF aggregates APIs, contract-test the public BFF schema separately.",
+  "rust_boundary": "Rust services exporting OpenAPI can be targeted by Schemathesis CLI the same way (language-agnostic). Prefer schema export from utoipa/etc. Property tests inside Rust (proptest) remain for pure functions; Schemathesis for HTTP surface.",
+  "supabase_boundary": "Supabase REST/GraphQL is a separate contract — do not expect Schemathesis on FastAPI to validate Supabase RLS. If Python wraps Supabase, test your facade's OpenAPI; use dedicated tests for RLS policies.",
+  "boundary_contracts": "OpenAPI document is the shared contract artifact (committed export or generated in CI from app). JSON Schema for events if async. Env for test auth only. MCP tools: separate schema — do not assume OpenAPI fuzz covers MCP.",
+  "decision_matrix_row": "Problem: API implements its own OpenAPI → Schemathesis provider tests. Problem: multi-consumer independent deploys → consider Pact + Schemathesis. Problem: pure domain → pytest unit. Problem: TS UI → Playwright. Problem: schema static lint only → spectral/redocly, still add Schemathesis for runtime.",
+
+  "threats": "Fuzzer triggers expensive side effects (sends email, moves money) on unprotected ops; secrets in Authorization headers printed in reports; SSRF-like generated URLs if API fetches user URLs; DoS against shared environments.",
+  "mitigations": "Exclude unsafe operations; use dedicated test env and accounts; sanitize reports (output sanitize options); cap examples; no prod base URL; rate-limit test app; review OpenAPI for dangerous ops before enabling stateful.",
+  "agent_codegen_policy": "MUST: Schemathesis v4 openapi.from_asgi or CLI against exported schema for FastAPI services with public OpenAPI; auth headers for protected routes; CI job or marked pytest. MUST NOT: v3-only APIs; Schemathesis.io; disable checks wholesale; store prod tokens; skip response models then claim contract coverage.",
+
+  "tests_required": "Contract job: Schemathesis parametrize or CLI; retain unit/integration for business rules. Optional nightly higher max-examples + stateful. Static OpenAPI lint optional companion.",
+  "ci_gates": "PR: examples/coverage or moderate max-examples fuzz on ASGI; fail on not_a_server_error + response_schema_conformance. Nightly: longer fuzz + stateful. Artifact: junit/HAR on failure.",
+  "skill_scan_signals": "POSITIVE: tests/contract or schemathesis in CI; from_asgi / openapi.json tested; response_model on routes. NEGATIVE: OpenAPI untested; v3-only config; docs disabled and no exported schema; only happy-path pytest for API; production URL in contract job.",
+
+  "skill_module_bullets": [
+    "Schemathesis 4.x is the default OpenAPI contract/fuzz tool for Python APIs.",
+    "Prefer schemathesis.openapi.from_asgi for FastAPI in pytest; CLI for running services.",
+    "v4 loaders live under schemathesis.openapi.* — do not copy v3 APIs.",
+    "Auth headers required for protected routes; exclude destructive ops from automated fuzz.",
+    "Contract tests complement, not replace, unit and integration tests.",
+    "Export or serve accurate OpenAPI (response_model) or checks are meaningless."
+  ],
+  "action_items": [
+    "Add Schemathesis v4 snippet to references/python.md.",
+    "Template tests/contract for FastAPI services.",
+    "Scan for untested OpenAPI / missing response_model.",
+    "Document v3→v4 migration pitfalls for agents."
+  ],
+  "checklist": [
+    "OpenAPI complete for public routes",
+    "Schemathesis v4 in dev/CI",
+    "from_asgi or CLI job present",
+    "Auth applied in contract tests",
+    "Unsafe ops excluded or isolated env",
+    "CI fails on server error + schema conformance",
+    "No prod tokens/URLs",
+    "Hand-written business tests still exist"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Older tutorials (incl. Docker Schemathesis.io tokens) are obsolete after Schemathesis.io discontinuation and v4 CLI redesign. pytest plugin patterns evolved (pytest.from_fixture). How aggressive PR vs nightly fuzz is team-specific — default moderate PR budget. Pact vs Schemathesis: different problems (consumer-driven vs provider property testing); can coexist.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://schemathesis.readthedocs.io/en/stable/",
+    "https://schemathesis.readthedocs.io/en/stable/migration/",
+    "https://schemathesis.readthedocs.io/en/stable/guides/python-apps/",
+    "https://schemathesis.readthedocs.io/en/stable/guides/cicd/",
+    "https://pypi.org/project/schemathesis/",
+    "https://github.com/schemathesis/schemathesis"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

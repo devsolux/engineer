@@ -1,0 +1,79 @@
+{
+  "name": "pytest + asyncio fixtures + testcontainers",
+  "item_id": "py-testing",
+  "cluster": "quality",
+  "priority": "P0",
+  "short_definition": "Default Python test stack for services: pytest 9.x as runner, pytest-asyncio for async FastAPI/SQLAlchemy/httpx tests, layered fixtures for settings/clients/DB, and testcontainers (Docker) for real Postgres/Redis integration tests — not SQLite-as-Postgres fakes for anything that touches SQL dialects or drivers.",
+  "scope_in": "pytest discovery and pyproject config; asyncio_mode auto/strict; async fixtures and loop scopes; httpx ASGITransport against FastAPI; fixture layering (unit vs integration markers); testcontainers Postgres/Redis; pytest-cov/xdist; factory/faker patterns; what belongs in unit vs integration vs e2e.",
+  "scope_out": "OpenAPI property fuzz (py-contract-testing / Schemathesis); full CI workflow orchestration (py-ci-gates); load/perf (py-perf-profiling); browser e2e (Playwright lives in TS); mocking external SaaS beyond boundary adapters.",
+
+  "defaults": "Runner: pytest (not unittest). Config in [tool.pytest.ini_options]. Async: pytest-asyncio with asyncio_mode = \"auto\" for pure-asyncio FastAPI services (strict if mixing anyio/trio backends). Prefer function-scoped event loops unless sharing a session-scoped DB container requires asyncio_default_fixture_loop_scope carefully documented. HTTP: httpx.AsyncClient + ASGITransport(app=app) for in-process API tests. DB: unit tests mock repository ports; integration tests use testcontainers Postgres (postgres:16+) with migrations applied once per session. Mark tests: unit (default, no Docker), integration (Docker required), contract (optional job). Parallel: pytest-xdist for unit only; integration often serial or few workers due to containers. Coverage: pytest-cov with fail-under policy on src/ (not vanity 100%).",
+  "decision_gates": "USE pure unit + fakes: domain logic, pure functions, policy. USE httpx ASGI: router/auth/validation without real network. USE testcontainers: SQL, migrations, Redis, anything dialect-sensitive. USE shared external staging DB: only when containers impossible — never as default. SKIP Docker-in-Docker complexity on constrained CI by optional integration job. DO NOT use SQLite to \"stand in\" for Postgres asyncpg features (JSON, LISTEN, partial indexes, UUID). DO NOT mark every test integration — keep unit fast for pre-push.",
+  "do_dont": "DO: put pytest opts in pyproject; use markers; isolate DB per test (transaction rollback or truncate); freeze time where needed; AsyncMock for async deps; seed factories; assert status + body schema. DON'T: real network to prod; sleep-based flakiness; shared mutable module globals; pytest-asyncio missing so async tests false-pass (modern pytest fails unawaited); one mega-fixture that boots the world for unit tests; commit .env with test secrets that are actually prod.",
+  "code_skeleton": "# pyproject.toml\n[dependency-groups]\ndev = [\n  \"pytest>=9\",\n  \"pytest-asyncio>=1.4\",\n  \"pytest-cov\",\n  \"httpx\",\n  \"testcontainers[postgres]\",\n]\n\n[tool.pytest.ini_options]\nasyncio_mode = \"auto\"\ntestpaths = [\"tests\"]\nmarkers = [\n  \"unit: fast, no docker\",\n  \"integration: docker/testcontainers\",\n]\nfilterwarnings = [\"error::DeprecationWarning\"]\n\n# tests/conftest.py\nimport pytest\nfrom httpx import ASGITransport, AsyncClient\nfrom testcontainers.postgres import PostgresContainer\n\nfrom svc_api.main import create_app\nfrom svc_api.settings import Settings\n\n@pytest.fixture\ndef settings(monkeypatch) -> Settings:\n    monkeypatch.setenv(\"DATABASE_URL\", \"postgresql+asyncpg://u:p@localhost/db\")\n    return Settings()  # pydantic-settings\n\n@pytest.fixture\nasync def client(settings):\n    app = create_app(settings)\n    transport = ASGITransport(app=app)\n    async with AsyncClient(transport=transport, base_url=\"http://test\") as ac:\n        yield ac\n\n@pytest.fixture(scope=\"session\")\ndef pg_url():\n    with PostgresContainer(\"postgres:16-alpine\") as pg:\n        yield pg.get_connection_url()\n\n# tests/unit/test_health.py\nasync def test_health(client):\n    r = await client.get(\"/health\")\n    assert r.status_code == 200\n\n# tests/integration/test_repo.py\n@pytest.mark.integration\nasync def test_insert(pg_url):\n    # build engine from pg_url, run migrations, assert\n    ...",
+  "failure_modes": "1) Missing pytest-asyncio → async tests error or never assert. 2) Event loop scope mismatch with session-scoped async fixtures → flaky/hang. 3) Docker socket unavailable in CI → all integration red. 4) Tests order-dependent on shared DB without cleanup. 5) Over-mocking SQLAlchemy session hides real query bugs. 6) xdist + single Postgres container races. 7) Timezone/locale differences host vs container. 8) create_app() binds global engine at import — hard to reconfigure per test.",
+  "anti_patterns": "Agents must not: default to unittest.TestCase; use requests against production; SQLite for Postgres app tests; omit asyncio_mode; write time.sleep polls; share one DB without isolation; put integration-only deps in default runtime dependencies; recommend pytest-asyncio legacy mode.",
+
+  "tools": "Primary: pytest 9.x, pytest-asyncio 1.4.x, httpx, testcontainers 4.14.x (Postgres extra). Common: pytest-cov, pytest-xdist, pytest-mock, factory-boy/polyfactory, freezegun/time-machine, respx for httpx mocks. Alternatives: unittest (legacy), pytest-postgresql (non-container local PG), embedded alternatives — not default for asyncpg apps.",
+  "versions_as_of": "as_of 2026-07-13 — pytest 9.1.1; pytest-asyncio 1.4.0 (pytest 9 support); pytest-cov 7.1.0; pytest-xdist 3.8.0; testcontainers 4.14.2 (4.15 RC existed mid-2026 — pin stable); httpx 0.28.1. Prefer lockfile pins over floating majors.",
+  "config_snippets": "[tool.pytest.ini_options]\nasyncio_mode = \"auto\"\n# asyncio_default_fixture_loop_scope = \"function\"  # explicit preferred\ntestpaths = [\"tests\"]\npythonpath = [\"src\"]\nmarkers = [\n  \"unit: no external services\",\n  \"integration: requires docker\",\n]\naddopts = \"-q --strict-markers\"\n\n# Local\n# uv run pytest -m unit\n# uv run pytest -m integration\n\n# Coverage\n# uv run pytest -m unit --cov=src --cov-report=term-missing --cov-fail-under=80",
+  "deprecation_watch": "unittest as greenfield default; nose2; pytest-asyncio mode legacy; requests.Session for ASGI tests (use httpx); SQLite dialect faking for Postgres; class-based TestCase sprawl; pytest 7-era asyncio plugins configs; starlette TestClient sync-only as sole API test style for async apps.",
+
+  "ts_boundary": "Python pytest covers Python services. Next.js uses vitest/playwright per TS skill — do not force pytest on TS. Contract alignment across BFF and Python API is OpenAPI (see py-contract-testing), not shared pytest. Polyglot monorepo: separate CI jobs per language.",
+  "rust_boundary": "Rust services use cargo test / proptest. Call Python from Rust tests only at integration boundary. Prefer testing each language natively; use HTTP contract tests between them.",
+  "supabase_boundary": "Prefer testcontainers Postgres matching production major version over hitting shared Supabase projects for unit/integration. If using supabase-py, mock HTTP at boundary or use local stack carefully; never run destructive tests against prod Supabase. RLS policies need deliberate tests with role-scoped JWTs when security-critical.",
+  "boundary_contracts": "Tests enforce internal quality; OpenAPI is the external contract. Fixture env vars mirror pydantic-settings names. Migration revision under test must match deploy. Markers define CI job matrix contracts (unit always, integration when Docker available).",
+  "decision_matrix_row": "Problem: pure logic → pytest unit. Problem: FastAPI routes → httpx ASGI. Problem: SQL/migrations → testcontainers Postgres. Problem: OpenAPI conformance fuzz → Schemathesis (separate). Problem: UI → Playwright/TS. Problem: ultra-low-level safety → Rust tests.",
+
+  "threats": "Tests that use real credentials and leak them in CI logs; fixtures that disable auth globally and ship that config; malicious package in dev dependency-group; Docker socket exposure on shared runners; seed data containing prod PII.",
+  "mitigations": "Synthetic secrets in CI; scrub logs; auth fixtures explicit; pin dev deps + uv audit; rootless/locked down Docker; synthetic PII; never print full DATABASE_URL with password in assertion messages.",
+  "agent_codegen_policy": "MUST: pytest + pytest-asyncio auto mode in pyproject; markers unit/integration; httpx ASGI client fixture; testcontainers for DB integration when SQL present. MUST NOT: unittest-only greenfield; SQLite-as-Postgres; async tests without plugin; hit production URLs; omit isolation for DB tests.",
+
+  "tests_required": "Unit tests for domain and handlers; async API tests via ASGI; integration tests for repositories/migrations when DB used; smoke health. Contract/fuzz optional separate job. Coverage gate on unit+ASGI where practical.",
+  "ci_gates": "uv run pytest -m unit (required); integration job with Docker when applicable; coverage fail-under for unit path; strict-markers so unknown marks fail.",
+  "skill_scan_signals": "POSITIVE: [tool.pytest.ini_options] asyncio_mode auto; httpx ASGI tests; testcontainers for Postgres apps; markers. NEGATIVE: no tests; unittest only; SQLite for asyncpg app; async def tests without pytest-asyncio; live prod URLs in tests; empty tests/.",
+
+  "skill_module_bullets": [
+    "pytest 9 + pytest-asyncio (asyncio_mode=auto) is the default test stack.",
+    "httpx ASGITransport for FastAPI in-process tests — not live network.",
+    "testcontainers Postgres for integration; do not fake Postgres with SQLite.",
+    "Mark unit vs integration; keep unit Docker-free and fast.",
+    "Session container + per-test isolation (rollback/truncate), careful with xdist.",
+    "Config lives in pyproject.toml; pin pytest stack in uv.lock."
+  ],
+  "action_items": [
+    "Document canonical conftest + markers in references/python.md.",
+    "Template tests/unit and tests/integration layout.",
+    "Scan: missing asyncio_mode; SQLite used with asyncpg codepaths.",
+    "CI examples: unit always, integration with Docker service."
+  ],
+  "checklist": [
+    "pytest + pytest-asyncio in dev group",
+    "asyncio_mode configured",
+    "markers registered and used",
+    "ASGI client fixture present for API services",
+    "DB apps have container-based integration tests",
+    "No prod URLs/credentials in tests",
+    "CI runs unit (and integration when Docker available)",
+    "Coverage policy documented"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "asyncio_mode default remains strict in pytest-asyncio docs; community 2026 guidance prefers auto for asyncio-only apps — we standardize auto with note to use strict for multi-backend. Session-scoped event loops are powerful but easy to misconfigure — default function scope unless needed. testcontainers 4.15 RC vs 4.14 stable: pin stable in lock until RC clears. Some teams prefer pytest-postgresql over Docker for speed — acceptable alternative if real Postgres binary managed, still not SQLite.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.pytest.org/",
+    "https://pytest-asyncio.readthedocs.io/",
+    "https://pytest-asyncio.readthedocs.io/en/stable/reference/configuration.html",
+    "https://testcontainers-python.readthedocs.io/",
+    "https://testcontainers.com/guides/getting-started-with-testcontainers-for-python/",
+    "https://www.python-httpx.org/async/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

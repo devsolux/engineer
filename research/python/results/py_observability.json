@@ -1,0 +1,242 @@
+{
+  "name": "structlog OTel health checks",
+  "item_id": "py-observability",
+  "cluster": "web",
+  "short_definition": "Production observability for Python ASGI services: JSON structured logs via structlog + contextvars (request_id/trace_id), OpenTelemetry traces/metrics (OTLP) with FastAPI/httpx/SQLAlchemy instrumentations, Sentry for error tracking, and /health/live + /health/ready probes — same 60-second request-ID correlation story as the TS stack in observability.md.",
+  "scope_in": [
+    "structlog configuration (JSON/orjson, stdlib bridge, contextvars)",
+    "Request-scoped bind: request_id, user_id, route, latency_ms",
+    "OpenTelemetry traces + metrics export (OTLP HTTP/gRPC)",
+    "FastAPI / ASGI middleware for access logs and span attributes",
+    "Health: liveness vs readiness (DB/pool/deps)",
+    "Sentry FastAPIIntegration + PII scrubbing",
+    "Correlation with Next.js/Rust services via W3C traceparent"
+  ],
+  "scope_out": [
+    "Vendor-specific APM UIs deep-dive (Datadog/Axiom dashboards)",
+    "Full SLI/SLO product process design",
+    "Prometheus federation / long-term metric storage ops",
+    "Client-side browser RUM beyond Sentry",
+    "Log shipping agents (Fluent Bit/Vector) installation"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "logs": "structlog 26.x JSON to stdout; merge_contextvars; ISO timestamps UTC; filter health noise",
+    "correlation": "Generate or propagate X-Request-ID; bind via contextvars in middleware; include in error JSON body",
+    "traces": "OTel SDK + FastAPI + httpx + SQLAlchemy/asyncpg instrumentations; OTLP exporter; service.name resource",
+    "errors": "sentry-sdk FastAPIIntegration; set_user id only (no email in high-security); source maps N/A for Python — release + dist tags",
+    "health": "GET /health/live (process up) and /health/ready (deps: DB SELECT 1, optional Redis); exclude from access-log spam",
+    "env": "OTEL_SERVICE_NAME, OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN, LOG_LEVEL via pydantic-settings"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Any production FastAPI/worker service",
+      "Multi-service traces need to join Next → Python → Postgres",
+      "On-call needs request_id chase across logs"
+    ],
+    "do_not_use_when": [
+      "Local one-off scripts (plain logging.INFO is fine)",
+      "Full OTel stack before first deploy — start with structlog + health, add OTLP when collector exists"
+    ],
+    "alternatives": {
+      "stdlib_json": "python-json-logger alone — acceptable minimal; prefer structlog for bind/contextvars",
+      "loguru": "Popular but not stack default; harder OTel/stdlib bridge discipline",
+      "vendor_agent_only": "Datadog auto-instrument without app context — use as export sink, still emit structured app logs"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Log one structured event per meaningful step with keys, not f-strings only",
+      "clear_contextvars at request start; bind request_id/trace_id",
+      "Propagate W3C tracecontext on outbound httpx",
+      "Separate live vs ready probes; ready fails closed if DB down",
+      "Redact secrets/PII processors; never log Authorization headers or bodies with tokens",
+      "Sample traces in high-QPS paths; always sample errors"
+    ],
+    "dont": [
+      "Don't console.log / print random strings on request paths",
+      "Don't log full request/response bodies by default",
+      "Don't count health checks in error-rate or latency SLIs without filtering",
+      "Don't block the event loop in logging processors",
+      "Don't put Sentry DSN or OTLP keys in client bundles",
+      "Don't use a single /health that does heavy DB work for k8s liveness (causes restart loops)"
+    ]
+  },
+  "code_skeleton": "import logging\nimport time\nimport uuid\nfrom contextlib import asynccontextmanager\nfrom typing import AsyncIterator, Callable\n\nimport structlog\nfrom fastapi import FastAPI, Request, Response\nfrom opentelemetry import trace\nfrom opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter\nfrom opentelemetry.instrumentation.fastapi import FastAPIInstrumentor\nfrom opentelemetry.sdk.resources import Resource\nfrom opentelemetry.sdk.trace import TracerProvider\nfrom opentelemetry.sdk.trace.export import BatchSpanProcessor\n\ndef configure_logging(level: str = \"INFO\") -> None:\n    structlog.configure(\n        processors=[\n            structlog.contextvars.merge_contextvars,\n            structlog.processors.add_log_level,\n            structlog.processors.TimeStamper(fmt=\"iso\", utc=True),\n            structlog.processors.StackInfoRenderer(),\n            structlog.processors.format_exc_info,\n            structlog.processors.JSONRenderer(),\n        ],\n        wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, level)),\n        cache_logger_on_first_use=True,\n    )\n\ndef configure_tracing(service_name: str, endpoint: str | None) -> None:\n    if not endpoint:\n        return\n    provider = TracerProvider(resource=Resource.create({\"service.name\": service_name}))\n    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))\n    trace.set_tracer_provider(provider)\n\nlog = structlog.get_logger()\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    app.state.ready = True\n    yield\n    app.state.ready = False\n\napp = FastAPI(lifespan=lifespan)\nFastAPIInstrumentor.instrument_app(app)\n\n@app.middleware(\"http\")\nasync def access_log(request: Request, call_next: Callable) -> Response:\n    structlog.contextvars.clear_contextvars()\n    rid = request.headers.get(\"x-request-id\") or str(uuid.uuid4())\n    structlog.contextvars.bind_contextvars(\n        request_id=rid, method=request.method, path=request.url.path\n    )\n    start = time.perf_counter()\n    response = await call_next(request)\n    if request.url.path not in {\"/health/live\", \"/health/ready\"}:\n        log.info(\n            \"request_completed\",\n            status=response.status_code,\n            duration_ms=round((time.perf_counter() - start) * 1000, 2),\n        )\n    response.headers[\"X-Request-ID\"] = rid\n    return response\n\n@app.get(\"/health/live\")\nasync def live() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n\n@app.get(\"/health/ready\")\nasync def ready(request: Request) -> dict[str, str]:\n    # real: SELECT 1 / pool checkout\n    return {\"status\": \"ok\" if getattr(request.app.state, \"ready\", False) else \"starting\"}\n",
+  "failure_modes": [
+    "No request_id → cannot correlate browser → BFF → Python → DB",
+    "Health probe hits DB on liveness → cascading restarts under DB blip",
+    "Unbounded DEBUG logs or body dumps → cost + secret leak",
+    "OTel exporter sync I/O on hot path without batch processor → latency",
+    "Missing instrumentations on httpx/SQLAlchemy → partial traces",
+    "Sentry noise from expected 4xx without before_send filter",
+    "contextvars not cleared → cross-request field bleed under concurrency"
+  ],
+  "anti_patterns": [
+    "String-only logs without JSON keys",
+    "print() / logging.info(f\"user={user} token={token}\")",
+    "Single /health used for both live and ready with heavy checks",
+    "OTel without service.name resource",
+    "Logging middleware that awaits cloud upload inline",
+    "Agent scaffolding loguru + print mix without contextvars"
+  ],
+
+  "tools": {
+    "primary": ["structlog", "opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp", "opentelemetry-instrumentation-fastapi", "sentry-sdk"],
+    "instrumentations": ["httpx", "sqlalchemy", "asyncpg", "asgi"],
+    "optional": ["orjson for JSONRenderer serializer", "prometheus-client / OTel Prometheus reader", "asgi-correlation-id"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "structlog": "26.1.0",
+    "opentelemetry-api": "1.43.0",
+    "opentelemetry-sdk": "1.43.0",
+    "opentelemetry-exporter-otlp": "1.43.0",
+    "opentelemetry-instrumentation-fastapi": "0.64b0",
+    "opentelemetry-instrumentation-sqlalchemy": "0.64b0",
+    "opentelemetry-instrumentation-asyncpg": "0.64b0",
+    "opentelemetry-instrumentation-httpx": "0.64b0",
+    "sentry-sdk": "2.64.0",
+    "prometheus-client": "0.25.0",
+    "orjson": "3.11.9"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"structlog>=26.1,<27\",\n  \"opentelemetry-api>=1.43,<2\",\n  \"opentelemetry-sdk>=1.43,<2\",\n  \"opentelemetry-exporter-otlp>=1.43,<2\",\n  \"opentelemetry-instrumentation-fastapi>=0.64b0\",\n  \"opentelemetry-instrumentation-httpx>=0.64b0\",\n  \"opentelemetry-instrumentation-sqlalchemy>=0.64b0\",\n  \"sentry-sdk[fastapi]>=2.64,<3\",\n]\n",
+    "env": "LOG_LEVEL=INFO\nOTEL_SERVICE_NAME=py-api\nOTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318\nSENTRY_DSN=\nSENTRY_TRACES_SAMPLE_RATE=0.1\n",
+    "uvicorn_note": "Logs to stdout; platform scrapes container logs. Do not dual-write files in containers."
+  },
+  "deprecation_watch": [
+    "opencensus / OpenTracing apps — migrate to OTel",
+    "jaeger thrift direct exporters — prefer OTLP → collector",
+    "ddtrace-only without OTel if multi-runtime mesh needs vendor neutrality",
+    "logging.basicConfig with human format in production services"
+  ],
+
+  "ts_boundary": "Align field names with observability.md TS LogEvent (level, message/event, userId→user_id, traceId, durationMs→duration_ms). Propagate X-Request-ID and traceparent from Next Server Actions/Route Handlers into Python. Same OTLP backend for unified traces. Sentry projects can be separate but share release naming.",
+  "rust_boundary": "Rust uses tracing + OTLP (see observability.md). Same service.name / deployment.environment conventions. Prefer shared collector; do not invent a second log schema for Axum.",
+  "supabase_boundary": "Log db_error codes not full SQL with secrets. Ready check may use pool checkout or lightweight SELECT 1 on service connection. Never log service_role key. RLS denials are expected 403s — don't page on them without rate.",
+  "boundary_contracts": [
+    "X-Request-ID request/response header",
+    "W3C traceparent / tracestate",
+    "Error JSON includes request_id",
+    "OTEL_* and SENTRY_* env documented in .env.example",
+    "Health paths documented for deploy probes"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Service logs, traces, errors, health",
+    "python": "structlog + OTel instrumentations + Sentry + dual health endpoints",
+    "ts": "JSON log helper + Sentry Next wizard + Vercel/OTel",
+    "rust": "tracing + OTLP + /health/live|/ready"
+  },
+
+  "threats": [
+    "PII/secrets in logs and spans (Authorization, cookies, tokens, card data)",
+    "Log injection via unsanitized user strings as structure keys",
+    "Health endpoints as unauthenticated info leak (versions, dependency hosts)",
+    "OTel exporter endpoint SSRF if user-controlled",
+    "Excessive span attributes storing payloads"
+  ],
+  "mitigations": [
+    "Deny-list processors for sensitive keys; scrub headers",
+    "Structured keys controlled by app; user content only in values",
+    "Minimal ready payload {status}; protect admin debug routes",
+    "Fixed OTLP endpoint from env; no user URLs",
+    "Attribute size limits; never attach raw bodies to spans"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "structlog JSON config with merge_contextvars",
+      "Middleware binding request_id",
+      "/health/live and /health/ready",
+      "No secrets in log statements"
+    ],
+    "must_not_generate": [
+      "print-debugging left in handlers",
+      "logging full request.json() by default",
+      "Single health endpoint that always hits DB for liveness",
+      "Hardcoded DSN/endpoints in source"
+    ]
+  },
+
+  "tests_required": [
+    "Middleware sets X-Request-ID and binds context",
+    "Health live 200 without DB; ready reflects dependency mock",
+    "Log capture fixture asserts JSON keys on a sample route",
+    "Optional: OTel span created for instrumented route (in-memory exporter)"
+  ],
+  "ci_gates": [
+    "ruff + basedpyright + pytest",
+    "grep ban: print( in app package (allow tests)",
+    "Optional: no SENTRY_DSN/OTLP secrets in repo"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "structlog.configure",
+      "merge_contextvars",
+      "bind_contextvars",
+      "/health/live",
+      "/health/ready",
+      "FastAPIInstrumentor",
+      "OTLPSpanExporter"
+    ],
+    "negative": [
+      "print( in route handlers",
+      "logging full Authorization",
+      "only /health with DB for k8s liveness",
+      "logger.info(f\"...{password}",
+      "no request_id in middleware"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default logs: structlog JSON + contextvars request_id as_of 2026-07-13 (structlog 26.1)",
+    "OTel: FastAPI/httpx/SQLAlchemy instrument + OTLP; set service.name",
+    "Sentry for exceptions; scrub PII; sample traces",
+    "Split /health/live vs /health/ready; exclude from access-log SLIs",
+    "Correlate with TS/Rust via X-Request-ID + W3C traceparent",
+    "Stdout only in containers; never log secrets"
+  ],
+  "action_items": [
+    "Add Python subsection to observability.md or python.md pointing here",
+    "Scan IDs for print-in-handlers and missing health split",
+    "Sample middleware snippet in skill templates",
+    "Document OTEL_* env in service .env.example template"
+  ],
+  "checklist": [
+    "structlog JSON configured",
+    "request_id middleware + response header",
+    "live/ready probes wired to platform",
+    "OTel resource + exporter when collector available",
+    "Sentry enabled in prod",
+    "PII/secret scrub verified",
+    "Health noise filtered from logs/metrics",
+    "Cross-service trace demo once"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Some guides push loguru; skill standardizes on structlog for contextvars + stdlib bridge + performance JSON path",
+    "Prometheus pull vs OTLP push — prefer OTLP to shared collector; Prometheus optional for scrape-based platforms",
+    "Auto-instrumentation vs manual spans — auto for frameworks; manual for domain-critical sections"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://www.structlog.org/en/stable/",
+    "https://www.structlog.org/en/stable/logging-best-practices.html",
+    "https://www.structlog.org/en/stable/contextvars.html",
+    "https://opentelemetry.io/docs/languages/python/",
+    "https://github.com/open-telemetry/opentelemetry-python",
+    "https://github.com/open-telemetry/opentelemetry-python-contrib",
+    "https://docs.sentry.io/platforms/python/integrations/fastapi/",
+    "https://pypi.org/project/structlog/",
+    "https://pypi.org/project/opentelemetry-api/"
+  ],
+  "local_sources": [
+    "./references/observability.md",
+    "./references/rust.md",
+    "./research/python/outline.yaml"
+  ]
+}

@@ -1,0 +1,78 @@
+# Engineering preset: language / framework / host stack selection
+evidence_policy:
+  mode: claim_v1
+  semantic_review: required
+  identity_fields: [name, sources]
+field_categories:
+  - category: Basic Info
+    fields:
+      - name: name
+        description: Stack component name
+        detail_level: brief
+        required: true
+      - name: category
+        description: language | framework | database | host | queue | auth
+        detail_level: brief
+        required: true
+      - name: website
+        description: Official site
+        detail_level: brief
+      - name: license
+        description: License
+        detail_level: brief
+  - category: Product Fit
+    fields:
+      - name: fits_engineer_default
+        description: Aligns with TS product boundary / Python services / Rust hot path?
+        detail_level: moderate
+        required: true
+      - name: team_skill_match
+        description: Expected learning curve for a TS/Next/Supabase team
+        detail_level: moderate
+      - name: time_to_production
+        description: Typical path to first production deploy
+        detail_level: moderate
+  - category: Technical
+    fields:
+      - name: performance_profile
+        description: Latency/throughput characteristics for intended load
+        detail_level: moderate
+      - name: ecosystem_2026
+        description: Tooling, hiring market, library ecosystem as of research date
+        detail_level: moderate
+      - name: type_safety
+        description: Static typing and contract ergonomics
+        detail_level: moderate
+      - name: serverless_fit
+        description: Vercel / edge / cold start considerations
+        detail_level: moderate
+  - category: Ops & Cost
+    fields:
+      - name: hosting_options
+        description: Managed vs self-host paths
+        detail_level: moderate
+      - name: cost_drivers
+        description: What dominates bill at scale
+        detail_level: moderate
+      - name: operational_complexity
+        description: low | medium | high with rationale
+        detail_level: moderate
+        required: true
+  - category: Decision
+    fields:
+      - name: recommendation_tier
+        description: default | strong | niche | avoid — for this use case
+        detail_level: brief
+        required: true
+      - name: best_for
+        description: Ideal scenarios
+        detail_level: moderate
+        required: true
+      - name: not_for
+        description: Anti-fit
+        detail_level: moderate
+      - name: sources
+        description: Primary URLs
+        detail_level: detailed
+        required: true
+uncertain: []

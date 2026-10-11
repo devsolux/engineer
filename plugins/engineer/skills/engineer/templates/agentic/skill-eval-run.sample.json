@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "skill_name": "engineer",
+  "skill_version": "1.0.0",
+  "run_id": "engineer-1.44.0-smoke-001",
+  "captured_at": "2026-07-15T12:00:00Z",
+  "run_kind": "illustrative_fixture",
+  "decision": "report_only",
+  "baseline_run_id": null,
+  "comparison": null,
+  "environment": {
+    "host": "codex",
+    "model": "gpt-5",
+    "model_version": "pinned-eval-snapshot",
+    "temperature": 0,
+    "max_steps": 24,
+    "network_policy": "deny",
+    "skill_path": "SKILL.md",
+    "skill_sha256": "e9272751f5a5ad9d1b844b411c24e2c73cf501734188961e3914b43c7a871e4f",
+    "bank_path": "evals/evals.json",
+    "bank_sha256": "9525f39f8234954d378a3f4e03596fb4dcbaf5370732a0a90120dba494ad1990",
+    "instructions_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tools_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "fixture_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "dataset": {
+    "split": "capability",
+    "visibility": "public",
+    "scenario_ids": [
+      12
+    ],
+    "contamination_checked": true,
+    "contamination_found": false,
+    "selection_notes": "Static smoke scenario; not eligible for promotion."
+  },
+  "review": {
+    "tested_agent": "codex-eval-runner",
+    "grader_author": "engineer-maintainer",
+    "independent_reviewer": "eval-reviewer-1",
+    "model_graders_used": false,
+    "human_calibration": null
+  },
+  "trials": [
+    {
+      "scenario_id": 12,
+      "trial_id": "12-1",
+      "status": "success",
+      "latency_ms": 1840,
+      "cost_usd": 0.014,
+      "artifacts": [
+        {
+          "kind": "output",
+          "path": "templates/fixtures/skill-eval/output.md",
+          "sha256": "cb080204f2621d3abdd85323a6a373edb7d412e69e627443bfdb1d2daa65620e"
+        },
+        {
+          "kind": "trace",
+          "path": "templates/fixtures/skill-eval/trace.json",
+          "sha256": "e43a3f1b2a0b0e426475cbd4d11eabb95e489f4e1e4d016f29eb1030474d0fa3"
+        }
+      ],
+      "graders": [
+        {
+          "id": "repo-outcome-v1",
+          "type": "code",
+          "target": "outcome",
+          "version": "1",
+          "score": 1,
+          "threshold": 1,
+          "passed": true,
+          "independent": true,
+          "evidence": [
+            "templates/fixtures/skill-eval/output.md"
+          ]
+        },
+        {
+          "id": "safe-trajectory-v1",
+          "type": "code",
+          "target": "trajectory",
+          "version": "1",
+          "score": 1,
+          "threshold": 1,
+          "passed": true,
+          "independent": true,
+          "evidence": [
+            "templates/fixtures/skill-eval/trace.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "behavior_trials": 1,
+    "behavior_passes": 1,
+    "agent_failures": 0,
+    "infrastructure_errors": 0,
+    "pass_rate": 1,
+    "infrastructure_error_rate": 0
+  },
+  "promotion": {
+    "eligible": false,
+    "reason": "Public single-scenario smoke evidence only."
+  }
+}

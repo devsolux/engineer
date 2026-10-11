@@ -1,0 +1,227 @@
+{
+  "name": "Pool sizing PgBouncer session lifecycle",
+  "item_id": "py-db-pool-lifecycle",
+  "cluster": "data",
+  "short_definition": "How Python services size and lifecycle Postgres connections under concurrency: SQLAlchemy AsyncAdaptedQueuePool (pool_size/max_overflow/pool_pre_ping/pool_recycle), when to use NullPool behind PgBouncer/Supabase transaction pooler, asyncpg prepared-statement pitfalls (statement_cache_size / unique prepared_statement_name_func), and tying engine dispose to ASGI lifespan so k8s churn does not leak backends.",
+  "scope_in": [
+    "SQLAlchemy pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping, use_lifo",
+    "NullPool vs QueuePool with external poolers",
+    "PgBouncer session vs transaction vs statement modes",
+    "Supabase direct :5432 vs pooler :6543 (transaction mode)",
+    "asyncpg prepared statements + DuplicatePreparedStatementError",
+    "Multi-worker connection budget (uvicorn workers × pool)",
+    "Session/request lifecycle relative to pool checkout",
+    "engine.dispose on shutdown / post-fork notes"
+  ],
+  "scope_out": [
+    "ORM query patterns (py-sqlalchemy-async)",
+    "Migration tooling (py-migrations)",
+    "Application-level Redis caching",
+    "PgBouncer install/ops on bare metal beyond mode semantics",
+    "MySQL poolers"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "direct_postgres": "create_async_engine(..., pool_size=5, max_overflow=10, pool_pre_ping=True, pool_recycle=1800) as starting point; tune from metrics",
+    "behind_transaction_pgbouncer": "poolclass=NullPool + connect_args disabling/renaming prepared statement cache; let pooler multiplex",
+    "supabase_stationary": "Prefer direct DB URL :5432 for long-lived single-instance services when connection budget allows",
+    "supabase_autoscaling": "Transaction pooler :6543 with asyncpg prepared-statement mitigations; keep client-side pool tiny or NullPool",
+    "lifecycle": "One engine per process; create at startup; await dispose() on shutdown; no engine in import-time side effects for tests without fixtures",
+    "budget_rule": "workers × (pool_size + max_overflow) + siblings < Postgres max_connections and pooler limits; leave headroom for migrations/admin"
+  },
+  "decision_gates": {
+    "use_app_pool_when": [
+      "Direct connection to Postgres (no transaction pooler)",
+      "Session-mode pooler that preserves prepared statements",
+      "Stable worker count, need checkout latency wins from warm pool"
+    ],
+    "use_nullpool_or_tiny_pool_when": [
+      "PgBouncer/Supabase transaction pooler in front",
+      "Serverless/autoscaling where process count spikes",
+      "Risk of connection stampede on cold scale-out"
+    ],
+    "do_not": [
+      "Do not double-pool aggressively (large SQLAlchemy pool + transaction PgBouncer + many workers)",
+      "Do not use default asyncpg prepared statement names unchanged through transaction pooler"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Compute connection budget: processes × workers × (pool_size+max_overflow)",
+      "pool_pre_ping=True for idle disconnects (cloud LB timeouts)",
+      "pool_recycle under cloud idle limits (e.g. 15–30 min)",
+      "For transaction PgBouncer: NullPool + prepared_statement_name_func uuid OR statement_cache_size=0 / prepared_statement_cache_size=0 per SQLAlchemy+asyncpg guidance",
+      "Close/return sessions promptly so connections return to pool",
+      "Ready probe: checkout + SELECT 1 with timeout; live probe: no pool required"
+    ],
+    "dont": [
+      "Don't set pool_size=50 on 4 uvicorn workers blindly (200+ backends)",
+      "Don't hold sessions for entire long SSE/LLM streams unless required",
+      "Don't create engine per request",
+      "Don't ignore DuplicatePreparedStatementError — fix pooler mode/config",
+      "Don't use session-level features (LISTEN, temp tables, prepared across txs) on transaction pooler",
+      "Don't forget dispose after fork (gunicorn workers need per-worker engine)"
+    ]
+  },
+  "code_skeleton": "from uuid import uuid4\nfrom sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine\nfrom sqlalchemy.pool import NullPool\n\n# --- Direct Postgres (long-lived service) ---\nengine_direct = create_async_engine(\n    \"postgresql+asyncpg://user:pass@db:5432/app\",\n    pool_size=5,\n    max_overflow=10,\n    pool_timeout=30,\n    pool_pre_ping=True,\n    pool_recycle=1800,\n)\n\n# --- Transaction PgBouncer / Supabase :6543 ---\nengine_pooler = create_async_engine(\n    \"postgresql+asyncpg://user:pass@pooler:6543/app\",\n    poolclass=NullPool,\n    connect_args={\n        # SQLAlchemy official pattern: unique prepared statement names\n        \"prepared_statement_name_func\": lambda: f\"__asyncpg_{uuid4()}__\",\n        # Also commonly set when cache still causes issues:\n        \"statement_cache_size\": 0,\n        \"prepared_statement_cache_size\": 0,\n    },\n)\n\nSessionLocal = async_sessionmaker(engine_direct, expire_on_commit=False, class_=AsyncSession)\n\n# Lifespan:\n# startup: engine ready (lazy connect) / optional warm\n# shutdown: await engine.dispose()\n\nasync def readiness_check() -> bool:\n    async with engine_direct.connect() as conn:\n        await conn.exec_driver_sql(\"SELECT 1\")\n    return True\n",
+  "failure_modes": [
+    "Too many clients / remaining connection slots reserved — under-sized Postgres or over-sized app pools",
+    "Pool timeout 30s under load → 500s while DB is fine",
+    "DuplicatePreparedStatementError / prepared statement does not exist with transaction PgBouncer",
+    "Connection leak from sessions not closed on cancel",
+    "Scale-out stampede: N new pods × max pool open at once",
+    "SSL/idle disconnect without pre_ping → mysterious first-request failures",
+    "LISTEN/NOTIFY or advisory locks broken across transaction pooler"
+  ],
+  "anti_patterns": [
+    "Copy-paste pool_size=20 from blog without worker math",
+    "Using Supabase transaction pooler URL with default asyncpg caches",
+    "Long transactions spanning external HTTP calls while holding pool checkout",
+    "Sharing one engine across forked workers without dispose/recreate",
+    "Health liveness that acquires pool connections",
+    "Agent defaulting all envs to :6543 without prepared-statement fix"
+  ],
+
+  "tools": {
+    "primary": ["SQLAlchemy AsyncAdaptedQueuePool / NullPool", "asyncpg", "PgBouncer or Supabase pooler"],
+    "observe": ["pg_stat_activity", "pool metrics if exposed", "OTel SQLAlchemy spans", "platform connection dashboards"],
+    "alternatives": ["psycopg3 pool for sync paths", "pgcat / Supavisor as pooler variants"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "sqlalchemy": "2.0.51",
+    "asyncpg": "0.31.0",
+    "supabase_docs_sqlalchemy_note": "Troubleshooting guide updated 2026-04-08 — autoscaling → transaction pooler; stationary → direct",
+    "known_issue": "Supabase issue #39227 (2025-10) documents asyncpg prepared-statement pain on both pooler modes under burst"
+  },
+  "config_snippets": {
+    "env": "DATABASE_URL=postgresql+asyncpg://...\nDATABASE_POOL_SIZE=5\nDATABASE_MAX_OVERFLOW=10\nDATABASE_POOL_RECYCLE=1800\n# USE_PGBOUNCER=true → NullPool + prepared statement mitigations\n",
+    "budget": "# example: 2 pods × 2 workers × (5+10) = 60 server connections from app alone\n# leave room for auth, realtime, migrations, dashboards\n",
+    "sqlalchemy_pgbouncer_docs": "https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#prepared-statement-name-with-pgbouncer"
+  },
+  "deprecation_watch": [
+    "Assuming port 6543 is always safe with asyncpg defaults",
+    "NullPool on direct DB for high-QPS (extra handshake cost) without reason",
+    "QueuePool defaults (5+10) blindly on serverless with 100 instances"
+  ],
+
+  "ts_boundary": "Next.js Supabase clients use HTTP PostgREST — not Postgres connection pools. Python services that open real PG connections must not assume unlimited pool; coordinate max connections with other runtimes (Edge Functions, Rust).",
+  "rust_boundary": "sqlx/deadpool pools need the same budget math. Prefer one service tier owning heavy pool usage. Rust can hold more efficient pools — still count against Postgres.",
+  "supabase_boundary": "Supabase: direct vs pooler choice is critical. Transaction pooler incompatible with session features and painful for asyncpg prepared statements. RLS still applies to non-superuser roles; pooler does not replace authz. Prefer service role only server-side. See backend-database.md for RLS; this item is about TCP/session mechanics.",
+  "boundary_contracts": [
+    "DATABASE_URL documents direct vs pooler",
+    "Document pool_size × workers in runbook",
+    "Ready probe contract uses short timeout",
+    "No LISTEN/long session features on transaction pooler URLs"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Postgres connection multiplexing and lifecycle",
+    "python": "SQLAlchemy pool or NullPool+PgBouncer with asyncpg mitigations",
+    "ts": "No server pool for typical Next+Supabase HTTP; Edge limits separate",
+    "rust": "deadpool/sqlx pool with shared connection budget"
+  },
+
+  "threats": [
+    "Connection exhaustion DoS (self-inflicted scale or attacker-triggered work)",
+    "Credential leak in connection strings / logs",
+    "Noisy neighbor on shared Supabase compute via runaway pools",
+    "Session fixation of role/search_path if pool reuses connections without reset"
+  ],
+  "mitigations": [
+    "Hard caps on pool and worker counts; load-test",
+    "Secrets manager; redact URLs in telemetry",
+    "pool_reset_on_return / DISCARD ALL at pooler; avoid setting session GUCs without reset",
+    "Rate limit expensive endpoints that hold DB work"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Configurable pool_size/max_overflow from settings",
+      "pool_pre_ping=True for cloud",
+      "lifespan engine.dispose()",
+      "If pooler URL: NullPool + prepared statement mitigations"
+    ],
+    "must_not_generate": [
+      "Hardcoded pool_size without comment on workers",
+      "Transaction pooler URL with vanilla asyncpg defaults",
+      "Session held across multi-minute LLM calls by default",
+      "Per-request create_async_engine"
+    ]
+  },
+
+  "tests_required": [
+    "Unit: settings map to engine kwargs",
+    "Integration: concurrent requests under pool_size cap",
+    "Optional: simulate pool timeout",
+    "If pooler used: smoke test against pooler URL in staging"
+  ],
+  "ci_gates": [
+    "pytest integration with Postgres service",
+    "Documented connection budget in PR for pool changes",
+    "Lint/settings review for pooler flags"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "pool_pre_ping=True",
+      "pool_size from settings",
+      "NullPool with pgbouncer",
+      "prepared_statement_name_func",
+      "await engine.dispose()"
+    ],
+    "negative": [
+      "pool_size=20+ with multi-worker no comment",
+      "6543 URL without statement cache mitigations",
+      "create_async_engine inside request path",
+      "LISTEN on transaction pooler"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Budget: workers × (pool_size+max_overflow) < DB/pooler limits",
+    "Direct PG: QueuePool + pre_ping + recycle; dispose on shutdown",
+    "Transaction PgBouncer/Supabase :6543: NullPool + unique prepared names / cache size 0",
+    "Supabase stationary → prefer :5432; autoscaling → pooler with mitigations (docs 2026-04)",
+    "Never hold DB sessions across long external I/O by default",
+    "Live vs ready: ready may checkout; live must not"
+  ],
+  "action_items": [
+    "Document pool budget calculator in python.md",
+    "Scan for :6543 without connect_args mitigations",
+    "Link Supabase SQLAlchemy troubleshooting doc",
+    "Add dispose() to FastAPI lifespan template"
+  ],
+  "checklist": [
+    "Connection budget computed for deploy topology",
+    "Direct vs pooler URL chosen deliberately",
+    "Prepared-statement config correct for pooler",
+    "pool_pre_ping/recycle set for cloud",
+    "engine.dispose on shutdown",
+    "No long session holds on hot paths",
+    "Staging load smoke under expected concurrency",
+    "pg_stat_activity reviewed under load once"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Community disagreement: NullPool always vs tiny QueuePool behind pooler — skill: NullPool default for transaction pooler; tiny pool only with proven need",
+    "statement_cache_size=0 vs unique prepared_statement_name_func — SQLAlchemy docs emphasize unique names + NullPool + DISCARD; operators often set both cache sizes to 0",
+    "Supabase session pooler vs transaction pooler still confuse under burst (issue #39227) — validate in target project"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.sqlalchemy.org/en/20/core/pooling.html",
+    "https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#prepared-statement-name-with-pgbouncer",
+    "https://docs.sqlalchemy.org/en/20/dialects/postgresql.html#prepared-statement-cache",
+    "https://magicstack.github.io/asyncpg/current/faq.html",
+    "https://supabase.com/docs/guides/troubleshooting/using-sqlalchemy-with-supabase-FUqebT",
+    "https://www.pgbouncer.org/features.html",
+    "https://github.com/supabase/supabase/issues/39227"
+  ],
+  "local_sources": [
+    "./references/backend-database.md",
+    "./references/backend-supabase.md",
+    "./research/python/outline.yaml"
+  ]
+}

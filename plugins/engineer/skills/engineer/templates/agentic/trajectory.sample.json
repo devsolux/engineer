@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "contract": "templates/agentic/execution-contract.sample.json",
+  "events": [
+    {"seq": 1, "phase": "sense", "state_hash": "repo-a", "requirement_ids": ["req_checkpoint", "req_stop"]},
+    {"seq": 2, "phase": "plan", "step_id": "step_state", "requirement_ids": ["req_checkpoint"]},
+    {"seq": 3, "phase": "act", "action_id": "action-1", "tool": "repository_edit", "approval": "goal_scope", "input_sources": ["workspace"], "output_sinks": ["workspace"]},
+    {"seq": 4, "phase": "observe", "action_id": "action-1", "ok": true, "state_hash": "repo-b", "evidence": ["tests/agent-loop.test.ts::resume"]},
+    {"seq": 5, "phase": "checkpoint", "state_hash": "repo-b", "completed_step_ids": ["step_state"], "evidence": ["tests/agent-loop.test.ts::resume"]},
+    {"seq": 6, "phase": "plan", "step_id": "step_stop", "requirement_ids": ["req_stop"]},
+    {"seq": 7, "phase": "act", "action_id": "action-2", "tool": "repository_edit", "approval": "goal_scope", "input_sources": ["workspace"], "output_sinks": ["workspace"]},
+    {"seq": 8, "phase": "observe", "action_id": "action-2", "ok": true, "state_hash": "repo-c", "evidence": ["tests/agent-loop.test.ts::no-progress"]},
+    {"seq": 9, "phase": "checkpoint", "state_hash": "repo-c", "completed_step_ids": ["step_stop"], "evidence": ["tests/agent-loop.test.ts::no-progress"]},
+    {"seq": 10, "phase": "stop", "reason": "success", "verification_passed": true, "acceptance_ids": ["ac_resume", "ac_stop"], "evidence": ["tests/agent-loop.test.ts::resume", "tests/agent-loop.test.ts::no-progress", "artifacts/verification.json"]}
+  ]
+}

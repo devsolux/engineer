@@ -1,0 +1,77 @@
+{
+  "name": "Python typecheck: basedpyright CI ± ty editor",
+  "item_id": "py-typecheck",
+  "cluster": "tooling",
+  "short_definition": "Static typing gate for greenfield Python: basedpyright as the CI source of truth (Pyright fork with stricter defaults), optional ty (Astral) for ultra-fast editor feedback while still beta, and mypy not the default for new projects.",
+  "scope_in": "basedpyright configuration (typeCheckingMode, pythonVersion, include/exclude); CI invocation; relationship to pyright/Pylance; ty beta usage; gradual typing and baselines; stubs and reportMissingTypeStubs policy; interaction with Pydantic v2 and FastAPI annotations.",
+  "scope_out": "Runtime validation (Pydantic) as substitute for static types; full typing language tour (Protocols, PEP 695 — py-typing-modern); mypy plugin ecosystem deep dive; Pyrefly/Zuban as primary defaults for this stack.",
+  "priority": "P0",
+  "defaults": "CI gate: basedpyright with typeCheckingMode = \"recommended\" (or \"strict\" for libraries once green) and pythonVersion matching pin (3.13). Install basedpyright in dev dependency-group; run uv run basedpyright. Editor: basedpyright extension OR ty language server for speed, but do not drop basedpyright from CI while ty is beta. reportMissingTypeStubs = false for app services (true/error for published libs if practical). Prefer explicit annotations on public functions; use Pydantic models at boundaries (runtime) + static types on internals. mypy only if maintaining a legacy mypy-heavy codebase — not greenfield default.",
+  "decision_gates": "basedpyright recommended: default apps/services. basedpyright strict/all: libraries and high-correctness domains after baseline clean. ty editor-only: teams wanting Astral-speed LSP; keep basedpyright in CI until ty typing-spec coverage matches needs. ty CI experimental: only as advisory non-blocking job. mypy: existing plugins (django-stubs etc.) that basedpyright cannot replace yet. Pyright upstream without based: only if org standardizes on pure pyright — still prefer basedpyright for open tooling outside Pylance.",
+  "do_dont": "DO: put [tool.basedpyright] in pyproject.toml; pin basedpyright in lock; fail CI on type errors; align pythonVersion with requires-python; use unknown-equivalent discipline (object/Any minimization). DO NOT: type: ignore without codes/reason; set typeCheckingMode off in CI; rely on Pylance-only settings not in repo config; treat ty beta as sole gate; enable every basedpyright rule on a huge untyped tree without baseline; use mypy and basedpyright both as blocking gates with conflicting semantics without a plan.",
+  "code_skeleton": "# pyproject.toml\n[tool.basedpyright]\ninclude = [\"src\"]\nexclude = [\"**/node_modules\", \"**/__pycache__\", \".venv\"]\npythonVersion = \"3.13\"\npythonPlatform = \"All\"\ntypeCheckingMode = \"recommended\"\nreportMissingTypeStubs = false\nstubPath = \"src/stubs\"\n\n# Optional ty (editor / advisory)\n# [tool.ty.terminal]\n# error-on-warning = true\n# [tool.ty.environment]\n# python-version = \"3.13\"\n\n# CLI\n# uv add --dev basedpyright\n# uv run basedpyright\n# uvx ty check   # optional fast path\n\n# src/svc_api/domain.py\nfrom pydantic import BaseModel\n\nclass UserId(BaseModel):\n    value: str\n\ndef display_name(user_id: UserId, full_name: str) -> str:\n    return f\"{full_name} ({user_id.value})\"",
+  "failure_modes": "Editor uses Pylance standard while CI basedpyright recommended → surprise CI failures. pythonVersion mismatch allows 3.13 syntax not checked. Missing venv/extraPaths → false missing-import errors. Overuse of Any silences real bugs. ty advisory clean but basedpyright fails (known maturity gap). Pydantic models mis-annotated so static checker and runtime diverge. Generated code not excluded floods diagnostics.",
+  "anti_patterns": "Agents must not: default greenfield to mypy.ini only; add pyrightconfig.json that contradicts pyproject; blanket # type: ignore; disable typechecking in CI; invent dual conflicting modes per developer without repo config; claim ty is production-stable as of research date without beta caveat.",
+  "tools": "Primary CI: basedpyright. Primary editor options: basedpyright LSP, ty LSP (beta), Pylance (VS Code proprietary — config still via pyproject). Alternatives: mypy (legacy), pyright upstream, Pyrefly (Meta), Zuban — not stack defaults. Pair with Ruff for non-type lint.",
+  "versions_as_of": "as_of 2026-07-13 — basedpyright 1.39.x (e.g. 1.39.9 on PyPI); ty 0.0.x beta (e.g. 0.0.58); pyright lineage continues under Microsoft. ty marketed 10x–100x faster than mypy/pyright but still filling typing-spec gaps. Re-check ty stable status by review_by.",
+  "config_snippets": "[tool.basedpyright]\ninclude = [\"src\"]\nexclude = [\".venv\", \"**/__pycache__\"]\npythonVersion = \"3.13\"\ntypeCheckingMode = \"recommended\"\nreportMissingTypeStubs = false\n\n# CI\n# - run: uv sync --locked --all-groups\n# - run: uv run basedpyright\n\n# Optional advisory:\n# - run: uvx ty check || true\n\n# VS Code / Cursor (repo .vscode/settings.json excerpt)\n# {\n#   \"python.analysis.typeCheckingMode\": \"off\",\n#   \"basedpyright.analysis.typeCheckingMode\": \"recommended\"\n# }",
+  "deprecation_watch": "Greenfield avoid: mypy as default; relying only on Pylance without CLI CI; pytype; monkeytype as architecture; unchecked Any-heavy codebases; ty-only CI while beta. Watch: Astral/OpenAI ownership narrative around ty priorities — reassess when ty exits beta.",
+  "ts_boundary": "Mirror TS strict philosophy (typescript.md strict: true) — Python basedpyright recommended ≈ TS strict. Share types via OpenAPI codegen to TS (zod/openapi), not by reimplementing Python models in .d.ts by hand. Do not expect structural parity between Pydantic and Zod without codegen.",
+  "rust_boundary": "Rustc types are stronger; if static guarantees and performance dominate, implement domain in Rust. Python typecheckers will not catch data races the way Rust does — free-threaded Python still needs human concurrency care. PyO3 boundaries need explicit typed wrappers.",
+  "supabase_boundary": "Prefer SQLAlchemy/asyncpg models typed in Python; supabase-py responses often loosely typed — wrap in Pydantic models at the boundary and let basedpyright check those models. Generated DB types from Supabase are TS-first; Python side models are hand-maintained or sqlacodegen — keep validation runtime+static.",
+  "boundary_contracts": "Static types are internal; external contract is OpenAPI/JSON Schema from FastAPI+Pydantic. Env settings via pydantic-settings typed models. MCP tools: type input models strictly. CI typecheck is a merge contract, not a runtime guarantee — still validate untrusted input.",
+  "decision_matrix_row": "Python static types CI → basedpyright. Fast editor feedback → ty optional. Legacy plugin needs → mypy. TS strict → tsc. Rust → rustc. Runtime boundary validation → Pydantic (always), never static-only.",
+  "threats": "False confidence: types pass but unvalidated external JSON still dangerous if Pydantic skipped. Suppressions hiding authz bugs. Stale stubs wrong about crypto/JWT libs. Supply chain: compromised type checker package in CI.",
+  "mitigations": "Always validate external input with Pydantic/runtime checks; limit type: ignore; pin basedpyright in uv.lock; review stub accuracy for security libs; keep ty non-blocking until stable; secrets never in type stubs.",
+  "agent_codegen_policy": "MUST generate: [tool.basedpyright] with pythonVersion and recommended mode; annotations on public functions; Pydantic models for request/response. MUST NOT generate: mypy-only greenfield config; untyped def foo(x): for public APIs; # type: ignore without reason; CI without typecheck step; ty as sole blocking gate while beta.",
+  "tests_required": "CI basedpyright clean; unit tests still required (types ≠ tests); optional ty advisory job. Typed pytest fixtures preferred. Contract tests for OpenAPI remain separate.",
+  "ci_gates": "uv run basedpyright must exit 0; pin tool version; optional non-blocking ty check; do not allow merge with new ignore comments without review.",
+  "skill_scan_signals": "Positive: [tool.basedpyright]; CI basedpyright; typeCheckingMode recommended/strict; few bare Any. Negative: no typecheck CI; mypy-only greenfield; type: ignore sprawl; pythonVersion unset; ty-only without basedpyright.",
+  "skill_module_bullets": [
+    "CI typecheck default: basedpyright (not mypy) with typeCheckingMode = \"recommended\".",
+    "Set pythonVersion to the project pin (3.13); keep config in pyproject.toml.",
+    "ty (Astral) is beta: excellent editor speed — keep basedpyright as blocking CI until ty is stable for your codebase.",
+    "Runtime validation (Pydantic) at trust boundaries is mandatory; static types do not replace it.",
+    "Apps may set reportMissingTypeStubs = false; libraries should be stricter.",
+    "Mirror TS strict culture: minimize Any, no silent ignore, pin checker in uv.lock."
+  ],
+  "action_items": [
+    "Add basedpyright section to references/python.md with recommended config.",
+    "Add scan for missing typecheck CI step and mypy-only greenfield.",
+    "Document ty as optional editor/advisory.",
+    "Example FastAPI service must pass basedpyright in template CI."
+  ],
+  "checklist": [
+    "[tool.basedpyright] committed with pythonVersion",
+    "typeCheckingMode recommended or stricter",
+    "basedpyright in dev dependency-group + lock",
+    "CI runs uv run basedpyright",
+    "Public APIs annotated",
+    "Boundary inputs use Pydantic",
+    "ty not the only gate (while beta)"
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "basedpyright defaults to recommended (stricter than pyright's historical basic/standard); editors like Zed may force standard unless pyproject overrides — always set mode explicitly. Community reports (2026) that ty can miss issues pyright/basedpyright catch — confirms dual-tool caution. Some comparisons list ty under OpenAI/Astral ownership narratives post-acquisition — product direction may shift; re-verify by review_by. mypy still wins for certain plugin ecosystems (Django) — not our FastAPI default.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.basedpyright.com/",
+    "https://docs.basedpyright.com/latest/configuration/config-files/",
+    "https://docs.basedpyright.com/latest/benefits-over-pyright/better-defaults/",
+    "https://docs.astral.sh/ty/",
+    "https://astral.sh/blog/ty",
+    "https://github.com/astral-sh/ty",
+    "https://github.com/DetachHead/basedpyright"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md",
+    "./references/coding-principles.md"
+  ],
+  "uncertain": [
+    "[uncertain] ty stability timeline and full typing-spec parity by 2026-10 — re-check whether ty can become primary CI gate.",
+    "[uncertain] Exact basedpyright latest patch at deploy time — use lockfile, not this note."
+  ]
+}

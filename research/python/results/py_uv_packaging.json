@@ -1,0 +1,76 @@
+{
+  "name": "uv projects, workspaces, and lock discipline",
+  "item_id": "py-uv-packaging",
+  "cluster": "tooling",
+  "short_definition": "Astral uv as the sole greenfield Python package/project manager: pyproject projects, uv.lock, PEP 735 dependency groups, workspaces, sync/run/CI --locked workflows, replacing pip/poetry/pip-tools/pyenv stacks.",
+  "scope_in": "uv init/add/remove/sync/lock/run; uv.lock semantics; [project] dependencies vs [dependency-groups]; workspaces and tool.uv.sources; requires-python interaction; GitHub Actions setup-uv; basic publish/build awareness; monorepo layouts next to Next/Axum.",
+  "scope_out": "Deep supply-chain malware policy (py-uv-audit-supply-chain); full Docker multi-stage recipes (py-docker-deploy); legacy setup.py packaging; conda/pixi environments; private index auth vault design beyond noting index-url config.",
+  "priority": "P0",
+  "defaults": "One tool: uv for installers, venvs, lock, run, and Python versions. Greenfield: uv init → uv add deps → commit pyproject.toml + uv.lock + .python-version. Use PEP 735 [dependency-groups] for dev/lint/test (dev group synced by default); use [project.optional-dependencies] extras only for published optional features. Workspaces when multiple Python packages share one lock in a monorepo; otherwise single project or path sources. CI always: uv sync --locked (and --all-groups or explicit groups as needed). Never Poetry+pip-tools for new services.",
+  "decision_gates": "Use uv project mode: any new app/lib service. Use workspaces: multiple interdependent Python packages in one repo needing one lock. Use path sources without workspace: conflicting requires-python or separate venvs needed. Use extras (optional-dependencies): installable features for consumers of a library. Use dependency-groups: local dev/test/lint only (not shipped as extras). Avoid uv only as pip drop-in long-term — prefer project interface. Keep poetry.lock only during migration; delete when uv.lock is authoritative.",
+  "do_dont": "DO: commit uv.lock; use uv add / uv remove so lock stays consistent; uv sync --locked in CI; declare workspace members with globs and workspace = true sources; put pytest/ruff/basedpyright in dependency-groups. DO NOT: hand-edit uv.lock; use requirements.txt as primary for apps (export only when ops demand); mix poetry and uv as dual sources of truth; forget --locked in CI; put secret index credentials in pyproject; use --no-dev in prod images intentionally when you need zero dev tools.",
+  "code_skeleton": "# Create\n# uv init svc-api --package\n# uv python pin 3.13\n# uv add fastapi 'uvicorn[standard]' pydantic\n# uv add --dev pytest pytest-asyncio ruff basedpyright\n\n# pyproject.toml (single project)\n[project]\nname = \"svc-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.13\"\ndependencies = [\n  \"fastapi>=0.115\",\n  \"uvicorn[standard]>=0.32\",\n  \"pydantic>=2.10\",\n]\n\n[dependency-groups]\ndev = [\n  \"pytest>=8.3\",\n  \"pytest-asyncio>=0.24\",\n  \"ruff>=0.15\",\n  \"basedpyright>=1.39\",\n]\n\n[build-system]\nrequires = [\"uv_build>=0.11.28,<0.12\"]\nbuild-backend = \"uv_build\"\n\n# Workspace root excerpt\n# [tool.uv.workspace]\n# members = [\"packages/*\"]\n# [tool.uv.sources]\n# shared-lib = { workspace = true }",
+  "failure_modes": "CI without --locked installs newer transitive deps than prod. Lock not committed → non-reproducible deploys. Workspace member omitted from members globs → resolution surprises. Conflicting dependency groups still resolve together (uv resolves all groups for one lock) — incompatible pins fail lock. Dev group bloated into production image because sync omitted --no-dev. Editable workspace imports leak undeclared deps across members (Python has no isolation).",
+  "anti_patterns": "Agents must not: generate Poetry [tool.poetry] greenfield layouts; write pip freeze workflows as primary; invent dual lockfiles; use requirements.in + pip-tools for new apps; skip uv.lock in .gitignore; call pip install inside Docker without uv; add deps only to pyproject without locking.",
+  "tools": "Primary: uv (CLI), astral-sh/setup-uv for GHA. Alternatives (legacy only): pip+venv, poetry, pdm, hatch — migrate off for greenfield. Build backend: uv_build or hatchling as project needs. Companion: ruff, basedpyright installed via dependency-groups.",
+  "versions_as_of": "as_of 2026-07-13 — uv 0.11.x on PyPI (e.g. 0.11.28); local Homebrew sample 0.11.23. PEP 735 dependency-groups supported; universal uv.lock. setup-uv GitHub Action in active  v8 line per docs examples. Pin exact uv version in CI for supply-chain stability.",
+  "config_snippets": "# pyproject.toml\n[project]\nname = \"svc-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.13\"\ndependencies = [\"fastapi>=0.115\", \"pydantic>=2.10\"]\n\n[dependency-groups]\ndev = [\"pytest>=8.3\", \"ruff>=0.15\", \"basedpyright>=1.39\"]\n\n# .github/workflows/ci.yml (excerpt)\n# - uses: astral-sh/setup-uv@v8   # pin full commit SHA in real repos\n# - run: uv sync --locked --all-groups\n# - run: uv run ruff check .\n# - run: uv run pytest\n\n# Prod image sync (no dev tools)\n# RUN uv sync --locked --no-dev\n\n# Commands\n# uv lock\n# uv sync --locked\n# uv run uvicorn svc_api.main:app --reload",
+  "deprecation_watch": "Greenfield avoid: Poetry as primary; Pipenv; pip-tools as app workflow; manually maintained requirements.txt without lock generation story; setup.py without pyproject; pyenv-virtualenv chains when uv python suffices; committing .venv.",
+  "ts_boundary": "In a monorepo with Next.js, keep Python under services/ or packages/python/* with its own uv.lock — do not share node_modules. Orchestrate CI jobs separately (pnpm vs uv). Boundary contracts remain HTTP/OpenAPI; package managers never cross languages.",
+  "rust_boundary": "Rust stays on Cargo workspaces; uv workspaces are Python-only. A hybrid repo may host crates/ and python/ packages/* side by side. Call Rust via HTTP/gRPC or PyO3 wheels published/path-sourced — do not expect uv to build Rust except via custom build scripts.",
+  "supabase_boundary": "Add supabase and/or asyncpg/sqlalchemy via uv add; lock pins transitive HTTP/Postgres clients. Prefer service-role keys only in server env, not in pyproject. Migrations: keep Supabase SQL or Alembic in-repo; uv does not replace migration tooling.",
+  "boundary_contracts": "uv.lock + pyproject.toml are the install contract for Python services; OpenAPI is the cross-language API contract; env for secrets; optional uv export requirements.txt only for external systems that cannot run uv. MCP tool servers packaged as uv projects with --no-dev deploy sync.",
+  "decision_matrix_row": "Python packaging/lock/run → uv always. TS packages → pnpm. Rust → cargo. Do not introduce Poetry for new Python in this stack.",
+  "threats": "Malicious or typosquat packages resolved into lock; compromised index; lockfile PR that quietly bumps vulnerable transitive; credentials in uv.toml committed; installing with --no-verify or disabled hashes in hostile networks.",
+  "mitigations": "Commit and review uv.lock diffs; CI --locked; prefer default hash checking; pin setup-uv action by commit SHA; use private index config via env/secret not git; run audit skill (uv audit / OSV) in separate item; least-privilege tokens for publish.",
+  "agent_codegen_policy": "MUST generate: pyproject.toml with [project], requires-python, dependencies; [dependency-groups] dev for tools; instruct uv lock/sync; commit uv.lock. MUST NOT generate: poetry.lock, Pipfile, setup.py-only projects for greenfield; pip install -r without uv path; secrets in config files.",
+  "tests_required": "CI sync --locked succeeds on clean runner; uv run pytest; optional uv lock --check (or equivalent freshness check) on PRs; workspace builds each member package import smoke test.",
+  "ci_gates": "setup-uv with version pin; uv sync --locked --all-groups (or explicit); fail on lock drift; cache uv store per action defaults; no poetry install steps in greenfield workflows.",
+  "skill_scan_signals": "Positive: uv.lock committed; [dependency-groups]; astral-sh/setup-uv; uv sync --locked. Negative: poetry.lock without migration note; requirements.txt sole source; unpinned pip install in Dockerfile; missing lock; both poetry and uv without documented dual-run period.",
+  "skill_module_bullets": [
+    "Greenfield Python packaging is uv-only: init/add/lock/sync/run — not Poetry/pip-tools.",
+    "Always commit uv.lock; CI must uv sync --locked.",
+    "Use PEP 735 [dependency-groups] for dev/test/lint; reserve optional-dependencies for published extras.",
+    "Workspaces: one lock, members globs, tool.uv.sources workspace = true for in-repo packages.",
+    "Prod images: uv sync --locked --no-dev; never copy host .venv.",
+    "Pin uv version in CI (setup-uv commit SHA); review lockfile diffs like package-lock."
+  ],
+  "action_items": [
+    "Document uv project skeleton in references/python.md.",
+    "Add scan IDs for missing uv.lock and poetry greenfield.",
+    "Provide GHA snippet with setup-uv + --locked.",
+    "Cross-link monorepo layout item for services/ next to Next/Axum."
+  ],
+  "checklist": [
+    "pyproject.toml valid with requires-python",
+    "uv.lock committed and fresh",
+    ".python-version present",
+    "dev tools in dependency-groups not prod deps",
+    "CI uses uv sync --locked",
+    "Dockerfile uses uv sync --no-dev for runtime layer",
+    "No dual Poetry/uv authority"
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Some teams still prefer hatchling vs uv_build as build-backend — either fine; uv docs examples use uv_build. Workspaces force a single requires-python intersection — conflicting member floors need path deps instead. uv resolves all dependency groups together for the lock, which surprises users expecting fully isolated group resolution.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.astral.sh/uv/",
+    "https://docs.astral.sh/uv/concepts/projects/dependencies/",
+    "https://docs.astral.sh/uv/concepts/projects/sync/",
+    "https://docs.astral.sh/uv/concepts/projects/workspaces/",
+    "https://docs.astral.sh/uv/guides/integration/github/",
+    "https://peps.python.org/pep-0735/",
+    "https://pypi.org/project/uv/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md",
+    "./references/coding-principles.md"
+  ],
+  "uncertain": [
+    "[uncertain] Exact setup-uv major tag at next review — always pin by full git SHA in production workflows."
+  ]
+}

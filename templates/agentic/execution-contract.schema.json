@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engineer.local/agentic-execution-contract.schema.json",
+  "title": "engineer agentic execution contract",
+  "type": "object",
+  "required": ["schema_version", "goal", "requirements", "acceptance", "plan", "loop", "tools", "security", "prompt_optimization", "stop_conditions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "goal": {"type": "object", "required": ["outcome", "scope", "non_goals", "evidence"]},
+    "requirements": {"type": "array", "minItems": 1},
+    "acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "requirement_ids", "criterion", "evidence", "oracles"],
+        "properties": {
+          "oracles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["artifact", "pointer", "operator", "expected"],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "plan": {"type": "array", "minItems": 1},
+    "loop": {"type": "object", "required": ["phases", "max_steps", "max_retries_per_failure", "no_progress_limit", "checkpoint_path"]},
+    "tools": {"type": "array", "minItems": 1},
+    "security": {"type": "object", "required": ["untrusted_sources", "sensitive_data", "allowed_sinks", "cross_domain_confirmation", "injection_eval_set"]},
+    "prompt_optimization": {"type": "object", "required": ["baseline", "capability_set", "regression_set", "holdout_set", "quality_metric", "cost_budget", "latency_budget"]},
+    "stop_conditions": {"type": "array", "minItems": 3}
+  },
+  "additionalProperties": false
+}

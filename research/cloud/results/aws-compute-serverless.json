@@ -1,0 +1,233 @@
+{
+  "name": "AWS compute for web/services — Lambda (Node/Python), ECS Fargate, App Runner; when each; cold starts, packaging, env/secrets",
+  "item_id": "aws-compute-serverless",
+  "cluster": "aws",
+  "short_definition": "AWS offers three managed compute tiers relevant to a TS/Next + Python-services stack: Lambda (event-driven, per-invocation billing, cold-start-sensitive, best for APIs behind API Gateway, queue consumers, and cron-style jobs), ECS on Fargate (long-running or always-warm containers, full control over concurrency/networking, best for Python worker services, WebSocket servers, or anything needing >15 min execution or steady load), and App Runner (the simplest path from a container image or source repo to a running HTTPS service, sitting between Lambda and Fargate on control/complexity). Next.js itself typically deploys to Vercel, not raw AWS compute; this item covers AWS-hosted Python services, background workers, and any Node/TS Lambda functions the stack needs alongside Supabase.",
+  "scope_in": "Lambda (Node.js and Python runtimes, packaging, layers, cold starts, concurrency), ECS Fargate (task definitions, services, scaling), App Runner (source- and image-based deploys), choosing between the three, environment variables and secrets injection into each, container image packaging basics for Fargate/App Runner/Lambda container images.",
+  "scope_out": "IAM roles/OIDC for these compute types are in aws-identity-iam-oidc; API Gateway/ALB routing in front of compute and VPC networking for Fargate are in aws-edge-network-cost; S3/RDS/DynamoDB/Secrets Manager as data dependencies are in aws-data-storage; Vercel's own serverless/edge runtime for the Next.js frontend is in the vercel cluster; Cloudflare Workers/Fly/Railway alternatives are in the platforms cluster.",
+  "priority": "P0",
+  "defaults": [
+    "Default new AWS Lambda functions to the Node.js 22.x or Python 3.13 managed runtime (latest LTS-equivalent at build time), ARM64/Graviton architecture unless a native dependency forces x86, and a memory setting tuned by AWS Lambda Power Tuning rather than left at the 128 MB default.",
+    "Use Lambda for: HTTP APIs behind API Gateway with sub-second-to-a-few-second handlers, SQS/EventBridge/S3-event consumers, and scheduled (cron-style) jobs under 15 minutes.",
+    "Use ECS on Fargate for: Python background workers or long-running services (job runners, WebSocket servers, anything needing more than 15 minutes, steady/predictable load where per-request Lambda billing is wasteful, or workloads needing more control over networking/sidecars).",
+    "Use App Runner for: the fastest path to a public HTTPS service from a container image or a supported source repo when you don't need Fargate's fine-grained task/service/networking control — good for a small internal API or admin tool, not for a system needing VPC-heavy integration.",
+    "Package Lambda functions as .zip deployments for typical Node/Python handlers; use Lambda container images only when dependencies exceed the .zip size/layer limits or you need a custom runtime.",
+    "Keep Lambda handlers stateless and idempotent; use provisioned concurrency only for latency-critical, low-traffic-variance endpoints where cold starts are unacceptable, not as a default.",
+    "Inject configuration via environment variables for non-secret config and via Secrets Manager/Parameter Store references (resolved at cold start, cached in-process) for secrets — never bake secrets into the deployment package or container image.",
+    "For Python services with native dependencies (numpy, pandas, ML libraries), prefer Fargate or Lambda container images over .zip layers, since layer size limits make large native wheels painful to manage."
+  ],
+  "decision_gates": [
+    "Choose Lambda over Fargate when traffic is spiky/low-volume and cost should scale to near-zero at idle; choose Fargate when traffic is steady enough that per-request Lambda pricing exceeds a small always-on Fargate task, or when execution regularly exceeds 15 minutes.",
+    "Choose Fargate over Lambda when the workload needs a persistent process (WebSocket server, long-lived DB connection pool, in-memory cache warmed once), or when you need >10GB memory, GPU, or more than 6 vCPU-equivalent compute per unit of work.",
+    "Choose App Runner over Fargate when you want AWS to manage the ECS/ALB/scaling wiring for you and don't need custom VPC topology, multiple containers per task, or fine-grained autoscaling policies — App Runner trades control for simplicity.",
+    "Prefer Supabase Edge Functions (Deno) over AWS Lambda for functions that only need to talk to Supabase Postgres/Auth/Storage and don't need AWS-specific services — avoids running two clouds for the same job.",
+    "Prefer Vercel serverless/edge functions over AWS Lambda for anything colocated with the Next.js app (API routes, server actions) unless a hard requirement (VPC-only resource, AWS-specific SDK, long-running job) forces it onto AWS compute.",
+    "Escalate from Lambda to Fargate/App Runner once cold-start latency becomes user-visible for Node/Python APIs and provisioned concurrency cost approaches or exceeds a small Fargate task's steady-state cost.",
+    "Use ECS Fargate Spot for interruption-tolerant batch/worker workloads (up to ~70% cheaper); never for latency-sensitive request-serving tasks without a non-Spot fallback."
+  ],
+  "do_dont": [
+    "Do initialize SDK clients, DB connection pools, and Secrets Manager fetches outside the Lambda handler function body so they're reused across warm invocations.",
+    "Do set Lambda memory based on actual profiling (AWS Lambda Power Tuning or manual load testing) — memory also scales CPU/network bandwidth, so under-provisioning often costs more in duration than the memory saved.",
+    "Do use Lambda SnapStart (Java) or provisioned concurrency (Node/Python) only after confirming cold starts are actually a measured problem for the specific function, not preemptively for every function.",
+    "Do set explicit CPU/memory reservations and health checks on every ECS Fargate task definition and service.",
+    "Do use `.dockerignore`/build stages to keep Lambda container images and Fargate images minimal — image size directly affects cold start and pull time.",
+    "Don't run a Lambda function with 15-minute timeout and default 128 MB memory 'just in case' — this masks real performance problems and wastes budget on unnecessarily long executions.",
+    "Don't put a relational DB connection pool (e.g. Postgres via SQLAlchemy/pg) directly in a high-concurrency Lambda without RDS Proxy or a pooler — Lambda's per-invocation scaling can exhaust DB connections in seconds.",
+    "Don't use ECS Fargate for a function whose real workload pattern is a handful of requests per hour — you'll pay for idle vCPU/memory continuously versus near-zero Lambda cost.",
+    "Don't hardcode secrets or connection strings into a Lambda's environment variables in plaintext when Secrets Manager/Parameter Store SecureString is available — use the reference and resolve at cold start.",
+    "Don't deploy Fargate tasks without a defined `stopTimeout` and graceful shutdown handling for SIGTERM — abrupt kills during deploys drop in-flight requests."
+  ],
+  "config_skeleton": "# --- Lambda (Node.js/TS) via SAM/CDK-style config, placeholders only ---\n# template.yaml (AWS SAM)\nResources:\n  ApiFunction:\n    Type: AWS::Serverless::Function\n    Properties:\n      FunctionName: my-app-api\n      Runtime: nodejs22.x\n      Architectures: [arm64]\n      Handler: dist/handler.main\n      MemorySize: 512   # tune with Lambda Power Tuning, not left at default\n      Timeout: 10\n      Environment:\n        Variables:\n          NODE_ENV: production\n          DB_SECRET_ARN: arn:aws:secretsmanager:us-east-1:123456789012:secret:my-app/db-XXXXXX\n      Policies:\n        - AWSSecretsManagerGetSecretValuePolicy:\n            SecretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:my-app/db-XXXXXX\n\n# --- ECS Fargate task definition (excerpt, placeholders only) ---\n# task-def.json\n{\n  \"family\": \"my-app-worker\",\n  \"cpu\": \"512\",\n  \"memory\": \"1024\",\n  \"networkMode\": \"awsvpc\",\n  \"requiresCompatibilities\": [\"FARGATE\"],\n  \"executionRoleArn\": \"arn:aws:iam::123456789012:role/my-app-ecs-execution\",\n  \"taskRoleArn\": \"arn:aws:iam::123456789012:role/my-app-worker-task\",\n  \"containerDefinitions\": [\n    {\n      \"name\": \"worker\",\n      \"image\": \"123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app-worker:latest\",\n      \"essential\": true,\n      \"stopTimeout\": 30,\n      \"secrets\": [\n        {\"name\": \"DATABASE_URL\", \"valueFrom\": \"arn:aws:secretsmanager:us-east-1:123456789012:secret:my-app/db-XXXXXX\"}\n      ],\n      \"logConfiguration\": {\n        \"logDriver\": \"awslogs\",\n        \"options\": {\n          \"awslogs-group\": \"/ecs/my-app-worker\",\n          \"awslogs-region\": \"us-east-1\",\n          \"awslogs-stream-prefix\": \"worker\"\n        }\n      }\n    }\n  ]\n}\n\n# --- App Runner (apprunner.yaml, source-based deploy) ---\nversion: 1.0\nruntime: python313\nbuild:\n  commands:\n    build:\n      - pip install -r requirements.txt\nrun:\n  runtime-version: 3.13\n  command: uvicorn app.main:app --host 0.0.0.0 --port 8080\n  network:\n    port: 8080\n  env:\n    - name: ENVIRONMENT\n      value: production\n  # Secrets referenced via App Runner service config -> Secrets Manager ARN, not inline values.\n",
+  "failure_modes": [
+    "Lambda cold starts (especially Python with large dependency trees, or Node with a heavy bundle) causing p99 latency spikes on low-traffic APIs — mitigated by trimming dependencies, bundling with esbuild/tree-shaking, or provisioned concurrency for the specific function.",
+    "Lambda-to-RDS/Aurora connection exhaustion under burst concurrency because each concurrent invocation opens its own DB connection — requires RDS Proxy or a serverless-aware pooler.",
+    "ECS Fargate task stuck in a crash-loop due to a missing/incorrect health check or a container failing to bind the expected port, silently cycling and burning cost without serving traffic.",
+    "App Runner auto-deploy from source triggering an unreviewed production deployment on every push to the tracked branch if branch protection/approval gates aren't configured separately.",
+    "Deployment package or container image exceeding Lambda's size limits (50MB zipped via API, 250MB unzipped including layers; 10GB for container images) discovered only at deploy time.",
+    "Fargate task definitions without `stopTimeout`/SIGTERM handling causing dropped requests and incomplete work during every rolling deploy.",
+    "Lambda function timeout set equal to or greater than a downstream API Gateway integration timeout (29s max for REST APIs), causing silent 504s that look like Lambda failures but are actually gateway-side.",
+    "Provisioned concurrency left enabled on a function after traffic patterns change, quietly billing for reserved capacity that's no longer needed."
+  ],
+  "anti_patterns": [
+    "Generating a Lambda function with default 128 MB memory and 3-second timeout for a real production API handler without any profiling-based justification.",
+    "Embedding `AWS_ACCESS_KEY_ID`/secrets as plaintext Lambda environment variables or baked into a container image layer instead of a Secrets Manager/Parameter Store reference.",
+    "Opening a new database connection (or connection pool) inside the Lambda handler body on every invocation instead of at module/global scope.",
+    "Using Lambda for a workload that needs to run longer than 15 minutes by chaining Step Functions retries as a workaround instead of moving the workload to Fargate.",
+    "Deploying ECS services without a task role separate from the execution role (over-broad task role reused for both pulling images and running application logic).",
+    "Choosing App Runner for a workload that needs private VPC-only resource access without first confirming App Runner's VPC connector adds acceptable latency/complexity versus just using Fargate."
+  ],
+  "tools": [
+    "AWS SAM CLI or AWS CDK — Lambda packaging, local testing (`sam local invoke`), and IaC deploy.",
+    "AWS Lambda Power Tuning (open-source, AWS Labs) — automated memory/cost/duration tuning.",
+    "Amazon ECR — container registry for Fargate/App Runner/Lambda-container-image builds.",
+    "AWS Copilot CLI — higher-level ECS Fargate deploy/ops tool for teams that don't want raw task-definition JSON.",
+    "App Runner console/CLI (`aws apprunner`) with `apprunner.yaml` for source-based builds.",
+    "esbuild/webpack (Node) and pip/uv with `--platform` targeting (Python) for trimming Lambda deployment package size.",
+    "Alternative: Serverless Framework — still widely used for Lambda, though AWS SAM/CDK are the more AWS-native path for a greenfield 2026 stack."
+  ],
+  "versions_as_of": [
+    "Lambda supported runtimes as of 2026-08-29: Node.js 22.x and Python 3.13 are current-generation managed runtimes; verify against the live supported-runtimes list before pinning, as AWS deprecates older minor versions on a rolling schedule. [uncertain: exact current default/latest minor at time of read]",
+    "ECS Fargate platform version LATEST tracks AWS's rolling Fargate platform updates; pin to a specific platform version only if you need reproducibility guarantees beyond LATEST.",
+    "Lambda now also offers 'Lambda Managed Instances' and 'Durable Functions' as newer 2026-era additions (long-lived execution / durable workflow orchestration) alongside classic Lambda Functions — evaluate before defaulting to classic Lambda + Step Functions for durable workflow needs [uncertain: maturity/GA status and whether these fit a greenfield 2026 build]."
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Lambda function memory range",
+      "value": "128 MB – 10,240 MB, 1 MB increments; 1,769 MB ≈ 1 vCPU",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda function timeout max",
+      "value": "900 seconds (15 minutes)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda deployment package size",
+      "value": "50 MB zipped (API/console upload), 250 MB unzipped (incl. layers); use S3/container image for larger",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda container image size",
+      "value": "10 GB max uncompressed",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda default concurrent executions",
+      "value": "1,000 per region (soft limit, raisable to tens of thousands)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda environment variables size",
+      "value": "4 KB aggregate per function",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda layers per function",
+      "value": "5",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    },
+    {
+      "item": "Lambda pricing (x86, on-demand)",
+      "value": "$0.0000166667 per GB-second + $0.20 per 1M requests; free tier 400,000 GB-seconds + 1M requests/month [uncertain: whether this free tier still applies unchanged under the 2025-07-15 credit-based Free Tier model for new accounts]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/lambda/pricing/"
+    },
+    {
+      "item": "ECS Fargate pricing (Linux/x86, us-east-1)",
+      "value": "$0.0404/vCPU-hour, $0.00444/GB-hour; ARM/Graviton ~20% cheaper ($0.0324/vCPU-hour, $0.00356/GB-hour); Fargate Spot up to 70% discount",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/fargate/pricing/"
+    },
+    {
+      "item": "App Runner compute pricing (primary regions)",
+      "value": "$0.064/vCPU-hour active, $0.007/GB-hour memory (active and provisioned); billed per second, 1-minute minimum",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/apprunner/pricing/"
+    },
+    {
+      "item": "Lambda ephemeral /tmp storage",
+      "value": "512 MB – 10,240 MB configurable",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html"
+    }
+  ],
+  "deprecation_watch": [
+    "Older Lambda runtime minor versions (e.g. Node.js 16/18, Python 3.9/3.10) are on AWS's runtime deprecation schedule — do not pin new greenfield functions to anything but the current or previous LTS-equivalent runtime; check the live deprecation dates before build. [uncertain: exact 2026 deprecation cutoffs — verify at build time]",
+    "Lambda's classic zip-based Node.js runtime remains fully supported; container-image Lambda is not being deprecated but adds cold-start overhead versus zip for small functions — don't default to container images without a reason.",
+    "AWS App Mesh (relevant if considering service mesh alongside Fargate) is on an end-of-support track per AWS's own announcements — avoid greenfield adoption; prefer ECS Service Connect or a simpler alternative."
+  ],
+  "identity_model": "Every compute unit runs under its own IAM role, never shared static credentials: a Lambda function has one execution role (assumed automatically by the Lambda service) scoped to exactly the AWS APIs and secrets it needs; an ECS Fargate task has both an execution role (used by the ECS agent to pull images and write logs) and a separate task role (used by application code inside the container to call AWS APIs) — these must not be the same role; an App Runner service has an instance role for the same purpose. None of these ever receive `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — the SDK's default credential provider chain resolves credentials automatically from the execution environment. CI deployment of any of these (updating function code, pushing images, updating task definitions/services) uses the OIDC-federated GitHub Actions role from aws-identity-iam-oidc, scoped to only the specific `lambda:UpdateFunctionCode`, `ecs:UpdateService`, or `apprunner:StartDeployment`-class actions needed.",
+  "threats": [
+    "Over-privileged Lambda execution role or ECS task role granting far more than the function/service actually calls (common when copy-pasting a broad managed policy to 'get it working').",
+    "Secrets leaking through Lambda environment variables visible in the console/CloudFormation drift or through container image layers if a secret was ever baked in during a bad build.",
+    "SSRF or dependency-confusion attacks against a Lambda/Fargate workload pivoting to internal AWS metadata endpoints if IMDSv1 or overly permissive network egress is left enabled.",
+    "Unbounded Lambda concurrency during a traffic spike or retry storm exhausting downstream database connections or account-level concurrency, causing cascading failures across unrelated functions in the same account/region.",
+    "App Runner's auto-deploy-on-push convenience becoming an unreviewed production deploy path if branch protections aren't separately enforced.",
+    "Container images pulled from a public/untrusted registry instead of a private ECR repo with image scanning enabled."
+  ],
+  "mitigations": [
+    "Write one narrowly scoped IAM policy per function/service rather than reusing a single 'app-role' across many Lambda functions or ECS services.",
+    "Use ECR image scanning (on push) and block deploys of images with critical/high vulnerabilities via CI gate.",
+    "Set reserved/account concurrency limits on high-risk Lambda functions to prevent one function's spike from starving others in the same account.",
+    "Use RDS Proxy (or equivalent pooling) for any Lambda function talking to RDS/Aurora at meaningful concurrency.",
+    "Disable IMDSv1 and enforce IMDSv2 on any EC2-backed infrastructure adjacent to these services; for Fargate, use `awsvpc` networking mode with security groups scoped to only required ports.",
+    "Require CI/CD-only deploys (no console-driven manual updates) for production Lambda/ECS/App Runner, gated by the same reviewed pipeline that manages IAM.",
+    "Set CloudWatch alarms on Lambda throttles, error rate, and duration approaching timeout; on ECS, alarm on task restart count and unhealthy-target count."
+  ],
+  "agent_codegen_policy": [
+    "Must generate a memory/timeout value with a stated rationale (e.g. based on expected payload/DB round-trip) rather than leaving Lambda defaults unexamined.",
+    "Must resolve secrets via Secrets Manager/Parameter Store SDK calls or ECS task-definition `secrets` blocks — never plaintext values in `environment`/`Environment.Variables`.",
+    "Must create a separate ECS execution role and task role, never reuse one role for both.",
+    "Must include a health check (Lambda: none needed but log-based alarms; ECS/App Runner: explicit HTTP health check path and interval) in every generated task/service definition.",
+    "Must not generate Lambda functions with `Timeout` >= the known API Gateway integration timeout ceiling without flagging the mismatch.",
+    "Should default new Lambda functions to ARM64/Graviton unless a stated dependency requires x86.",
+    "Must include `stopTimeout` and graceful-shutdown guidance in generated ECS task definitions."
+  ],
+  "ci_gates": [
+    "Build step that fails if the Lambda deployment package (zipped) exceeds a set size budget well below the 50MB hard limit, catching bloat before it becomes a hard failure.",
+    "ECR image scan gate blocking deploy on critical/high CVEs.",
+    "Staging deploy + smoke test (basic health-check curl, or a synthetic invoke) required before promoting to production for all three compute types.",
+    "Terraform/CDK plan review specifically for any IAM role/policy change attached to compute resources."
+  ],
+  "observability": [
+    "CloudWatch Logs for all three compute types, structured JSON logging recommended for easier querying; consider shipping to an OTel collector for a unified trace view across Lambda, Fargate, and the Next.js/Vercel frontend.",
+    "AWS X-Ray (or OTel with the AWS Distro) for distributed tracing across Lambda → API Gateway → downstream services.",
+    "Key alerts: Lambda error rate and throttle count, Lambda duration approaching timeout, ECS/App Runner unhealthy-target count and task restart rate, cold-start duration (Lambda `Init Duration` metric) trending upward.",
+    "CloudWatch dashboards per environment (staging/production) rather than relying on default per-resource views."
+  ],
+  "cost_guardrails": [
+    "First surprise: Lambda provisioned concurrency left on after a traffic pattern changes, billing continuously for reserved capacity nobody is using — review provisioned concurrency settings monthly.",
+    "Second surprise: an ECS Fargate service sized for peak load running 24/7 at that size instead of using Service Auto Scaling to scale down during low-traffic hours — Fargate has no built-in scale-to-zero, unlike Lambda.",
+    "Third surprise: App Runner's 'Provisioned' billing for memory continues even when the container is idle (only vCPU is billed only while 'active'), which can surprise teams expecting Lambda-style full scale-to-zero economics.",
+    "Set AWS Budgets with a service-level budget for Lambda, ECS, and App Runner separately so a runaway function/service is caught in days, not at month-end.",
+    "For batch/worker Fargate workloads, default to Fargate Spot with a small non-Spot baseline rather than 100% on-demand Fargate."
+  ],
+  "skill_scan_signals": [
+    "Positive: Lambda function config specifying `MemorySize`/`Timeout` with a comment or documented rationale, and `arm64` architecture by default.",
+    "Positive: ECS task definitions with distinct `executionRoleArn` and `taskRoleArn`, and a `secrets` block referencing Secrets Manager/SSM ARNs.",
+    "Negative (flag): Lambda `Environment.Variables` containing values matching secret-shaped patterns (long base64/hex strings, `postgres://user:pass@` connection strings) instead of a Secrets Manager ARN reference.",
+    "Negative (flag): ECS task definition using the same role ARN for both `executionRoleArn` and `taskRoleArn`.",
+    "Negative (flag): Lambda function with `Timeout: 900` (max) and default `MemorySize: 128` together — signals unexamined defaults rather than tuning.",
+    "Negative (flag): container image `FROM` a public unpinned tag (e.g. `python:latest`) rather than a pinned digest/version for production Fargate/App Runner builds."
+  ],
+  "skill_module_bullets": [
+    "Lambda for spiky/event-driven work under 15 minutes; Fargate for steady/long-running Python services; App Runner for the simplest container-to-HTTPS path.",
+    "Tune Lambda memory with profiling, not defaults; default ARM64 unless a dependency forces x86.",
+    "Separate ECS execution role from task role; never plaintext secrets in env vars — use Secrets Manager/SSM references.",
+    "Use RDS Proxy for any Lambda-to-RDS/Aurora path at real concurrency.",
+    "Fargate has no built-in scale-to-zero — pair with Service Auto Scaling or accept 24/7 baseline cost; use Fargate Spot for interruption-tolerant workers.",
+    "Watch Lambda provisioned concurrency for stale reservations; watch App Runner's always-billed memory even when 'idle'.",
+    "New Lambda 2026-era features (Managed Instances, Durable Functions) exist alongside classic Lambda — evaluate maturity before adopting for a greenfield build."
+  ],
+  "checklist": [
+    "Compute choice (Lambda/Fargate/App Runner) documented with the decision rationale, not defaulted by habit.",
+    "Lambda memory/timeout tuned and justified; ARM64 used unless blocked.",
+    "ECS execution role and task role are distinct, least-privilege.",
+    "No plaintext secrets in any environment variable across all three compute types.",
+    "Health checks and graceful shutdown (`stopTimeout`/SIGTERM handling) configured for Fargate/App Runner.",
+    "RDS Proxy or equivalent pooling in place for any Lambda-to-relational-DB path.",
+    "Budgets/alarms set per compute type before first production deploy.",
+    "ECR image scanning enabled and gating CI for any container-based deploy."
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Lambda pricing documentation now also surfaces newer 2026 billing models (Lambda Managed Instances with a 15% management fee over EC2 on-demand, Durable Functions with separate operation/storage billing, and MicroVMs) alongside the classic per-GB-second/per-request model; older cost-comparison blog posts (pre-2026) only account for the classic model and will understate options/costs for these newer modes. RDS/Aurora and exact SQS pricing could not be fully confirmed via fetch in this pass and are cross-referenced as [uncertain] in aws-data-storage rather than duplicated here.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html",
+    "https://aws.amazon.com/lambda/pricing/",
+    "https://aws.amazon.com/fargate/pricing/",
+    "https://aws.amazon.com/apprunner/pricing/"
+  ],
+  "uncertain": [
+    "conflicts_noted"
+  ]
+}

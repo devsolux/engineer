@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "captured_at": "2026-07-15T12:00:00Z",
+  "workspace": {
+    "cwd": ".",
+    "git_root_name": "example-app",
+    "git_head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "runtime_signals": {
+    "codex_thread": true,
+    "claude_session": false,
+    "claude_entrypoint": false,
+    "hermes_home": false,
+    "portage_present": false
+  },
+  "context_files": [
+    {
+      "kind": "AGENTS.md",
+      "path": "AGENTS.md",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "hosts": [
+    {
+      "id": "codex",
+      "installed": true,
+      "executable_name": "codex",
+      "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "version": "codex-cli example",
+      "version_output_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "help_output_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "capabilities": ["approvals", "mcp", "non_interactive", "sandbox", "strict_config"],
+      "probe_errors": []
+    },
+    {
+      "id": "claude",
+      "installed": true,
+      "executable_name": "claude",
+      "executable_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "version": "Claude Code example",
+      "version_output_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "help_output_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "capabilities": ["bare_mode", "no_persistence", "non_interactive", "permission_modes", "streaming_json"],
+      "probe_errors": []
+    },
+    {
+      "id": "grok",
+      "installed": false,
+      "executable_name": "grok",
+      "executable_sha256": null,
+      "version": null,
+      "version_output_sha256": null,
+      "help_output_sha256": null,
+      "capabilities": [],
+      "probe_errors": []
+    },
+    {
+      "id": "hermes",
+      "installed": false,
+      "executable_name": "hermes",
+      "executable_sha256": null,
+      "version": null,
+      "version_output_sha256": null,
+      "help_output_sha256": null,
+      "capabilities": [],
+      "probe_errors": []
+    },
+    {
+      "id": "portage",
+      "installed": false,
+      "executable_name": "portage",
+      "executable_sha256": null,
+      "version": null,
+      "version_output_sha256": null,
+      "help_output_sha256": null,
+      "capabilities": [],
+      "probe_errors": []
+    }
+  ],
+  "limitations": [
+    "Help text proves advertised local CLI surface, not feature enablement or authorization.",
+    "Environment signal presence is recorded without values and does not prove active-host identity.",
+    "Effective sandbox, approval, network, credentials, model, and managed policy require host-native evidence."
+  ],
+  "decision": {
+    "outcome": "inventory_only",
+    "reasons": ["Capability negotiation requires task-specific authority review."]
+  }
+}

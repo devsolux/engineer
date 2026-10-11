@@ -1,0 +1,98 @@
+# Engineering preset: library / tool evaluation
+# Copy to {topic_slug}/fields.yaml and customize.
+evidence_policy:
+  mode: claim_v1
+  semantic_review: required
+  identity_fields: [name, sources]
+field_categories:
+  - category: Basic Info
+    fields:
+      - name: name
+        description: Canonical library or product name
+        detail_level: brief
+        required: true
+      - name: website
+        description: Official documentation or product URL
+        detail_level: brief
+        required: true
+      - name: github_url
+        description: Primary source repository URL if open source
+        detail_level: brief
+      - name: license
+        description: SPDX or common license identifier
+        detail_level: brief
+        required: true
+      - name: maintainer
+        description: Company or core maintainer org
+        detail_level: brief
+      - name: first_release
+        description: First public release or GA date if known
+        detail_level: brief
+  - category: Engineering Fit
+    fields:
+      - name: primary_language
+        description: Implementation language(s)
+        detail_level: brief
+        required: true
+      - name: typescript_support
+        description: First-class TypeScript? quality of types
+        detail_level: moderate
+      - name: runtime_targets
+        description: Node, edge, browser, Python, etc.
+        detail_level: moderate
+      - name: framework_integrations
+        description: First-class Next.js / FastAPI / etc. integrations
+        detail_level: moderate
+      - name: devops_model
+        description: Self-host, managed SaaS, hybrid
+        detail_level: moderate
+        required: true
+  - category: Operations
+    fields:
+      - name: pricing_model
+        description: Free tier, usage, seats, enterprise
+        detail_level: moderate
+      - name: ops_burden
+        description: What you must run/monitor yourself
+        detail_level: moderate
+      - name: observability
+        description: Logs, metrics, tracing hooks
+        detail_level: moderate
+      - name: local_dev_experience
+        description: Local emulator / docker / zero-config
+        detail_level: moderate
+  - category: Maturity & Risk
+    fields:
+      - name: github_stars
+        description: Approximate star count with as_of date
+        detail_level: brief
+      - name: release_cadence
+        description: How often stable releases ship
+        detail_level: moderate
+      - name: breaking_change_policy
+        description: Semver discipline / migration pain
+        detail_level: moderate
+      - name: security_posture
+        description: CVE history, security contact, SOC2 if SaaS
+        detail_level: moderate
+      - name: lock_in_risk
+        description: Proprietary APIs, data export, multi-cloud
+        detail_level: moderate
+        required: true
+  - category: Decision
+    fields:
+      - name: best_for
+        description: Ideal use cases for this option
+        detail_level: moderate
+        required: true
+      - name: not_for
+        description: Anti-fit cases
+        detail_level: moderate
+      - name: alternatives
+        description: Closest substitutes
+        detail_level: brief
+      - name: sources
+        description: List of primary URLs used
+        detail_level: detailed
+        required: true
+uncertain: []

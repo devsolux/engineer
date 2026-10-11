@@ -1,0 +1,275 @@
+{
+  "name": "Infrastructure as code — Terraform/OpenTofu, Pulumi, SST v3, AWS CDK; state, drift, review gates, and when a PaaS dashboard is enough",
+  "item_id": "iac-and-provisioning",
+  "cluster": "platforms",
+  "short_definition": "Choosing whether and how to manage cloud resources declaratively (Terraform/OpenTofu, Pulumi, SST v3, AWS CDK) versus relying on PaaS dashboards and committed config files, with state management, drift control, and CI review gates as the operational core once IaC is adopted.",
+  "scope_in": [
+    "Decision criteria for PaaS-dashboard-only vs adopting a dedicated IaC tool",
+    "Terraform and OpenTofu: license history, fork rationale, CLI workflow (init/plan/apply), remote state and locking",
+    "Pulumi: general-purpose language IaC, state backend choices (Pulumi Cloud vs self-managed)",
+    "SST v3 (Ion): Pulumi-based, TypeScript-native, serverless/AWS-first with growing multi-provider support, live lambda dev",
+    "AWS CDK v2: TypeScript-first synthesis to CloudFormation",
+    "GitHub Actions OIDC federation to AWS/GCP/Azure for short-lived plan/apply credentials",
+    "CI review gates for IaC: plan-on-PR, apply-on-merge, plan-as-PR-comment, human approval gates",
+    "State file risks: drift, corruption, loss, lock contention, secret leakage into state",
+    "When this stack (Vercel + Supabase + maybe Cloudflare/Fly) needs IaC at all vs config files as the IaC"
+  ],
+  "scope_out": [
+    "Kubernetes manifests / Helm / GitOps (ArgoCD, Flux) — separate platform-orchestration item",
+    "Configuration management (Ansible, Chef, Puppet) for long-lived VM fleets",
+    "Cloudflare/Fly/Railway/Render dashboard-and-token specifics — covered in sibling PaaS items, only contrasted here for the OIDC story",
+    "Detailed AWS/GCP networking or IAM design patterns beyond what's needed to explain the OIDC trust relationship",
+    "Full CDKTF (CDK for Terraform) evaluation — mentioned only in passing versus CDK-for-CloudFormation",
+    "Cost optimization of the underlying cloud resources themselves (see cost-guardrails item)"
+  ],
+  "priority": "P1",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "defaults": [
+    "Default to NO dedicated IaC tool for this stack: Vercel (dashboard + vercel.json), Supabase (dashboard + supabase/migrations + config.toml), and a PaaS worker host (fly.toml or wrangler.toml) committed to the repo already constitute reviewable, versioned config — that is 'IaC enough' for a 1-2 person team.",
+    "Adopt OpenTofu (not Terraform) as the default IaC engine the moment real AWS/GCP resources appear (e.g. an S3 bucket + CloudFront for asset storage, a GCP Pub/Sub queue, an RDS instance) — OpenTofu is MPL-2.0, Linux-Foundation-governed, and a drop-in-compatible fork, removing the BUSL license-ambiguity question entirely for a small team that has no HashiCorp commercial relationship.",
+    "Fall back to Terraform proper only if the team already has HCP Terraform / Terraform Cloud paid tooling, Sentinel policy requirements, or a vendor mandate — otherwise there is no reason to accept BUSL terms over OpenTofu's MPL-2.0 for a small greenfield team.",
+    "Pick SST v3 (Ion) when the team is TypeScript-native and wants to go deep on AWS (or Cloudflare) serverless resources with tight DX (live lambda dev, typed resource linking) without hand-writing Pulumi or Terraform HCL.",
+    "Pick Pulumi directly (not through SST) when the team wants general-purpose-language IaC across genuinely multiple clouds/providers beyond what SST's component library covers, or needs custom abstractions SST doesn't expose.",
+    "Pick AWS CDK v2 only when the team is committing hard to AWS-only infrastructure and wants first-class CloudFormation drift detection, StackSets, and AWS-native change sets — accept the CloudFormation-only lock-in as the tradeoff.",
+    "Never introduce Terraform/OpenTofu/Pulumi/CDK purely to manage Vercel or Supabase resources — their Terraform/Pulumi providers exist but add state-management overhead for what a dashboard + committed config file already does adequately at this scale.",
+    "Always require remote state with locking (S3+DynamoDB or S3-native locking, Terraform Cloud/HCP, Pulumi Cloud, or a self-hosted equivalent) the moment more than one person or more than one machine runs plan/apply — local state is a single-environment prototyping convenience only.",
+    "Always wire GitHub Actions OIDC role assumption for the cloud provider before the first CI apply runs — do not start with a long-lived AWS access key in repo secrets 'temporarily.'",
+    "Re-evaluate this default at the review date or the first time a second AWS/GCP account, a compliance audit, or a third infrastructure engineer appears — those are the real triggers, not calendar time alone."
+  ],
+  "decision_gates": [
+    "PaaS-dashboard-is-enough gate: team is 1-2 people, infra is Vercel + Supabase + at most one PaaS worker host, and there is no AWS/GCP account in the picture — stay on dashboards + committed config files; adopting Terraform here is pure overhead with no reviewable-diff benefit the dashboard's audit log doesn't already give.",
+    "Adopt-IaC gate: any of (a) AWS or GCP resources beyond a single S3 bucket or storage bucket, (b) more than one environment that must stay in parity (dev/staging/prod with the same VPC/networking shape), (c) a compliance requirement for reviewable infra diffs, (d) a team of 3+ engineers touching infra — any one of these is sufficient to justify OpenTofu/Terraform.",
+    "Terraform vs OpenTofu gate: absent an existing HCP Terraform contract or a hard requirement for a Terraform-only feature (Sentinel, certain enterprise registry features), default to OpenTofu — same HCL syntax, same providers, MPL-2.0 license, Linux Foundation governance removes the single-vendor relicensing risk that triggered the fork in 2023.",
+    "Pulumi vs Terraform/OpenTofu gate: choose Pulumi when the team strongly prefers writing infra in TypeScript/Python (matches this stack's language) with real loops/conditionals/functions and unit-testable infra code over HCL's declarative-only model; choose Terraform/OpenTofu when the team wants the larger provider ecosystem, more third-party CI/policy tooling (Atlantis, Spacelift, env0 all target Terraform/OpenTofu first), and doesn't mind HCL.",
+    "SST v3 vs raw Pulumi vs raw CDK vs raw Terraform for serverless-AWS-from-TS gate: SST v3 wins when the team wants opinionated, higher-level components (Function, Dynamo, Nextjs, Queue) with typed resource linking and live-lambda local dev on top of Pulumi's engine — this is the highest-leverage choice for a TS-native team going AWS-serverless-heavy; drop to raw Pulumi only when SST's component library doesn't cover a needed resource shape; drop to raw CDK only if committing to CloudFormation-native tooling; drop to raw Terraform/OpenTofu only if the team is polyglot and HCL is the shared infra language across services.",
+    "Do-NOT-reach-for-IaC gate: a single Vercel + Supabase app with no cloud provider account, no team beyond the founder, and no compliance requirement — introducing any of these tools here is resume-driven engineering, not risk reduction; the dashboard's own audit trail plus committed config files (vercel.json, supabase/config.toml) already gives review and reproducibility.",
+    "State-backend gate: once IaC is adopted, choose S3+DynamoDB-lock (or S3-native locking on OpenTofu 1.10+/Terraform 1.10+) for AWS-only shops wanting to avoid a third-party SaaS dependency; choose HCP Terraform or Pulumi Cloud free tier when the team wants managed locking, a plan-history UI, and RBAC without standing up backend infrastructure themselves.",
+    "CI-gate strictness scales with blast radius: a PR that only changes a dev/staging environment can auto-apply on merge; a PR touching production or shared networking should require a named human approval (GitHub Environments protection rule) even after a clean plan.",
+    "Third-party orchestration (Atlantis, Spacelift, env0) gate: worth adopting once more than ~3-4 engineers regularly open infra PRs and the team wants automatic plan-on-PR-comment plus apply-lock/queueing without hand-rolling the GitHub Actions workflow; below that headcount, the hand-rolled GitHub Actions plan/apply workflow in this module's config_skeleton is sufficient and has one less vendor dependency.",
+    "Multi-cloud gate: if the stack genuinely spans AWS + GCP + Cloudflare resources under one IaC umbrella, Pulumi's single-runtime multi-provider model or Terraform/OpenTofu's provider ecosystem both work; SST v3's multi-provider support (AWS + Cloudflare are first-class, others via raw Pulumi/Terraform bridging) is improving but AWS-first — treat as [uncertain] the exact scope of non-AWS component coverage at any given SST release."
+  ],
+  "do_dont": [
+    "Do commit Terraform/OpenTofu/CDK/SST source files to the repo under an infra/ or similar directory with clear environment separation (workspaces, directories, or stacks per environment).",
+    "Do NOT commit .tfstate, .tfstate.backup, .pulumi/ local state, or cdk.out/ synthesized templates containing account-specific values — gitignore these explicitly.",
+    "Do require `plan` output to be visible in the PR (as a comment or CI check summary) before any `apply` runs against a shared environment.",
+    "Do NOT let apply run from an engineer's laptop against staging or production once CI-based apply exists — laptop applies bypass the reviewed-diff guarantee entirely.",
+    "Do pin provider and module versions (`~>` constraints, lockfiles: .terraform.lock.hcl, Pulumi.lock, package-lock.json for CDK/SST) so plan output is reproducible across machines and CI runs.",
+    "Do NOT use `terraform apply -auto-approve` (or the Pulumi/CDK equivalent) in any workflow that touches production without a preceding human-reviewed plan artifact from the same commit.",
+    "Do use remote state with locking from day one of adopting IaC — treat local state as acceptable only for a single-developer, single-environment sandbox that will be destroyed.",
+    "Do NOT hardcode account IDs, role ARNs, or region-specific resource identifiers as string literals scattered through configs — use variables/environment-specific tfvars or stack config files with placeholders reviewed before commit.",
+    "Do scope the CI-assumed IAM role/service account to the minimum permissions the pipeline needs (least privilege on the OIDC-assumed role itself, not just on the resources it creates).",
+    "Do NOT store the OIDC role's trust policy with an overly broad `sub` claim match (e.g. `repo:org/*:*`) — scope it to the specific repo and branch/environment that should be allowed to assume it.",
+    "Do run `fmt`/`validate`/`lint` (tflint, checkov, or tfsec-class static analysis) as a required CI check before plan, catching syntax and known-bad-pattern issues cheaply.",
+    "Do NOT treat a clean `plan` as a substitute for reviewing the actual diff — always read what resources are being created, changed, or destroyed, especially destroy actions on stateful resources (databases, buckets with data)."
+  ],
+  "config_skeleton": "# --- OpenTofu/Terraform: backend + provider with GitHub Actions OIDC role assumption (AWS) ---\n# versions.tf\nterraform {\n  required_version = \">= 1.8.0\"\n  backend \"s3\" {\n    bucket         = \"example-tfstate-bucket\"      # placeholder\n    key            = \"envs/prod/network/terraform.tfstate\"\n    region         = \"us-east-1\"\n    dynamodb_table = \"example-tfstate-locks\"        # or use S3-native locking (TF/OpenTofu 1.10+)\n    encrypt        = true\n  }\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n  }\n}\n\nprovider \"aws\" {\n  region = \"us-east-1\"\n  # No static keys. Credentials come from the OIDC-assumed role injected by\n  # aws-actions/configure-aws-credentials in CI, or local `aws sso login` for humans.\n}\n\n# --- AWS IAM role trust policy for GitHub Actions OIDC (created once, out of band or via IaC) ---\n# trust-policy.json (placeholder values only)\n# {\n#   \"Version\": \"2012-10-17\",\n#   \"Statement\": [{\n#     \"Effect\": \"Allow\",\n#     \"Principal\": { \"Federated\": \"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com\" },\n#     \"Action\": \"sts:AssumeRoleWithWebIdentity\",\n#     \"Condition\": {\n#       \"StringEquals\": { \"token.actions.githubusercontent.com:aud\": \"sts.amazonaws.com\" },\n#       \"StringLike\":   { \"token.actions.githubusercontent.com:sub\": \"repo:example-org/example-repo:ref:refs/heads/main\" }\n#     }\n#   }]\n# }\n# Role ARN referenced in CI: arn:aws:iam::123456789012:role/example-terraform-ci-role\n\n# --- .github/workflows/terraform.yml ---\n# name: terraform\n# on:\n#   pull_request:\n#     paths: [\"infra/**\"]\n#   push:\n#     branches: [main]\n#     paths: [\"infra/**\"]\n#\n# permissions:\n#   id-token: write   # required for OIDC\n#   contents: read\n#   pull-requests: write  # required to comment plan on PR\n#\n# jobs:\n#   plan:\n#     if: github.event_name == 'pull_request'\n#     runs-on: ubuntu-latest\n#     defaults:\n#       run:\n#         working-directory: infra\n#     steps:\n#       - uses: actions/checkout@<pinned-sha>\n#       - uses: opentofu/setup-opentofu@<pinned-sha>\n#         with:\n#           tofu_version: \"1.12.0\"\n#       - uses: aws-actions/configure-aws-credentials@<pinned-sha>\n#         with:\n#           role-to-assume: arn:aws:iam::123456789012:role/example-terraform-ci-role\n#           aws-region: us-east-1\n#       - run: tofu fmt -check -recursive\n#       - run: tofu init\n#       - run: tofu validate\n#       - run: tofu plan -no-color -out=tfplan | tee plan.txt\n#       - name: Comment plan on PR\n#         uses: actions/github-script@<pinned-sha>\n#         with:\n#           script: |\n#             const fs = require('fs');\n#             const plan = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 60000);\n#             github.rest.issues.createComment({\n#               issue_number: context.issue.number,\n#               owner: context.repo.owner,\n#               repo: context.repo.repo,\n#               body: `#### Terraform Plan\\n<details><summary>Show plan</summary>\\n\\n\\\\`\\\\`\\\\`\\n${plan}\\n\\\\`\\\\`\\\\`\\n</details>`\n#             })\n#\n#   apply:\n#     if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n#     runs-on: ubuntu-latest\n#     environment: production   # require manual reviewer approval via GitHub Environments\n#     defaults:\n#       run:\n#         working-directory: infra\n#     steps:\n#       - uses: actions/checkout@<pinned-sha>\n#       - uses: opentofu/setup-opentofu@<pinned-sha>\n#         with:\n#           tofu_version: \"1.12.0\"\n#       - uses: aws-actions/configure-aws-credentials@<pinned-sha>\n#         with:\n#           role-to-assume: arn:aws:iam::123456789012:role/example-terraform-ci-role\n#           aws-region: us-east-1\n#       - run: tofu init\n#       - run: tofu apply -auto-approve tfplan   # only after a human-reviewed plan artifact from the merged PR\n\n# --- SST v3 (Ion) skeleton: sst.config.ts ---\n# import { SSTConfig } from \"sst\";\n#\n# export default $config({\n#   app(input) {\n#     return {\n#       name: \"example-app\",\n#       removal: input?.stage === \"production\" ? \"retain\" : \"remove\",\n#       home: \"aws\",           // or \"cloudflare\"; no Pulumi/SST account required for state by default\n#       providers: {\n#         aws: { region: \"us-east-1\" },\n#       },\n#     };\n#   },\n#   async run() {\n#     const table = new sst.aws.Dynamo(\"ExampleTable\", {\n#       fields: { id: \"string\" },\n#       primaryIndex: { hashKey: \"id\" },\n#     });\n#\n#     const api = new sst.aws.Function(\"ExampleWorker\", {\n#       handler: \"packages/worker/src/index.handler\",\n#       link: [table],          // typed, IAM-scoped resource linking, no manual ARN plumbing\n#       url: true,\n#     });\n#\n#     return { api: api.url };\n#   },\n# });\n#\n# # CI for SST: `npx sst deploy --stage production` from GitHub Actions using the same\n# # AWS OIDC role-assumption pattern above (SST honors ambient AWS credentials).\n",
+  "failure_modes": [
+    "State drift: real infrastructure is modified out-of-band (console click-ops, another tool) and no longer matches state, causing surprising diffs or destructive corrective plans on the next apply.",
+    "State file corruption or loss: a failed apply, concurrent write, or backend outage corrupts or deletes the state file, leaving Terraform/Pulumi unable to reconcile what it manages — recovery requires state import/rebuild, which is slow and error-prone.",
+    "Lock contention: two CI runs or an engineer-plus-CI race to acquire the state lock simultaneously, causing hung applies, stale locks left behind after a crashed run, and manual `force-unlock` interventions that themselves risk corruption.",
+    "Unreviewed apply from a laptop: an engineer runs `apply` locally against staging/production outside CI, bypassing the PR review and plan-comment gate, producing infrastructure changes nobody else can see or audit.",
+    "Secrets leaking into the state file: resource attributes (DB passwords, API keys generated by the provider) are stored in plaintext inside .tfstate/.pulumi state by design — a leaked state file or an over-broadly-permissioned state backend is a secrets leak, not just a config leak.",
+    "Provider version drift across environments: dev was applied with an older provider version than prod, producing plans that show unexpected changes purely from provider-schema differences rather than real infra intent.",
+    "Module/provider registry outage or a yanked module version breaking `init` mid-pipeline with no cached fallback.",
+    "CI OIDC trust policy misconfiguration (too broad `sub` claim, or accidentally scoped to `pull_request` triggers) allowing any fork's PR workflow to assume a role with write access to real infrastructure.",
+    "Destroy-and-recreate surprises: a seemingly innocuous attribute change (e.g. an S3 bucket name or an RDS parameter that forces replacement) triggers a destroy of a stateful resource that plan output didn't make obviously destructive-looking without careful reading.",
+    "Long-running apply timeouts in CI causing partial applies — some resources created, pipeline killed, state now reflects a half-applied world that must be manually reconciled.",
+    "Multiple people/tools writing to the same PaaS resource that IaC also manages (e.g. someone edits an env var in the Vercel dashboard that Terraform's Vercel provider also manages) causing perpetual drift."
+  ],
+  "anti_patterns": [
+    "Introducing Terraform/Pulumi/CDK for a single Vercel + Supabase app with one engineer and no cloud account — pure ceremony with no reviewable-diff benefit over the dashboard's own history.",
+    "Using Terraform Cloud/HCP or Pulumi Cloud's paid tier as a forcing function to look 'enterprise-ready' before there's a team size or compliance need that justifies it.",
+    "Managing Cloudflare, Fly, Railway, or Render resources through their community Terraform providers purely for consistency with an AWS IaC setup, when their native config files (wrangler.toml, fly.toml) already give equivalent review and reproducibility with far less state-management overhead.",
+    "Mixing dashboard click-ops and IaC management of the same resource, producing permanent drift and a plan that never goes clean.",
+    "Copy-pasting a monolithic single-environment Terraform/OpenTofu configuration across dev/staging/prod by hand instead of using workspaces, directories, or a proper module structure — guarantees environment drift over time.",
+    "Storing long-lived cloud provider access keys as GitHub Actions repo secrets when the provider supports OIDC — the exact static-credential anti-pattern this stack's identity-first principle explicitly rejects.",
+    "Running `apply` in the same CI job as `plan` with no human gate in between for any environment that serves real users.",
+    "Treating a green `terraform plan` in CI as equivalent to a green build — nobody actually reads the diff before merge.",
+    "Choosing AWS CDK for a team that also wants multi-cloud flexibility, then fighting CloudFormation-only lock-in later.",
+    "Vendoring a heavyweight policy-as-code framework (Sentinel/OPA) before the team has more than a couple of IaC-touching engineers to actually author and maintain policies."
+  ],
+  "tools": [
+    "OpenTofu — MPL-2.0, Linux Foundation-governed Terraform fork; drop-in CLI-compatible, default recommendation for this stack once IaC is needed.",
+    "Terraform (HashiCorp) — BUSL-1.1 licensed since August 2023; still the largest ecosystem and HCP Terraform's managed offering.",
+    "Pulumi — general-purpose-language IaC (TypeScript, Python, Go, etc.), Pulumi Cloud or self-managed state backend (S3, Azure Blob, GCS, local).",
+    "SST v3 (Ion) — TypeScript-native framework built on Pulumi's engine, AWS- and Cloudflare-first component library, live lambda dev, resource linking.",
+    "AWS CDK v2 — TypeScript-first, synthesizes to CloudFormation, native AWS drift detection and StackSets.",
+    "CDKTF (CDK for Terraform) — CDK-style authoring that synthesizes to Terraform/OpenTofu JSON instead of CloudFormation; niche middle ground, not a primary recommendation here.",
+    "Atlantis — self-hosted, open-source Terraform/OpenTofu PR automation: plan-on-PR-comment, apply-on-comment-command, locking.",
+    "Spacelift — managed IaC orchestration (Terraform/OpenTofu/Pulumi/CDK) with policy-as-code, drift detection, and PR-comment plans.",
+    "env0 — managed IaC orchestration similar to Spacelift, Terraform/OpenTofu/CDK focused.",
+    "Infracost — cost-estimation diff tool that comments projected cost deltas on Terraform/OpenTofu PRs.",
+    "tflint / checkov / tfsec / trivy config — static analysis and security-linting for HCL before plan.",
+    "aws-actions/configure-aws-credentials, opentofu/setup-opentofu, hashicorp/setup-terraform — GitHub Actions building blocks for the CI workflow in config_skeleton."
+  ],
+  "versions_as_of": [
+    "OpenTofu 1.12.0 stable (1.13.x beta in progress) as of the OpenTofu website at fetch time — [uncertain] exact point-release currency beyond what was fetched.",
+    "Terraform CLI is on a 1.x line under BUSL-1.1 license since the August 2023 relicense; HashiCorp was acquired by IBM in 2024/2025, which does not appear to have reversed the BUSL license as of this research — [uncertain] on the precise IBM-acquisition-to-license-policy relationship going forward.",
+    "SST v3 ('Ion') is the current major generation, rebuilt on Pulumi's engine (replacing the earlier CDK-based SST v2) — [uncertain] exact current minor/patch version.",
+    "AWS CDK v2 is the current major version (v1 was deprecated/EOL) — [uncertain] exact current minor version.",
+    "Pulumi's current SDK/CLI line — [uncertain] exact version number, not independently fetched this research pass."
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "HCP Terraform (Terraform Cloud) free tier",
+      "value": "Free tier historically supports up to 5 users with core plan/apply, remote state, and VCS-driven runs; paid tiers add SSO, Sentinel policy-as-code, and higher concurrency",
+      "as_of": "2026-08-29",
+      "source": "general knowledge, not independently fetched this pass — (uncertain)"
+    },
+    {
+      "item": "Pulumi Cloud free tier",
+      "value": "Free tier historically allows a limited number of resources under management and unlimited public/individual use; team features (RBAC, policy packs) gated to paid tiers",
+      "as_of": "2026-08-29",
+      "source": "general knowledge, not independently fetched this pass — (uncertain)"
+    },
+    {
+      "item": "S3 state backend practical size",
+      "value": "State files remain performant well into the tens of MB; state files that grow very large (thousands of resources in one state) slow plan/apply meaningfully and are a signal to split into smaller state files per component/environment",
+      "as_of": "2026-08-29",
+      "source": "general operational knowledge — (uncertain) precise thresholds"
+    },
+    {
+      "item": "GitHub Actions OIDC token lifetime",
+      "value": "Short-lived JWT issued per workflow run; the exchanged cloud provider credential (e.g. AWS STS temporary credentials) typically defaults to a 1-hour session unless configured otherwise",
+      "as_of": "2026-08-29",
+      "source": "GitHub Actions OIDC-to-AWS docs (fetched) plus AWS STS defaults — (uncertain) on exact default duration without a direct fetch of the STS AssumeRoleWithWebIdentity default"
+    },
+    {
+      "item": "OpenTofu provider/module ecosystem size",
+      "value": "Access to over 3,900 providers and 23,600 modules per opentofu.org (largely the same Terraform Registry-compatible ecosystem)",
+      "as_of": "2026-08-29",
+      "source": "https://opentofu.org/ (fetched)"
+    },
+    {
+      "item": "Terraform Cloud / HCP Terraform free run concurrency",
+      "value": "Free tier historically limits concurrent runs (often to 1 concurrent run) versus paid tiers unlocking parallel workspace runs",
+      "as_of": "2026-08-29",
+      "source": "general knowledge, not independently fetched — (uncertain)"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "Terraform v1 provider protocol and older Terraform CLI versions (pre-1.x) — long since deprecated, not relevant to a greenfield project.",
+    "AWS CDK v1 — deprecated/EOL; any new AWS CDK work must start on v2.",
+    "SST v2 (the CDK-based generation) — superseded by SST v3 (Ion) on Pulumi; new projects should start on v3.",
+    "Long-lived static cloud credentials in CI (AWS access keys, GCP service account JSON keys stored as repo secrets) — not formally deprecated by providers but actively discouraged industry-wide in favor of OIDC federation; treat as a legacy pattern to migrate away from proactively.",
+    "Terraform's classic `terraform_remote_state` cross-state data source patterns are increasingly superseded by explicit outputs + `tofu`/`terraform` variables or Terragrunt-style dependency wiring in larger setups — watch if the stack grows multi-state.",
+    "Community Terraform providers for niche PaaS platforms (Vercel, Fly, Railway) are maintained by third parties, not the vendors themselves, in most cases — watch for abandonment/staleness before depending on one for anything load-bearing."
+  ],
+  "identity_model": "IaC CI/CD for AWS/GCP/Azure is the one area of this platform cluster where the identity-first, no-long-lived-static-credentials goal is fully achievable today: GitHub Actions issues a short-lived, workflow-scoped OIDC JWT (aud=sts.amazonaws.com or the GCP/Azure equivalent); the cloud provider's IAM trust policy validates the token's issuer, audience, and `sub` claim (which encodes the specific repo, and optionally branch/environment/tag) before minting temporary credentials (AWS STS AssumeRoleWithWebIdentity, GCP Workload Identity Federation, Azure federated credentials) scoped to exactly the permissions the plan/apply job needs, expiring automatically at the end of the run. No static access key or service-account JSON ever touches GitHub Secrets. Terraform, OpenTofu, Pulumi, and AWS CDK all consume these ambient credentials transparently via each cloud SDK's default credential chain — no IaC-tool-specific credential wiring is required beyond configuring the CI step that requests the token and assumes the role. This contrasts sharply with the sibling PaaS platforms in this cluster (Cloudflare, Fly, Railway, Render): those mostly authenticate CI via a long-lived API token stored as a CI secret, because they don't yet offer OIDC federation for their control planes — so the identity-first bar this module can clear (true short-lived, scoped, auditable credentials) is not yet reachable for the PaaS layer of this same stack, only for the AWS/GCP/Azure resources IaC manages.",
+  "threats": [
+    "Overly broad OIDC trust policy `sub` claim lets any branch or even any fork's pull_request workflow assume the CI role, escalating a low-trust PR into infrastructure write access.",
+    "State file exposure (misconfigured S3 bucket ACL, leaked backend credentials) exposing plaintext secrets embedded in resource attributes.",
+    "Compromised CI runner or a malicious third-party GitHub Action in the plan/apply pipeline exfiltrating the OIDC-derived temporary credentials during their short validity window.",
+    "A dependency-confusion or typosquatted Terraform/Pulumi provider or module pulled from a public registry executing arbitrary code during `init`/`plan`.",
+    "Insider or compromised-laptop apply bypassing CI entirely because local credentials (assumed via long-lived AWS SSO or an old access key) still have apply-level permissions.",
+    "Lock file or state backend denial-of-service (accidental or malicious) blocking all applies by holding a lock indefinitely.",
+    "Drift introduced by an attacker with console access making an unreviewed change that the next `apply` then either silently reverts (masking the incident) or, worse, treats as the new desired baseline if someone runs `terraform refresh`/imports it.",
+    "A coding agent given IaC-authoring permissions inventing or hardcoding real-looking account IDs/ARNs that get committed and later assumed to be real, or worse, being granted enough CI scope to auto-apply to production."
+  ],
+  "mitigations": [
+    "Scope OIDC trust policy `sub` claims tightly to `repo:org/repo:ref:refs/heads/main` (and a distinct condition for PR-triggered plan-only workflows with a read-only role) rather than wildcarding branches or repos.",
+    "Encrypt state at rest (S3 SSE, GCS default encryption) and restrict the state backend's bucket/table to only the CI role and a small break-glass admin group — never public or org-wide readable.",
+    "Pin every third-party GitHub Action and Terraform/Pulumi module/provider to an exact version (and ideally a commit SHA for Actions), consistent with this repo's existing immutable-SHA pinning rule.",
+    "Give the plan-only (PR) role read-only / plan-level IAM permissions and a separate, more privileged apply-only role gated behind the main-branch, environment-protected job — least privilege split between plan and apply identities.",
+    "Require GitHub Environment protection rules (named reviewers) on the apply job for any environment serving real users, in addition to the plan-as-PR-comment review.",
+    "Disable or tightly restrict any long-lived human AWS/GCP credentials capable of apply-level changes; route human infra work through the same PR-and-CI path or a short-lived SSO session, not a standing access key.",
+    "Run drift-detection on a schedule (`terraform plan`/`tofu plan` as a scheduled CI job with no apply, alerting on non-empty diffs) so unreviewed console changes surface quickly instead of silently accumulating.",
+    "Never let a coding agent run `apply` unattended against a real environment — restrict agent tool permissions to generating/editing IaC source and running `plan`/`validate`/`fmt`; require human review and human-triggered merge/apply for anything beyond a disposable sandbox."
+  ],
+  "agent_codegen_policy": [
+    "MUST NOT commit .tfstate, .tfstate.backup, Pulumi state exports, or cdk.out/ synthesized templates to the repository — verify .gitignore covers these before first commit in a new infra directory.",
+    "MUST NOT hardcode real cloud account IDs, role ARNs, VPC IDs, or other environment-specific identifiers into committed source — use variables, tfvars files kept out of version control (or per-environment files clearly marked as environment-specific and reviewed), or documented placeholders.",
+    "MUST NOT embed static cloud credentials (access keys, service account JSON) anywhere in IaC source, CI workflow files, or example configs — always route through OIDC role assumption.",
+    "MUST always configure remote state with locking as part of the initial backend setup for any environment beyond a disposable single-developer sandbox — never leave state local as a 'temporary' default.",
+    "MUST always run `fmt`, `validate`, and `plan` and present the plan output for human review before proposing or executing `apply` against any shared or production environment.",
+    "MUST NOT auto-apply to production, or to any environment serving real users, without an explicit human approval step in the loop — a human-reviewed diff is a hard gate, not a suggestion.",
+    "MUST flag, rather than silently 'fix,' any plan that shows a destroy/replace action on a stateful resource (database, storage bucket, anything holding user data) — surface it clearly for explicit human confirmation.",
+    "SHOULD default to proposing the PaaS-dashboard-plus-config-file path first for this stack, and only introduce a dedicated IaC tool when the decision_gates in this module are actually met — do not reach for Terraform/Pulumi/CDK reflexively because the task mentions 'infrastructure.'",
+    "SHOULD prefer OpenTofu over Terraform when proposing new IaC tooling from scratch, per this module's default, unless the user has an existing Terraform Cloud/HCP relationship."
+  ],
+  "ci_gates": [
+    "PR gate: `fmt -check`, `validate`, and `plan` must all pass before merge is allowed; plan output posted as a PR comment or CI check annotation for human review.",
+    "Merge-to-main gate: `apply` runs only after merge, using the plan artifact generated from the exact merged commit (not a re-plan that could drift from what was reviewed).",
+    "Production environment gate: GitHub Environment protection rule requiring a named human reviewer's approval before the apply job proceeds, independent of the PR review that already happened.",
+    "Destructive-change gate: CI should highlight (via a script grepping plan JSON output for `\"action\": \"delete\"` or `\"replace\"`) any destroy/replace of a stateful resource and require explicit acknowledgment, not just a passing plan.",
+    "State-lock timeout gate: CI apply jobs should have a reasonable timeout and a documented manual `force-unlock` runbook rather than indefinite hangs on lock contention.",
+    "Drift-detection gate: a scheduled (e.g. daily) plan-only job across all managed environments that alerts (not applies) on any non-empty diff.",
+    "Cost-estimate gate (optional, once Infracost is adopted): comment projected cost delta on the PR alongside the plan, with a manual-approval threshold for large increases.",
+    "Static-analysis gate: tflint/checkov/tfsec-class scan on every PR touching infra source, independent of and prior to plan."
+  ],
+  "observability": [
+    "Drift detection: scheduled plan-only CI runs (or a third-party tool like Spacelift/env0's built-in drift detection) comparing live infrastructure to state on a cadence, alerting on unexpected diffs.",
+    "Deploy-pipeline tracing: instrument the plan/apply GitHub Actions workflow itself with basic timing/success metrics (job duration, plan-vs-apply lag, failure rate) shipped to whatever observability stack the rest of the platform uses; full OTel instrumentation of the IaC pipeline itself is likely overkill for this stack's scale and should be treated as optional, not a default.",
+    "Cost estimation: Infracost integrated into the PR workflow to show projected monthly cost delta before merge, catching runaway-resource mistakes (e.g. an oversized instance type) at review time rather than on the next bill.",
+    "State backend audit logging: enable access logging on the S3 state bucket (or equivalent) and on the OIDC-assumed IAM role's CloudTrail events, so every plan/apply's credential use and state read/write is independently auditable.",
+    "Plan/apply history: HCP Terraform, Pulumi Cloud, Spacelift, or env0 all provide a built-in run history UI; the hand-rolled GitHub Actions approach relies on the Actions run log and PR comment history as the audit trail instead — sufficient at small scale but weaker for long-term searchability."
+  ],
+  "cost_guardrails": [
+    "Run Infracost (or equivalent) on every infra PR to surface projected cost delta before merge, not after the first bill.",
+    "Tag every IaC-managed resource with an owner/environment/cost-center tag at creation time so cost allocation doesn't require after-the-fact archaeology.",
+    "Set budget alerts (AWS Budgets, GCP Billing budgets) independent of IaC, as a backstop against a mis-sized resource slipping through review.",
+    "Avoid provisioning HA/multi-AZ or over-provisioned instance sizes 'to be safe' in early-stage environments — default to the smallest viable size and scale up with evidence.",
+    "Destroy ephemeral/preview environments automatically (TTL-based cleanup workflow) rather than letting per-PR infrastructure accumulate indefinitely.",
+    "Avoid paying for HCP Terraform, Pulumi Cloud, Spacelift, or env0 team/enterprise tiers until the team size or workflow complexity in this module's decision_gates actually justifies it — free tiers or the hand-rolled GitHub Actions workflow suffice below that threshold.",
+    "Watch for state-backend costs creeping (S3 request costs, DynamoDB read/write capacity) at scale — trivial at this stack's size but worth a periodic sanity check as the number of environments/states grows.",
+    "Avoid over-provisioning IAM permissions on the CI role 'to avoid future friction' — broader permissions become a standing cost/risk even when unused."
+  ],
+  "skill_scan_signals": [
+    "Repo contains .tf/.tf.json files, a pulumi/ directory with Pulumi.yaml, an sst.config.ts, or a cdk.json/lib/*-stack.ts — signals a dedicated IaC tool is already in play and this module's CI-gate and identity-model guidance applies directly.",
+    "Repo contains a committed .tfstate file anywhere — hard failure signal, must be removed from history and backend migrated to remote state immediately.",
+    "GitHub Actions workflow references `aws-access-key-id`/`aws-secret-access-key` as repo secrets in an infra-touching job — signals static-credential anti-pattern that should be migrated to OIDC.",
+    "No infra/, terraform/, pulumi/, or equivalent directory and no AWS/GCP account references anywhere in the repo or env vars — signals the PaaS-dashboard-is-enough default correctly applies, no action needed.",
+    "A Terraform/Pulumi provider block for Vercel, Fly, Railway, Cloudflare Pages, or Render present alongside native config files for the same platform (vercel.json, fly.toml) — signals possible redundant/duplicate management worth flagging.",
+    "CI workflow runs `terraform apply` or `pulumi up` with no preceding required PR review or environment-protection gate — signals a missing CI gate per this module's ci_gates.",
+    "`terraform.lock.hcl`/`Pulumi.lock` missing or not committed — signals unpinned provider versions, a reproducibility risk.",
+    "OIDC trust policy or GitHub Actions `permissions: id-token: write` present but `sub` claim condition wildcarded or missing — signals an over-broad trust relationship worth tightening."
+  ],
+  "skill_module_bullets": [
+    "For this greenfield TS/Next.js + Python + Supabase stack, default to no dedicated IaC tool — PaaS dashboards plus committed config files (vercel.json, supabase config, fly.toml/wrangler.toml) are the IaC for the PaaS layer at 1-2 person scale.",
+    "The trigger to adopt IaC is any real AWS/GCP resource, multi-environment parity needs, a compliance requirement for reviewable diffs, or a team beyond 2 people — not calendar time or aesthetic preference.",
+    "Default IaC engine when adopted: OpenTofu, not Terraform — MPL-2.0 and Linux-Foundation-governed, drop-in CLI-compatible, removes the BUSL license-ambiguity question for a small team with no HashiCorp commercial relationship.",
+    "For AWS-serverless-heavy work from a TypeScript-native team, SST v3 (Ion) is the highest-leverage choice: Pulumi's engine underneath, opinionated high-level components, typed resource linking, and live lambda dev.",
+    "GitHub Actions OIDC federation to AWS/GCP/Azure is the one part of this whole platform cluster where the identity-first, no-static-credentials goal is fully achievable today — wire it from the first CI apply, never start with a stored access key.",
+    "Remote state with locking is non-negotiable the instant more than one person or machine runs plan/apply — local state is single-developer-sandbox-only.",
+    "The state file itself is a secrets-bearing artifact (plaintext resource attributes like DB passwords) — treat its backend access control with the same seriousness as a secrets manager.",
+    "Plan-review-then-apply is the core CI gate: plan on every PR as a visible comment/check, apply only after merge and (for production) an explicit human-reviewer approval step distinct from the PR review.",
+    "Contrast note for the skill's broader platform picture: this item's clean OIDC identity story does not extend to the sibling Cloudflare/Fly/Railway/Render PaaS items, which still rely on long-lived API tokens in CI secrets — don't assume identity-first parity across the whole stack.",
+    "A coding agent must never be allowed to auto-apply to a production or shared environment; its role is generating/editing IaC source and running plan/validate, with a human gating the actual apply."
+  ],
+  "checklist": [
+    "Confirm whether any AWS/GCP resources actually exist yet — if not, stop here and use dashboards + config files, do not adopt IaC preemptively.",
+    "If adopting IaC: choose OpenTofu by default; document the specific reason if choosing Terraform, Pulumi, SST, or CDK instead.",
+    "Set up remote state backend with locking before writing the first real resource block.",
+    "Configure GitHub Actions OIDC trust policy scoped to the specific repo and branch/environment; verify no static cloud credentials remain in repo secrets.",
+    "Wire the plan-on-PR / apply-on-merge GitHub Actions workflow with plan output posted as a PR comment.",
+    "Add a GitHub Environment protection rule with named reviewer approval on the apply job for production.",
+    "Verify .gitignore excludes all state files, and confirm none have ever been committed (check git history, not just the current tree).",
+    "Pin all provider/module versions and third-party Action versions; commit the resulting lockfile.",
+    "Add a static-analysis (tflint/checkov-class) CI step ahead of plan.",
+    "Decide and document the drift-detection cadence (scheduled plan-only job) even if minimal at launch.",
+    "Revisit this decision at review_by date or immediately on the first new AWS/GCP account, compliance ask, or third infra-touching engineer, whichever comes first."
+  ],
+  "source_tier": "primary + general knowledge",
+  "confidence": "medium-high on OpenTofu governance/licensing and GitHub OIDC-to-AWS mechanics (directly fetched from opentofu.org and GitHub docs); medium on SST v3/Pulumi relationship (directly fetched from sst.dev); low-medium on specific current version numbers, free-tier pricing figures, and third-party orchestration tool (Atlantis/Spacelift/env0) 2026 feature specifics, which rely on general knowledge not independently re-verified this pass due to exhausted search budget.",
+  "conflicts_noted": [
+    "Terraform's 2023 BUSL-1.1 relicense (moving from MPL-2.0) directly caused the OpenTofu fork; this module resolves the ambiguity by defaulting to OpenTofu for new small-team projects, but notes as [uncertain] whether HashiCorp's 2024/2025 IBM acquisition changes the license trajectory going forward — not independently verified this pass.",
+    "This item's OIDC-based identity model is meaningfully cleaner than the sibling Cloudflare/Fly/Railway/Render PaaS items in this same cluster, which mostly still rely on long-lived API tokens in CI secrets — flagged explicitly so the broader skill module doesn't imply identity-first parity across the whole stack.",
+    "Several version numbers, pricing tiers, and adoption-percentage claims (Terraform vs OpenTofu market share, exact Pulumi Cloud/HCP Terraform free-tier limits, current SST/Pulumi patch versions) could not be independently WebSearched this pass because the session's web-search budget was exhausted before this task's searches ran; these are marked [uncertain] in versions_as_of and limits_quotas_pricing rather than stated as verified fact.",
+    "No conflicts found with references/infra-security.md or deploy-ops.md — both already prefer OIDC federation over long-lived CI credentials and treat Vercel/Supabase dashboards plus committed config as sufficient for this stack, consistent with this module's defaults.",
+    "Uncertainty notes (from research pass): conflicts_noted (IBM acquisition / license trajectory item) | decision_gates (SST v3 non-AWS provider coverage breadth) | tools (exact current point releases not all independently fetched)"
+  ],
+  "primary_sources": [
+    "https://opentofu.org/",
+    "https://developer.hashicorp.com/terraform/language/state",
+    "https://sst.dev/docs/",
+    "https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "decision_gates",
+    "limits_quotas_pricing",
+    "versions_as_of"
+  ]
+}

@@ -1,0 +1,254 @@
+{
+  "name": "JWT, OAuth, secrets, and SSRF hardening for Python services",
+  "item_id": "py-auth-security",
+  "cluster": "web",
+  "short_definition": "Auth and security baseline for FastAPI Python services: verify JWTs with explicit algorithms and required claims (PyJWT), prefer Supabase/Auth issuer JWTs or service-to-service tokens over homemade sessions, never trust client roles, keep secrets in env/secret manager via pydantic-settings, and treat server-side URL fetch as SSRF-critical. Aligns with Next cookie SSR (backend-auth) — Python receives Bearer or service credentials, not browser cookie jars by default. As of 2026-07-13: PyJWT 2.13.0, cryptography 49.0.0, authlib 1.7.2, bcrypt 5.0.0.",
+  "scope_in": [
+    "Bearer JWT verification (HS256 service secrets vs RS256/ES256 JWKS)",
+    "FastAPI Depends current_user / APIRouter dependencies for authZ",
+    "OAuth2 password/bearer patterns and Authlib when acting as OAuth client",
+    "Secrets management (env, rotation, no commit)",
+    "Password hashing if local users exist (bcrypt/argon2 — rare if Supabase owns identity)",
+    "SSRF controls for user-supplied URLs",
+    "CORS/credentials interplay at API boundary"
+  ],
+  "scope_out": [
+    "Next.js Supabase SSR cookie middleware (backend-auth.md)",
+    "Full CSP/HTML XSS product surface (backend-security.md for Next UI)",
+    "RLS policy authoring (backend-database.md)",
+    "Rate limit algorithms (py-rate-limit-cache)",
+    "mTLS mesh implementation details"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "identity_source": "Supabase Auth (or IdP) issues JWT; Python verifies signature + claims",
+    "library": "PyJWT (pyjwt) + cryptography; avoid python-jose for greenfield",
+    "algorithms": "Explicit algorithms=[...] on every decode; never verify with algorithms accepting 'none'",
+    "claims": "require exp, sub; validate aud and iss when issuer is known; leeway small (≤60s)",
+    "authz": "After authN, check resource ownership/role server-side; JWT role claim is hint not sole gate for sensitive ops",
+    "di": "Annotated[User, Depends(get_current_user)]; router-level dependencies on /v1 protected prefixes",
+    "secrets": "pydantic-settings; SecretStr; never log secrets; rotate JWT signing keys with kid",
+    "passwords": "If needed: argon2-cffi or bcrypt; never roll crypto; prefer IdP owns passwords",
+    "ssrf": "Allowlist hosts; block private/link-local/metadata IPs; https only; redirects rechecked"
+  },
+  "decision_gates": {
+    "use_jwt_bearer_when": [
+      "Python service is called by Next BFF, mobile, or other services with tokens",
+      "Supabase JWT or internal RS256 service tokens available"
+    ],
+    "use_api_key_when": [
+      "Machine webhooks / simple service keys with rotation (still rate limit + constant-time compare)"
+    ],
+    "do_not": [
+      "Don't invent cookie session stack in Python when Next already owns SSR sessions",
+      "Don't accept getSession-equivalent untrusted payloads without verify",
+      "Don't put long-lived secrets in frontend or OpenAPI examples"
+    ],
+    "alternatives": {
+      "authlib": "OAuth1/2 client/server complexity, OIDC helpers",
+      "supabase_py": "When calling Supabase with user JWT for RLS-scoped data",
+      "mtls": "Service mesh / private admin APIs"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "jwt.decode(token, key, algorithms=[\"RS256\"], audience=..., issuer=..., options={\"require\": [\"exp\", \"sub\"]})",
+      "Fetch JWKS with cache + kid rotation; pin expected issuer URL",
+      "Return 401 for missing/invalid auth; 403 for authenticated but forbidden",
+      "Constant-time compare for API keys (hmac.compare_digest)",
+      "Separate authN dependency from authZ helpers (require_role, require_owner)",
+      "Strip sensitive fields from error bodies in production"
+    ],
+    "dont": [
+      "Don't use algorithms=None or accept alg from token header alone (alg confusion)",
+      "Don't use HS256 with a public/guessable secret; don't share HS256 secret with browsers",
+      "Don't trust role from body/query; don't authorize only in middleware without route checks",
+      "Don't log Authorization headers or full JWTs",
+      "Don't disable aud/iss checks 'to make it work' in prod",
+      "Don't fetch user URLs server-side without SSRF allowlist"
+    ]
+  },
+  "code_skeleton": "from typing import Annotated, Any\n\nimport jwt\nfrom fastapi import Depends, FastAPI, HTTPException, status\nfrom fastapi.security import HTTPAuthorizationCredentials, HTTPBearer\nfrom pydantic import BaseModel\nfrom pydantic_settings import BaseSettings\n\nclass Settings(BaseSettings):\n    jwt_secret: str  # HS256 dev only; prod prefer RS256 + JWKS\n    jwt_audience: str = \"authenticated\"\n    jwt_issuer: str = \"https://PROJECT.supabase.co/auth/v1\"\n\nsettings = Settings()  # from env\nsecurity = HTTPBearer(auto_error=True)\napp = FastAPI()\n\nclass User(BaseModel):\n    sub: str\n    role: str | None = None\n    claims: dict[str, Any]\n\nasync def get_current_user(\n    creds: Annotated[HTTPAuthorizationCredentials, Depends(security)],\n) -> User:\n    token = creds.credentials\n    try:\n        payload = jwt.decode(\n            token,\n            settings.jwt_secret,\n            algorithms=[\"HS256\"],  # replace with RS256 + jwk client in prod\n            audience=settings.jwt_audience,\n            issuer=settings.jwt_issuer,\n            options={\"require\": [\"exp\", \"sub\"]},\n        )\n    except jwt.PyJWTError as e:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Invalid token\",\n            headers={\"WWW-Authenticate\": \"Bearer\"},\n        ) from e\n    return User(sub=str(payload[\"sub\"]), role=payload.get(\"role\"), claims=payload)\n\nCurrentUser = Annotated[User, Depends(get_current_user)]\n\n@app.get(\"/v1/me\")\nasync def me(user: CurrentUser) -> dict[str, str]:\n    return {\"sub\": user.sub}\n\n# SSRF sketch\nALLOWED_HOSTS = frozenset({\"api.openai.com\", \"api.anthropic.com\"})\n\ndef assert_public_https_url(url: str) -> None:\n    from urllib.parse import urlparse\n    p = urlparse(url)\n    if p.scheme != \"https\" or p.hostname not in ALLOWED_HOSTS:\n        raise HTTPException(status_code=400, detail=\"URL not allowed\")\n",
+  "failure_modes": [
+    "Alg confusion / missing algorithms= allow forged tokens",
+    "Clock skew: valid tokens rejected (no small leeway) or expired accepted (huge leeway)",
+    "JWKS not refreshed → outage after IdP key rotation",
+    "Service role key used in user request path → privilege escalation",
+    "AuthZ only on some routes → IDOR on forgotten handlers",
+    "SSRF to cloud metadata (169.254.169.254) via connector features",
+    "CORS * with credentials reflecting tokens to evil origins"
+  ],
+  "anti_patterns": [
+    "python-jose greenfield (maintenance/crypto concerns vs PyJWT)",
+    "JWT in localStorage patterns copied into Python OpenAPI clients as default",
+    "decode without verify signature (options verify_signature False) in prod",
+    "Hardcoded secrets in source",
+    "Password in JWT claims",
+    "OAuth state/nonce omitted when implementing authorization code client"
+  ],
+
+  "tools": {
+    "primary": ["PyJWT", "cryptography", "pydantic-settings", "fastapi.security"],
+    "oauth": ["authlib"],
+    "password": ["argon2-cffi", "bcrypt"],
+    "avoid_greenfield": ["python-jose", "passlib as sole modern default without care"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "PyJWT": "2.13.0",
+    "cryptography": "49.0.0",
+    "authlib": "1.7.2",
+    "bcrypt": "5.0.0",
+    "argon2-cffi": "25.1.0",
+    "python-jose": "3.5.0 (avoid greenfield)",
+    "passlib": "1.7.4 (legacy stack)",
+    "jwcrypto": "1.5.8 (optional JWK tooling)",
+    "fastapi": "0.139.0",
+    "httpx": "0.28.1"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"PyJWT[crypto]>=2.13,<3\",\n  \"cryptography>=49,<50\",\n  \"pydantic-settings>=2.14,<3\",\n  \"authlib>=1.7,<2\",\n]\n",
+    "env_example": "# .env.example — never commit real values\nJWT_SECRET=\nJWT_AUDIENCE=authenticated\nJWT_ISSUER=https://PROJECT.supabase.co/auth/v1\n# RS256:\n# JWT_JWKS_URL=https://PROJECT.supabase.co/auth/v1/.well-known/jwks.json\nSUPABASE_SERVICE_ROLE_KEY=\n",
+    "ci_gitleaks": "# ensure gitleaks/secret scan in CI; block JWT_SECRET= hardcoded"
+  },
+  "deprecation_watch": [
+    "python-jose as default JWT stack",
+    "HS256 shared secret shipped to any client code",
+    "getSession-style trust without server verify (TS anti-pattern mirrored in Python)",
+    "OAuth implicit flow for new apps"
+  ],
+
+  "ts_boundary": "Next owns browser session cookies via @supabase/ssr. Python services should accept Authorization: Bearer <access_token> from BFF or mobile, verify JWT, and enforce authZ. Do not re-implement cookie SSR in Python for the same app. Service-to-service: separate audience/issuer or mTLS. Align claim names (sub, role) with Supabase JWT custom claims.",
+  "rust_boundary": "Rust extractors for JWT when edge gateway is Axum; same verify rules (explicit alg, aud, iss). Prefer one verification library policy per trust domain; don't dual-verify differently in Python and Rust for the same token type without tests.",
+  "supabase_boundary": "User JWT → RLS-scoped DB access; service_role only for admin jobs, never exposed. Prefer getUser-equivalent validation for sensitive mutations (introspect/Auth API) when revoke must be immediate; pure JWT verify is fine for low-risk read paths with short exp. Custom claims for roles when table lookup is too slow — still re-check on privilege changes.",
+  "boundary_contracts": [
+    "Bearer JWT scheme in OpenAPI securitySchemes",
+    "Error shape 401/403 without token leakage",
+    "Env contract for issuer/audience/JWKS",
+    "Optional MCP/tool auth timeouts (py-mcp-tool-boundary)",
+    "Webhook paths use signature verify not user JWT"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Authenticate and authorize API calls",
+    "python": "PyJWT verify + Depends authZ; Supabase/IdP issued tokens",
+    "ts": "Cookie SSR + getUser/getClaims in Next (backend-auth)",
+    "rust": "JWT/API key extractors on hot gateways"
+  },
+
+  "threats": [
+    "Forged/alg-confused JWTs",
+    "Privilege escalation via role claim tampering or missing ownership checks",
+    "Secret exfiltration from logs, traces, OpenAPI, error dumps",
+    "SSRF and cloud metadata theft",
+    "Token replay after logout if only local JWT verify and long exp",
+    "CSRF less relevant for pure Bearer APIs; still care if cookie auth added"
+  ],
+  "mitigations": [
+    "Explicit algorithms + aud/iss/exp/sub",
+    "Short access token TTL + refresh at IdP; denylist/version claim for critical revoke",
+    "Router-level auth dependencies; IDOR tests",
+    "Secret manager + gitleaks; SecretStr; redaction filters",
+    "URL allowlists and network egress policies for SSRF",
+    "Rate limit auth endpoints (py-rate-limit-cache)"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "HTTPBearer + Depends get_current_user with jwt.decode algorithms list",
+      "401/403 distinction",
+      "Settings from env for secrets",
+      "Ownership/role check on mutating routes"
+    ],
+    "must_not_generate": [
+      "jwt.decode without algorithms=",
+      "Hardcoded production secrets",
+      "python-jose scaffolds for new code",
+      "Service role in client-facing handlers",
+      "Open SSRF fetch of request.url"
+    ]
+  },
+
+  "tests_required": [
+    "Valid token → 200; expired → 401; wrong aud → 401; wrong sig → 401",
+    "Authenticated but wrong owner → 403",
+    "Missing Authorization → 401",
+    "API key compare timing-safe unit test",
+    "SSRF allowlist rejects private IPs and bad schemes",
+    "Optional: JWKS rotation mock"
+  ],
+  "ci_gates": [
+    "ruff + basedpyright",
+    "pytest auth matrix",
+    "gitleaks / secret scan",
+    "uv audit",
+    "scan: no verify_signature False; no python-jose in new packages"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "jwt.decode(..., algorithms=[...])",
+      "HTTPBearer or OAuth2PasswordBearer",
+      "Annotated[..., Depends(get_current_user)]",
+      "SecretStr or pydantic-settings secrets",
+      "hmac.compare_digest for API keys"
+    ],
+    "negative": [
+      "jwt.decode without algorithms",
+      "options={\"verify_signature\": False}",
+      "from jose import jwt",
+      "service_role in route default",
+      "requests.get(user_url) without allowlist",
+      "password or raw token in log.info"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "PyJWT 2.13.x + explicit algorithms/aud/iss/exp as_of 2026-07-13",
+    "AuthN Depends + authZ ownership; 401 vs 403",
+    "Supabase/Next owns browser sessions; Python verifies Bearer",
+    "No python-jose greenfield; no verify_signature False",
+    "SSRF: https + host allowlist + block metadata/private",
+    "Secrets only via env/secret manager; gitleaks in CI"
+  ],
+  "action_items": [
+    "Wire python.md auth section + scan IDs",
+    "Cross-link backend-auth.md and backend-security.md",
+    "Example JWKS-based RS256 dependency sample",
+    "SSRF helper in shared security module guidance"
+  ],
+  "checklist": [
+    "All protected routes have auth dependency",
+    "JWT verify complete (alg, exp, aud, iss)",
+    "IDOR tests on mutating endpoints",
+    "No secrets in repo or OpenAPI examples",
+    "Service role isolated",
+    "SSRF policy if outbound user URLs",
+    "Auth endpoints rate limited",
+    "Logs redacted"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Local JWT verify vs Auth server introspection: short-TTL JWT verify is default; force introspection when immediate revoke is required",
+    "python-jose still appears in many FastAPI tutorials; skill prefers PyJWT",
+    "HS256 common in Supabase JWT secret setups vs RS256 JWKS — both OK if secret never leaves server and algorithms locked"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://pyjwt.readthedocs.io/",
+    "https://github.com/jpadilla/pyjwt",
+    "https://fastapi.tiangolo.com/tutorial/security/",
+    "https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/",
+    "https://docs.authlib.org/",
+    "https://pypi.org/project/PyJWT/",
+    "https://owasp.org/www-community/attacks/Server_Side_Request_Forgery"
+  ],
+  "local_sources": [
+    "./references/backend-auth.md",
+    "./references/backend-security.md",
+    "./references/backend-api.md",
+    "./references/api-data-flows.md",
+    "./research/python/outline.yaml"
+  ]
+}

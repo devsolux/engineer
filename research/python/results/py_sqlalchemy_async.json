@@ -1,0 +1,241 @@
+{
+  "name": "SQLAlchemy 2 async + asyncpg patterns",
+  "item_id": "py-sqlalchemy-async",
+  "cluster": "data",
+  "short_definition": "Default Python data access for FastAPI services: SQLAlchemy 2.0 style (select(), Mapped annotations, DeclarativeBase) on create_async_engine(postgresql+asyncpg://...) with async_sessionmaker, request-scoped AsyncSession dependencies, explicit commit/rollback, and eager-loading discipline — not legacy Query API or sync sessions on the event loop.",
+  "scope_in": [
+    "SQLAlchemy 2.0 ORM + Core async API",
+    "create_async_engine, async_sessionmaker, AsyncSession, AsyncConnection",
+    "postgresql+asyncpg dialect and greenlet dependency",
+    "FastAPI yield-session dependency pattern",
+    "selectinload/joinedload; AsyncAttrs; stream() for large results",
+    "Transaction boundaries, expire_on_commit=False",
+    "run_sync for rare sync-only metadata ops"
+  ],
+  "scope_out": [
+    "Pool sizing and PgBouncer details (see py-db-pool-lifecycle)",
+    "Alembic vs Supabase migration ownership (see py-migrations)",
+    "supabase-py PostgREST client (see py-supabase-python)",
+    "Django ORM / Tortoise / SQLModel deep alternatives",
+    "MySQL/SQLite async dialects as first-class defaults"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "stack": "SQLAlchemy 2.0.x + asyncpg + greenlet; URL postgresql+asyncpg://",
+    "models": "DeclarativeBase + Mapped[] / mapped_column; AsyncAttrs mixin when lazy IO under async",
+    "sessions": "async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession); one session per request via Depends yield",
+    "queries": "select(Model) style only — no session.query()",
+    "loading": "Explicit selectinload/joinedload; no implicit lazy IO in async request handlers",
+    "transactions": "async with session.begin() or explicit commit; rollback on exception in dependency finally",
+    "engine_lifecycle": "Create engine in lifespan; await engine.dispose() on shutdown"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Python service owns transactional multi-table writes",
+      "Complex joins, CTEs, or type-safe ORM graphs needed",
+      "Server-side service-role access to Postgres (incl. Supabase direct DB)"
+    ],
+    "do_not_use_when": [
+      "Browser/client path that should use Supabase JS + RLS only",
+      "Trivial single-table CRUD via PostgREST where supabase-py matches product SDK features",
+      "Ultra-hot path already proven faster in raw asyncpg and team accepts SQL-only"
+    ],
+    "alternatives": {
+      "asyncpg_raw": "Max throughput / copy protocol; lose ORM",
+      "supabase_py": "Auth/Storage/Realtime + PostgREST without managing SQL",
+      "sqlmodel": "Thin Pydantic+SQLAlchemy layer — optional, still SQLAlchemy under the hood"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Use 2.0 style select()/update()/delete() constructs",
+      "Scope sessions to request; never share session across concurrent tasks",
+      "await session.execute / scalars; use stream for large sets",
+      "Eager-load relationships needed for response serialization",
+      "Map to Pydantic response models — don't return ORM instances from API",
+      "pool_pre_ping=True for long-lived workers; tune pool in py-db-pool-lifecycle"
+    ],
+    "dont": [
+      "Don't use sync create_engine / Session in async routes",
+      "Don't call session.query() (1.x legacy)",
+      "Don't lazy-load relationships after session closed",
+      "Don't commit inside repositories and again in route without clear ownership",
+      "Don't open a new engine per request",
+      "Don't mix asyncio tasks that concurrently use one AsyncSession"
+    ]
+  },
+  "code_skeleton": "from collections.abc import AsyncIterator\nfrom contextlib import asynccontextmanager\nfrom typing import Annotated\n\nfrom fastapi import Depends, FastAPI\nfrom sqlalchemy import String, select\nfrom sqlalchemy.ext.asyncio import (\n    AsyncAttrs,\n    AsyncSession,\n    async_sessionmaker,\n    create_async_engine,\n)\nfrom sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, selectinload\n\nDATABASE_URL = \"postgresql+asyncpg://user:pass@localhost:5432/app\"\n\nengine = create_async_engine(\n    DATABASE_URL,\n    pool_pre_ping=True,\n    pool_size=5,\n    max_overflow=10,\n)\nSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)\n\nclass Base(AsyncAttrs, DeclarativeBase):\n    pass\n\nclass Item(Base):\n    __tablename__ = \"items\"\n    id: Mapped[int] = mapped_column(primary_key=True)\n    name: Mapped[str] = mapped_column(String(200))\n\nasync def get_session() -> AsyncIterator[AsyncSession]:\n    async with SessionLocal() as session:\n        try:\n            yield session\n            await session.commit()\n        except Exception:\n            await session.rollback()\n            raise\n\nSessionDep = Annotated[AsyncSession, Depends(get_session)]\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    # optional: await conn.run_sync(Base.metadata.create_all) in tests only\n    yield\n    await engine.dispose()\n\napp = FastAPI(lifespan=lifespan)\n\n@app.get(\"/items/{item_id}\")\nasync def get_item(item_id: int, session: SessionDep) -> dict:\n    result = await session.execute(select(Item).where(Item.id == item_id))\n    item = result.scalar_one_or_none()\n    if item is None:\n        return {\"error\": \"not_found\"}\n    return {\"id\": item.id, \"name\": item.name}\n",
+  "failure_modes": [
+    "MissingMissingGreenlet / await_only errors from implicit lazy load under async",
+    "Session used across concurrent tasks → race / interface error",
+    "Engine never disposed → connection leak on reload/k8s churn",
+    "N+1 queries under list endpoints without selectinload",
+    "DetachedInstanceError after commit with expire_on_commit=True default when reading attrs post-commit",
+    "Sync DBAPI calls blocking event loop",
+    "Transaction left open on cancelled request if dependency cleanup wrong"
+  ],
+  "anti_patterns": [
+    "Legacy Query API in new code",
+    "Global session = SessionLocal() at import used by all requests",
+    "ORM objects in FastAPI response_model without Pydantic",
+    "create_async_engine inside each Depends call",
+    "Agent scaffolding Flask-SQLAlchemy sync for new async services",
+    "select * patterns via Model load then Python filter for huge tables"
+  ],
+
+  "tools": {
+    "primary": ["sqlalchemy[asyncio]", "asyncpg", "greenlet"],
+    "migrations": ["alembic (async template) — ownership per py-migrations"],
+    "testing": ["pytest-asyncio", "testcontainers or local Postgres", "httpx ASGITransport"],
+    "optional": ["sqlalchemy-utils", "factory_boy / polyfactory for fixtures"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "sqlalchemy": "2.0.51",
+    "asyncpg": "0.31.0",
+    "greenlet": "3.5.3",
+    "alembic": "1.18.5",
+    "note": "SQLAlchemy 2.0.x line; do not start greenfield on 1.4"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"sqlalchemy[asyncio]>=2.0.51,<2.1\",\n  \"asyncpg>=0.31,<0.32\",\n  \"greenlet>=3.5\",\n]\n",
+    "url": "postgresql+asyncpg://USER:PASSWORD@HOST:5432/DBNAME\n# never commit credentials; use pydantic-settings",
+    "alembic_env_hint": "Use async engine in alembic/env.py with run_async + connection.run_sync(do_run_migrations)"
+  },
+  "deprecation_watch": [
+    "sqlalchemy.ext.declarative.declarative_base — use orm.DeclarativeBase",
+    "session.query(Model) — use select(Model)",
+    "Query.get — use session.get(Model, id)",
+    ".execute() sync Session in async routes",
+    "databases (encode/databases) as default stack — prefer SQLAlchemy 2 async"
+  ],
+
+  "ts_boundary": "Next/TS uses Supabase JS or typed clients for user-scoped CRUD. Python SQLAlchemy for service jobs, multi-step transactions, AI pipelines writing DB. Share schema via migrations (one writer); regenerate TS types from Supabase/Postgres. Do not dual-write business invariants in Zod and ORM without DB constraints.",
+  "rust_boundary": "Prefer sqlx/SQLx in Rust for latency-critical pure SQL services. Python SQLAlchemy when iteration speed and ORM graphs win. Same Postgres; avoid two ORMs thrashing schema without migration discipline.",
+  "supabase_boundary": "Connect to Supabase Postgres direct (5432) or pooler per py-db-pool-lifecycle. Service role connection bypasses RLS — enforce authz in app for those paths. Prefer SET ROLE / request.jwt.claim patterns only when intentionally using RLS from backend. Migrations: pick Alembic OR supabase migrations, not both for same objects.",
+  "boundary_contracts": [
+    "DATABASE_URL in env (asyncpg scheme)",
+    "Pydantic schemas at HTTP boundary",
+    "SQL constraints + RLS as source of truth for multi-tenant",
+    "OpenAPI does not expose internal ORM field dumps",
+    "Migration version table owned by one tool"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Server-side Postgres access from Python services",
+    "python": "SQLAlchemy 2 async + asyncpg default",
+    "ts": "Supabase client / Drizzle-or-Kysely if pure TS service",
+    "rust": "sqlx for typed SQL high-perf paths"
+  },
+
+  "threats": [
+    "SQL injection via text() with f-strings",
+    "Service-role bypass of RLS without app authz",
+    "Mass assignment updating protected columns",
+    "Connection string leakage in logs/traces",
+    "Over-fetch returning sensitive columns to API"
+  ],
+  "mitigations": [
+    "Bound parameters only; never format SQL with user input",
+    "Explicit authz checks when using bypass roles; audit service paths",
+    "Pydantic update models with explicit fields",
+    "Redact DATABASE_URL password in logs",
+    "Column allowlists / response models"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "create_async_engine + async_sessionmaker",
+      "yield session dependency with commit/rollback",
+      "select() 2.0 style",
+      "lifespan dispose",
+      "Mapped annotations on models"
+    ],
+    "must_not_generate": [
+      "session.query(",
+      "create_engine sync in async apps",
+      "ORM returned directly as JSON without schema",
+      "engine per request",
+      "implicit lazy loads for API graphs"
+    ]
+  },
+
+  "tests_required": [
+    "Repository/integration tests against real Postgres (testcontainers preferred)",
+    "Session rollback on exception",
+    "Eager-load path no MissingGreenlet",
+    "Concurrent request isolation (two sessions)",
+    "Optional: migration upgrade head in CI"
+  ],
+  "ci_gates": [
+    "ruff + basedpyright + pytest",
+    "ban session.query( and create_engine( in async app paths",
+    "optional SQLAlchemy echo off in CI logs"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "create_async_engine",
+      "async_sessionmaker",
+      "AsyncSession",
+      "select(",
+      "expire_on_commit=False",
+      "selectinload",
+      "await engine.dispose"
+    ],
+    "negative": [
+      "session.query(",
+      "from sqlalchemy.orm import Session  # used in async route",
+      "create_engine(",
+      "lazy=\"dynamic\" without care",
+      "engine = create_async_engine inside Depends"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default ORM: SQLAlchemy 2.0.51 + asyncpg 0.31 as_of 2026-07-13",
+    "async_sessionmaker + request-scoped yield session; dispose engine on shutdown",
+    "2.0 select() only; no Query API",
+    "Explicit loading; AsyncAttrs; no lazy IO surprises",
+    "Pydantic at HTTP edge; service-role RLS bypass must be intentional",
+    "Pool/PgBouncer: see py-db-pool-lifecycle"
+  ],
+  "action_items": [
+    "Land SQLAlchemy async section in references/python.md",
+    "Scan rules for session.query and sync engine in async packages",
+    "Cross-link py-db-pool-lifecycle and py-migrations",
+    "Example get_session dependency in templates"
+  ],
+  "checklist": [
+    "asyncpg URL scheme correct",
+    "Session dependency commit/rollback",
+    "Engine disposed in lifespan",
+    "No lazy-load in async handlers",
+    "Response models not ORM",
+    "Integration tests on real Postgres",
+    "Pool settings reviewed",
+    "Service-role paths audited"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "SQLModel popularity vs plain SQLAlchemy — skill prefers explicit SQLAlchemy 2 for control",
+    "Raw asyncpg vs ORM — ORM default; raw for proven hotspots",
+    "expire_on_commit=False is common in async web; understand staleness tradeoff"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html",
+    "https://docs.sqlalchemy.org/en/20/dialects/postgresql.html",
+    "https://docs.sqlalchemy.org/en/20/core/pooling.html",
+    "https://docs.sqlalchemy.org/en/20/orm/queryguide/select.html",
+    "https://magicstack.github.io/asyncpg/current/",
+    "https://pypi.org/project/SQLAlchemy/",
+    "https://pypi.org/project/asyncpg/"
+  ],
+  "local_sources": [
+    "./references/backend-database.md",
+    "./references/backend-supabase.md",
+    "./research/python/outline.yaml"
+  ]
+}

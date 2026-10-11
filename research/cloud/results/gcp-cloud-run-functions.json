@@ -1,0 +1,312 @@
+{
+  "name": "GCP compute — Cloud Run (services/jobs), Cloud Run functions, container packaging, concurrency/scale-to-zero, env/secrets, min instances",
+  "item_id": "gcp-cloud-run-functions",
+  "cluster": "gcp",
+  "short_definition": "Cloud Run is Google Cloud's fully managed serverless container platform offering four workload types — Services (HTTP request/response, autoscaling, scale-to-zero), Jobs (run-to-completion parallel tasks), Worker Pools (continuous non-HTTP consumers), and Instances (long-lived singletons, preview). Cloud Run functions (formerly 2nd-gen Cloud Functions) is a source-centric, function-signature deployment mode now unified on the same Cloud Run infrastructure and control plane.",
+  "scope_in": "Container packaging (Dockerfile and buildpacks/source deploy), Cloud Run services and jobs configuration, concurrency and autoscaling (min/max instances, scale-to-zero, cold starts), environment variables and Secret Manager integration, IAM invoker access control, Cloud Run functions vs services tradeoffs, quotas/pricing as of 2026-08-29.",
+  "scope_out": "Full Workload Identity Federation setup for GitHub Actions (see gcp-identity-wif), GKE/Kubernetes, Cloud Run Worker Pools and Instances deep dive (preview features, out of scope for this P0 item), VPC networking/Serverless VPC Access internals, Cloud Build pipeline authoring details, Supabase-side configuration.",
+  "priority": "P0",
+  "defaults": [
+    "Deploy Python services as containers via Dockerfile; use source-based buildpack deploy only for quick prototypes since it backdates file mtimes to 1980-01-01, which can break static-asset cache-busting.",
+    "Default concurrency is 80 requests per instance; raise it for I/O-bound async Node/Python (FastAPI/Uvicorn, async Express) services once load tested, lower it toward 1 for CPU-bound or non-thread-safe workloads.",
+    "Default CPU allocation is request-based (CPU throttled to near-zero between requests); switch to CPU-always-allocated only when running background threads/timers inside the instance.",
+    "min-instances defaults to 0 (scale-to-zero); set min-instances=1 (or more) only for latency-sensitive user-facing services, accepting the idle billing cost.",
+    "max-instances has a default cap even if unset; always set an explicit max-instances to bound cost and downstream DB/connection-pool load (e.g., Supabase Postgres connection limits).",
+    "Store all secrets (Supabase service role key, DB URLs, third-party API keys) in Secret Manager and mount as env vars or volumes — never as plain --set-env-vars values.",
+    "Do not use --allow-unauthenticated on internal/service-to-service Cloud Run services; reserve public invocation for edge-facing APIs that need it, fronted by your own auth layer.",
+    "Use Cloud Run jobs (not services with cron-triggered endpoints) for batch/ETL work; jobs support up to 10,000 tasks with configurable parallelism and per-task retries.",
+    "Prefer Cloud Run functions for small, single-purpose, event-triggered handlers (Pub/Sub, Storage, Eventarc); prefer Cloud Run services for multi-route APIs, custom frameworks (FastAPI/Express/Next.js), or when you need fine-grained concurrency/CPU control.",
+    "Pin base images and buildpack builder versions explicitly in CI so builds are reproducible across GitHub Actions runs."
+  ],
+  "decision_gates": [
+    "Is the workload a single event-triggered handler with one entry point? -> Cloud Run functions. Is it a multi-route API/app with a framework? -> Cloud Run service.",
+    "Does the request need >60s to complete? -> confirm request timeout is raised (max configurable, default 300s, service max up to 60 min [uncertain] — verify against current quota page) and consider whether it should instead be a Cloud Run job or Pub/Sub-triggered async flow.",
+    "Is the service user-facing and latency-sensitive (e.g., a Next.js SSR backend or auth-adjacent API)? -> set min-instances>=1 and budget the always-on cost; otherwise leave scale-to-zero for internal/batch-adjacent services.",
+    "Is the app async-safe (async framework, no shared mutable per-request state, non-blocking I/O)? -> raise concurrency well above the default 80 only after load testing; if it's a blocking/single-threaded worker -> concurrency=1.",
+    "Does the workload run to completion rather than serve requests (imports, cron ETL, video/data processing)? -> Cloud Run jobs, not a service with a fake HTTP trigger.",
+    "Does the deploy pipeline run from GitHub Actions? -> use Workload Identity Federation for the deploy service account (full setup in gcp-identity-wif); never store a downloaded JSON key as a repo secret.",
+    "Does the service need to reach a private Supabase/Cloud SQL instance or internal VPC resource? -> configure Direct VPC egress or a Serverless VPC Access connector before wiring the route.",
+    "Is CPU needed outside of request processing (background threads, WebSocket keep-alives, in-memory cache warmers)? -> switch CPU allocation to \"always allocated\", which changes the billing model."
+  ],
+  "do_dont": [
+    "DO: reference secrets via Secret Manager (--set-secrets or volume mounts) and grant the service's runtime SA roles/secretmanager.secretAccessor scoped to the specific secret.",
+    "DON'T: put database passwords, Supabase service_role keys, or API tokens in --set-env-vars or committed YAML.",
+    "DO: set explicit --min-instances and --max-instances on every production service; don't rely on platform defaults for cost-critical or latency-critical paths.",
+    "DON'T: leave --allow-unauthenticated on services that only other backend services should call — use IAM invoker bindings (roles/run.invoker) scoped to specific service accounts instead.",
+    "DO: handle SIGTERM in-app to drain in-flight requests/connections before Cloud Run kills the instance (default grace period ~10s, configurable).",
+    "DON'T: assume container filesystem writes persist across instance restarts or across concurrent requests on the same instance — treat local disk as ephemeral scratch only.",
+    "DO: use Cloud Run jobs (not services with `--concurrency 1` and a webhook) for long batch tasks; jobs support up to 7-day timeouts vs a service's much shorter request timeout.",
+    "DON'T: leave concurrency at the default 80 for a Flask/sync-WSGI Python service without a production WSGI server (gunicorn with multiple workers/threads) — a single-threaded dev server under concurrency=80 will queue and time out requests.",
+    "DO: pin the container's base image tag and buildpack builder version in CI; don't deploy `:latest` tags to production.",
+    "DON'T: deploy secrets or config drift by hand in the console for production services — manage service config as Terraform (google_cloud_run_v2_service) or IaC, with console edits only for emergency rollback."
+  ],
+  "config_skeleton": "# --- Dockerfile (Python service example) ---\nFROM python:3.12-slim AS base\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .\nENV PORT=8080\nEXPOSE 8080\n# Use an ASGI server with multiple workers for concurrency > 1\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8080\", \"--workers\", \"2\"]\n\n# --- gcloud run deploy (service) ---\ngcloud run deploy my-service \\\n  --project=my-project \\\n  --region=my-region \\\n  --image=my-region-docker.pkg.dev/my-project/my-repo/my-service:GIT_SHA \\\n  --platform=managed \\\n  --no-allow-unauthenticated \\\n  --min-instances=1 \\\n  --max-instances=20 \\\n  --concurrency=40 \\\n  --cpu=1 --memory=512Mi \\\n  --timeout=300 \\\n  --set-secrets=SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest,DATABASE_URL=my-service-db-url:latest \\\n  --service-account=my-service-runtime@my-project.iam.gserviceaccount.com\n\n# --- gcloud run deploy (Cloud Run job, batch example) ---\ngcloud run jobs deploy my-batch-job \\\n  --project=my-project \\\n  --region=my-region \\\n  --image=my-region-docker.pkg.dev/my-project/my-repo/my-batch-job:GIT_SHA \\\n  --tasks=50 \\\n  --parallelism=10 \\\n  --task-timeout=3600 \\\n  --max-retries=2 \\\n  --set-secrets=DATABASE_URL=my-service-db-url:latest\n\n# --- Terraform: google_cloud_run_v2_service ---\nresource \"google_cloud_run_v2_service\" \"my_service\" {\n  name     = \"my-service\"\n  location = \"my-region\"\n  project  = \"my-project\"\n  ingress  = \"INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER\" # avoid ALL unless service must be public\n\n  template {\n    service_account = \"my-service-runtime@my-project.iam.gserviceaccount.com\"\n    scaling {\n      min_instance_count = 1\n      max_instance_count = 20\n    }\n    max_instance_request_concurrency = 40\n    containers {\n      image = \"my-region-docker.pkg.dev/my-project/my-repo/my-service:GIT_SHA\"\n      resources {\n        limits = {\n          cpu    = \"1\"\n          memory = \"512Mi\"\n        }\n      }\n      env {\n        name = \"SUPABASE_SERVICE_ROLE_KEY\"\n        value_source {\n          secret_key_ref {\n            secret_id = \"supabase-service-role-key\"\n            version = \"latest\"\n          }\n        }\n      }\n    }\n    timeout = \"300s\"\n  }\n}\n\n# Explicit invoker binding instead of allUsers:\nresource \"google_cloud_run_v2_service_iam_member\" \"invoker\" {\n  project  = google_cloud_run_v2_service.my_service.project\n  location = google_cloud_run_v2_service.my_service.location\n  name     = google_cloud_run_v2_service.my_service.name\n  role     = \"roles/run.invoker\"\n  member   = \"serviceAccount:my-caller-sa@my-project.iam.gserviceaccount.com\"\n}\n\n# --- GitHub Actions deploy step (assumes WIF already configured; see gcp-identity-wif) ---\n- name: Authenticate to Google Cloud (WIF)\n  uses: google-github-actions/auth@v2\n  with:\n    workload_identity_provider: projects/000000000000/locations/global/workloadIdentityPools/my-pool/providers/my-provider\n    service_account: my-deployer@my-project.iam.gserviceaccount.com\n\n- name: Deploy to Cloud Run\n  uses: google-github-actions/deploy-cloudrun@v2\n  with:\n    service: my-service\n    region: my-region\n    image: my-region-docker.pkg.dev/my-project/my-repo/my-service:${{ github.sha }}\n    flags: --min-instances=1 --max-instances=20 --concurrency=40 --no-allow-unauthenticated",
+  "failure_modes": [
+    "Concurrency left at default 80 on a synchronous single-threaded Python app (plain Flask dev server) causes request queuing and timeouts under moderate load.",
+    "min-instances=0 on a user-facing API causes visible cold-start latency spikes (container start + app init + framework boot) on the first request after idle periods.",
+    "max-instances unset or too high lets a traffic spike exhaust Supabase/Cloud SQL connection pool limits, causing cascading connection errors.",
+    "Secrets passed via --set-env-vars end up in plaintext in Cloud Console revision metadata, gcloud describe output, and CI logs.",
+    "--allow-unauthenticated applied to an internal service-to-service API exposes it to the public internet with only obscurity (unguessable URL) as protection.",
+    "Background work started per-request (threads, timers) with default request-based CPU allocation silently stalls once the response is returned and CPU is throttled.",
+    "Buildpack source deploys backdate all file mtimes to 1980, breaking cache-busting or ETag logic that depends on file modification time.",
+    "Long-running batch work implemented as a Cloud Run service hitting the request timeout ceiling instead of being modeled as a Cloud Run job with its much longer task timeout.",
+    "Container doesn't handle SIGTERM, so in-flight requests/DB transactions are hard-killed during scale-down or deploys, causing partial writes.",
+    "Committed JSON service-account keys used for deploy instead of WIF, creating long-lived exportable credentials in CI secrets."
+  ],
+  "anti_patterns": [
+    "Using a Cloud Run service with a scheduled Cloud Scheduler HTTP trigger as a substitute for a Cloud Run job for long batch/ETL work.",
+    "Granting roles/run.invoker to allUsers as a quick fix instead of scoping to specific caller service accounts or using an API gateway/load balancer with IAP.",
+    "Baking Supabase or third-party API keys directly into the Docker image or source code instead of Secret Manager references.",
+    "Running one giant Cloud Run function that fans out into unrelated business logic instead of a Cloud Run service with proper routing.",
+    "Treating min-instances as a performance dial without accounting for its always-on billing cost across all environments (leaving min-instances=1 in every preview/staging environment).",
+    "Ignoring adaptive concurrency behavior and manually tuning concurrency to an arbitrarily low number without load testing, leaving capacity (and cost efficiency) on the table.",
+    "Deploying via `gcloud run deploy --source` directly to production without CI, bypassing tests, security scanning, and version pinning.",
+    "Mixing container image tags like :latest in Terraform/CI deploy configs, making rollbacks non-deterministic."
+  ],
+  "tools": [
+    "gcloud CLI (run, functions, secrets, iam subcommands)",
+    "Cloud Run Terraform provider (google_cloud_run_v2_service, google_cloud_run_v2_job)",
+    "google-github-actions/auth and google-github-actions/deploy-cloudrun GitHub Actions",
+    "Cloud Build (used implicitly by source-based deploys and buildpacks)",
+    "Artifact Registry (container image storage)",
+    "Secret Manager (secret storage + versioning)",
+    "Cloud Run buildpacks (Google Cloud buildpacks builder)",
+    "Cloud Monitoring / Cloud Logging (Cloud Run request metrics, container logs)",
+    "Cloud Scheduler (for triggering Cloud Run jobs on a cron)",
+    "Eventarc (event triggers for Cloud Run functions/services)"
+  ],
+  "versions_as_of": [
+    "gcloud CLI — verify current version at deploy time; use `gcloud components update` before CI image build — as_of 2026-08-29",
+    "google-github-actions/deploy-cloudrun@v2 — as_of 2026-08-29",
+    "google-github-actions/auth@v2 — as_of 2026-08-29",
+    "Cloud Run Terraform resource: google_cloud_run_v2_service / google_cloud_run_v2_job (Google provider, use latest google provider 6.x [uncertain exact minor]) — as_of 2026-08-29",
+    "Google Cloud buildpacks builder (gcp-python312 / gcp-nodejs22 style builder images vary by language, auto-selected by source deploy) — as_of 2026-08-29",
+    "Cloud Run functions unified onto Cloud Run infra (2nd gen model is now simply \"Cloud Run functions\") — as_of 2026-08-29",
+    "python:3.12-slim / node:22-slim recommended current LTS base images for Dockerfile builds — as_of 2026-08-29"
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Default max concurrent requests per instance",
+      "value": "80 (configurable via --concurrency)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/concurrency"
+    },
+    {
+      "item": "Adaptive concurrency tuning",
+      "value": "Cloud Run dynamically tunes effective concurrency to keep instance CPU utilization below ~90% (ACT)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/about-instance-autoscaling"
+    },
+    {
+      "item": "Default max-instances",
+      "value": "A default maximum instance limit is applied automatically even if unset; exact numeric default not confirmed in fetched pages (uncertain) — always set explicitly",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/about-instance-autoscaling"
+    },
+    {
+      "item": "Idle instance retention window (scale-down grace)",
+      "value": "Up to 15 minutes (10 minutes for GPU instances) before an idle instance is removed",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/about-instance-autoscaling"
+    },
+    {
+      "item": "Cold-start request queuing",
+      "value": "Requests triggering scale-from-zero queue for up to 3.5x average startup time or 10 seconds, whichever is greater",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/about-instance-autoscaling"
+    },
+    {
+      "item": "min-instances billing",
+      "value": "Instances kept warm via min-instances are billed continuously; request-based billing charges a reduced idle rate, instance-based (always-allocated CPU) billing charges the full rate while idle",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/min-instances"
+    },
+    {
+      "item": "Cloud Run jobs — max tasks per job execution",
+      "value": "10,000 tasks",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/create-jobs"
+    },
+    {
+      "item": "Cloud Run jobs — default task timeout / max task timeout",
+      "value": "Default 10 minutes; maximum 168 hours (7 days); GPU tasks capped at 1 hour",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/create-jobs"
+    },
+    {
+      "item": "Cloud Run jobs — default/retry range",
+      "value": "Default 3 retries per failed task, configurable 0-10",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/create-jobs"
+    },
+    {
+      "item": "Environment variables per service",
+      "value": "Max 1000 env vars; max 32 KB per variable value",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/services/environment-variables"
+    },
+    {
+      "item": "Service request timeout",
+      "value": "Configurable per service; commonly cited default 300s (5 min), max up to 60 minutes for services [uncertain, not directly confirmed via fetched pages this session]",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/quotas"
+    },
+    {
+      "item": "CPU / memory per instance (services)",
+      "value": "Up to 8 vCPU and 32 GiB memory per instance in supported configurations [uncertain exact current ceiling, not confirmed via fetched quotas page — 404'd this session]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/run/docs/quotas"
+    },
+    {
+      "item": "Pricing — CPU (request-based tier, tier 1 region)",
+      "value": "~$0.000024 per vCPU-second [uncertain, pulled from summarized/cached pricing content, not raw fetched page]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/run/pricing"
+    },
+    {
+      "item": "Pricing — memory",
+      "value": "~$0.0000025 per GiB-second [uncertain, same caveat]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/run/pricing"
+    },
+    {
+      "item": "Pricing — requests",
+      "value": "~$0.40 per million requests beyond free tier [uncertain, same caveat]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/run/pricing"
+    },
+    {
+      "item": "Free tier (monthly, per billing account)",
+      "value": "~2 million requests, ~360,000 GiB-seconds memory, ~180,000 vCPU-seconds compute [uncertain, same caveat — verify on pricing page before quoting to stakeholders]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/run/pricing"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "1st-gen Cloud Functions is legacy; new event-driven functions should target Cloud Run functions (2nd gen, unified on Cloud Run infra), not the 1st-gen runtime.",
+    "Cloud Run Worker Pools and Instances (long-lived singleton) are Preview features as of 2026-08-29 — do not treat their behavior/limits as GA-stable; revisit before relying on them in production.",
+    "google-github-actions/setup-gcloud and older auth actions using exported JSON service-account keys are superseded by google-github-actions/auth with Workload Identity Federation — migrate any legacy key-based deploy workflow.",
+    "Buildpack builder images are periodically deprecated/rotated by Google; pin and monitor the builder version used by source-based deploys rather than always tracking \"latest\".",
+    "Watch for changes to default CPU allocation and concurrency tuning behavior (adaptive concurrency tuning is a relatively recent default) which can change effective per-instance throughput without a config change on your part.",
+    "gcloud command surface for Cloud Run is still evolving (e.g., flags for Worker Pools/Instances); re-check `gcloud run --help` against this doc before the review_by date."
+  ],
+  "identity_model": "Cloud Run services and jobs run under a per-service runtime service account (default is the Compute Engine default SA unless overridden — always override with a least-privilege, per-service SA). Deploys from GitHub Actions authenticate via Workload Identity Federation (no downloaded JSON keys); full WIF pool/provider/attribute-condition setup is documented in the sibling item gcp-identity-wif — this item only assumes a working WIF-backed deployer identity is already wired via google-github-actions/auth.",
+  "threats": [
+    "Public Cloud Run service (--allow-unauthenticated or allUsers invoker binding) exposing an internal API meant only for service-to-service calls.",
+    "Secrets leaked via plaintext environment variables visible in Cloud Console revision details, `gcloud run services describe` output, or CI build logs.",
+    "Over-privileged runtime service account (e.g., using the default Compute Engine SA with project-wide Editor role) letting a compromised container pivot broadly across the project.",
+    "Long-lived exported service-account JSON keys used for CI deploys instead of WIF, creating a stealable, non-expiring credential.",
+    "Container image supply-chain risk: unpinned base images or unscanned third-party dependencies baked into the deployed image.",
+    "Uncapped max-instances allowing a traffic spike or malicious flood to run up compute cost or overwhelm downstream Supabase connection limits (a denial-of-wallet / denial-of-service vector).",
+    "Buildpack/source-based deploys pulling dependencies at build time without a lockfile-pinned, reviewed dependency set."
+  ],
+  "mitigations": [
+    "Default every service to --no-allow-unauthenticated; grant roles/run.invoker only to specific caller service accounts or through an authenticated gateway.",
+    "Use --set-secrets / secret volume mounts exclusively for credentials; grant roles/secretmanager.secretAccessor scoped to individual secrets, not project-wide.",
+    "Create a dedicated, least-privilege runtime service account per service (e.g., my-service-runtime@my-project.iam.gserviceaccount.com) instead of using the default Compute SA.",
+    "Use Workload Identity Federation for all CI deploy identities; disable or avoid creating exportable JSON keys for deploy service accounts (see gcp-identity-wif).",
+    "Pin base image digests/tags and scan images (Artifact Registry vulnerability scanning) before promoting to production.",
+    "Always set explicit --max-instances tied to downstream capacity (e.g., Supabase Postgres max connections / pooler limits).",
+    "Enable Cloud Audit Logs for Cloud Run admin actions and IAM policy changes; alert on invoker bindings granted to allUsers.",
+    "Review buildpack/source-deploy dependency manifests in CI (lockfiles committed, dependency scanning step) before allowing a deploy to proceed."
+  ],
+  "agent_codegen_policy": [
+    "Never generate `--allow-unauthenticated` in code/config for a service unless the user explicitly states the endpoint must be public.",
+    "Never write secrets as literal values in --set-env-vars, Dockerfile ENV, or Terraform env blocks — always emit Secret Manager references (--set-secrets or secret_key_ref).",
+    "Always include explicit --min-instances and --max-instances flags/fields in generated deploy commands and Terraform, never leave them to platform defaults silently.",
+    "When generating a GitHub Actions deploy workflow, always use google-github-actions/auth with workload_identity_provider — never emit a step that reads a `GCP_SA_KEY` JSON secret.",
+    "When the workload described is a long-running batch/ETL task, generate a Cloud Run job, not a Cloud Run service with an HTTP trigger.",
+    "Default generated concurrency to a conservative value (e.g., 40) with a comment recommending load-testing before raising it, rather than assuming max async throughput.",
+    "Always scaffold a SIGTERM handler in generated service code (Python/Node) for graceful shutdown.",
+    "Use placeholder ids (my-project, my-region, my-service) in all generated examples; never invent or reuse real-looking project ids."
+  ],
+  "ci_gates": [
+    "Block deploy if the Terraform/gcloud plan sets ingress to allow-all or invoker to allUsers without an explicit override flag/approval.",
+    "Block deploy if any --set-env-vars value matches a secret-like pattern (KEY, TOKEN, PASSWORD, SECRET) instead of using --set-secrets.",
+    "Require max-instances to be set (fail lint if absent) on any google_cloud_run_v2_service resource.",
+    "Require the container image reference to be an immutable digest or CI-generated SHA tag, not `:latest`, before allowing a production deploy.",
+    "Run a container vulnerability scan (Artifact Registry scanning or equivalent) and block on critical CVEs before promoting an image.",
+    "Verify the GitHub Actions workflow authenticates via workload_identity_provider, failing the pipeline if a static key-based auth step is detected.",
+    "Load-test concurrency settings in a staging environment before allowing a concurrency change >80 to reach production.",
+    "Require min-instances justification (comment or PR description) for any service setting min-instances > 0, given the always-on cost."
+  ],
+  "observability": [
+    "Cloud Monitoring: track container instance count, request latency (p50/p95/p99), and container CPU/memory utilization per revision.",
+    "Cloud Logging: structured JSON logs from the container, correlated by trace id; enable Cloud Trace integration for request-level latency breakdown.",
+    "Monitor cold-start frequency (instances started from zero) as a proxy for whether min-instances tuning is needed.",
+    "Alert on 429/503 responses correlated with max-instances being hit (scaling saturation).",
+    "Track billable instance time vs request count to catch min-instances configurations that are quietly costing more than expected.",
+    "Monitor Secret Manager access logs for the runtime service account to detect anomalous secret access patterns.",
+    "Dashboard Cloud Run job execution success/failure rates and per-task retry counts for batch pipelines."
+  ],
+  "cost_guardrails": [
+    "Always cap max-instances per service; multiply worst-case instance count by max CPU/memory to sanity-check monthly cost ceiling.",
+    "Restrict min-instances>0 to production, user-facing services only; keep staging/preview environments at scale-to-zero.",
+    "Prefer request-based CPU allocation (default) over CPU-always-allocated unless background processing genuinely requires it — always-allocated CPU is billed continuously per instance.",
+    "Right-size CPU/memory per service based on load-test profiling rather than defaulting to the largest available instance shape.",
+    "Batch/ETL workloads should use Cloud Run jobs with bounded task/parallelism counts rather than services with min-instances kept warm for occasional triggers.",
+    "Review concurrency settings periodically — under-utilized concurrency means paying for more instances than necessary for the same throughput.",
+    "Use budget alerts scoped to the Cloud Run service (via billing export + Cloud Monitoring) to catch runaway autoscaling early."
+  ],
+  "skill_scan_signals": [
+    "Flag `--allow-unauthenticated` (or `run.googleapis.com/invoker-iam-disabled: 'true'`, or an `allUsers` IAM binding with role `roles/run.invoker`) on any service not explicitly marked as a public-facing endpoint.",
+    "Flag any `--set-env-vars` or Terraform `env { value = ... }` block whose key name matches secret-like patterns (SECRET, TOKEN, PASSWORD, KEY, CREDENTIAL) instead of using `--set-secrets` / `secret_key_ref`.",
+    "Flag a `google_cloud_run_v2_service` resource or `gcloud run deploy` command missing an explicit `--max-instances` / `max_instance_count`.",
+    "Flag a latency-sensitive service (tagged user-facing/API-gateway-fronted) with no `--min-instances` set, implying scale-to-zero cold starts on the critical path.",
+    "Flag `--concurrency=1` left in place alongside an async framework (FastAPI/async Express/Next.js API routes) without a load-test justification comment, since it likely under-utilizes instance capacity.",
+    "Flag container images referenced by mutable tags (`:latest`, `:main`) in production deploy configs instead of an immutable digest or commit-SHA tag.",
+    "Flag a GitHub Actions workflow deploying to Cloud Run that references a `GCP_SA_KEY`-style secret instead of `google-github-actions/auth` with `workload_identity_provider`.",
+    "Flag long-running (batch/ETL-shaped) logic implemented as a Cloud Run service handler instead of a Cloud Run job.",
+    "Flag a Dockerfile or buildpack config lacking a non-root `USER` directive or running as root by default.",
+    "Flag missing SIGTERM/graceful-shutdown handling in generated service entrypoint code."
+  ],
+  "skill_module_bullets": [
+    "Cloud Run has four workload types: Services (HTTP, autoscaling), Jobs (run-to-completion, up to 10,000 tasks), Worker Pools (continuous non-HTTP), and Instances (long-lived singleton, preview) — pick based on trigger model, not habit.",
+    "Cloud Run functions is the unified successor to 2nd-gen Cloud Functions, running on the same Cloud Run infrastructure — use it for small single-purpose event-triggered handlers, use Cloud Run services for multi-route apps/frameworks.",
+    "Concurrency defaults to 80 with adaptive concurrency tuning (ACT) keeping per-instance CPU under ~90%; tune down for blocking/single-threaded workloads, tune up (after load testing) for async I/O-bound workloads.",
+    "min-instances eliminates cold starts but bills continuously (reduced idle rate under request-based billing, full rate under always-allocated CPU) — reserve for latency-sensitive production services only.",
+    "max-instances always has a default cap; always set an explicit value tied to downstream capacity (e.g., Supabase connection pool limits) to avoid cost blowouts and connection exhaustion.",
+    "Cold starts queue for up to 3.5x average startup time or 10 seconds; idle instances persist up to 15 minutes before removal, which naturally smooths bursty traffic.",
+    "Never store secrets in plain environment variables — always route through Secret Manager via --set-secrets or volume mounts with a scoped secretAccessor binding.",
+    "Never leave --allow-unauthenticated on internal services; use roles/run.invoker scoped to specific caller service accounts, and route CI deploy auth through Workload Identity Federation (see gcp-identity-wif), never JSON keys.",
+    "Cloud Run jobs support up to 7-day task timeouts (10 min default) with 0-10 configurable retries — use them for batch/ETL instead of forcing long work through a service's shorter request timeout.",
+    "Buildpack source deploys are convenient but backdate file mtimes to 1980-01-01 (can break cache-busting) and cede build control; prefer an explicit Dockerfile for production services in a TS/Next + Python-services stack."
+  ],
+  "checklist": [
+    "Container: Dockerfile present, non-root user, pinned base image tag/digest, minimal final image.",
+    "Concurrency: value chosen and load-tested for the framework's threading/async model, not left at an unverified default.",
+    "Autoscaling: min-instances and max-instances both explicitly set with cost/capacity justification.",
+    "CPU allocation: request-based vs always-allocated decision made deliberately based on background-work needs.",
+    "Secrets: all credentials mounted via Secret Manager, none present as plaintext env vars.",
+    "IAM: runtime service account is least-privilege and per-service; invoker access scoped, not allUsers, unless the service is genuinely public.",
+    "Identity: CI deploy uses Workload Identity Federation, no exported JSON key in repo secrets (cross-check gcp-identity-wif).",
+    "Timeouts: request timeout (services) or task timeout (jobs) sized appropriately for the workload; long batch work modeled as a job.",
+    "Graceful shutdown: SIGTERM handled, in-flight work drained before instance termination.",
+    "Observability: logging/tracing wired, cold-start and scaling-saturation alerts configured.",
+    "Cost: budget alert configured; concurrency/min-instances/max-instances reviewed against actual traffic periodically."
+  ],
+  "source_tier": "official",
+  "confidence": "medium",
+  "conflicts_noted": "The Cloud Run quotas page (cloud.google.com/run/docs/quotas and its docs.cloud.google.com redirect) returned 404 during this research session, so exact current numeric ceilings for max CPU/memory per instance and max service request timeout could not be directly re-verified from the primary quotas page this run; values given are widely-documented figures from prior GA docs and are marked [uncertain] pending re-check. Pricing figures were retrieved via a summarized/cached rendering of cloud.google.com/run/pricing rather than the raw current page, so exact per-unit prices and free-tier amounts are marked [uncertain] and should be re-verified directly before being quoted to a customer or used in a cost model.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://docs.cloud.google.com/run/docs/about-instance-autoscaling",
+    "https://docs.cloud.google.com/run/docs/configuring/min-instances",
+    "https://docs.cloud.google.com/run/docs/configuring/concurrency",
+    "https://docs.cloud.google.com/run/docs/create-jobs",
+    "https://docs.cloud.google.com/run/docs/securing/managing-access",
+    "https://docs.cloud.google.com/run/docs/configuring/services/environment-variables",
+    "https://docs.cloud.google.com/run/docs/deploying-source-code",
+    "https://docs.cloud.google.com/run/docs/overview/what-is-cloud-run",
+    "https://cloud.google.com/run/docs/quotas",
+    "https://cloud.google.com/run/pricing",
+    "https://cloud.google.com/functions/docs/concepts/overview"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "decision_gates",
+    "limits_quotas_pricing"
+  ]
+}

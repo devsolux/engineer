@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "kind": "feature",
+  "title": "Add activation analytics on signup success",
+  "status": "draft",
+  "venture_or_app": "example-app",
+  "stream": "signup-activation-analytics",
+  "origin": "planned",
+  "session_notes": [
+    "Optional. stream = workstream slug (must equal the file slug for .engineer/plans/<slug>.json). origin = planned | adopted-mid-session (adopted requires resume_context describing work already done) | sidequest (halt-and-return detour; interrupts names the halted parent stream). resume_context + session_notes carry multi-session streams. superseded_by chains to a successor plan. verification = {result, evidence[, verified_at, notes]} is the canonical completion receipt.",
+    "Optional integration = branch-per-plan state. Single stream in a single session needs no branch (work on main and omit integration). Include it when a second stream activates or the plan is multi-session; done + branch then requires merge_commit or disposition parked/discarded."
+  ],
+  "integration": {
+    "branch": "plan/signup-activation-analytics",
+    "worktree": ".worktrees/example-app/signup-activation-analytics",
+    "base": "main"
+  },
+  "summary": "Fire a single activation-related analytics event after successful signup, with server-side auth and no PII in the event payload.",
+  "risks": [
+    "Client-only tracking can be blocked or forged",
+    "PII accidentally included in event properties"
+  ],
+  "files_touch": [
+    "app/(auth)/actions.ts",
+    "lib/analytics.ts",
+    "components/signup-form.tsx"
+  ],
+  "verify_commands": [
+    "npm run typecheck",
+    "npm run lint:ci",
+    "bash scripts/engineer-scan.sh --strict"
+  ],
+  "complexity": {
+    "need_now": "Record one trustworthy signup-success event without adding a new analytics service.",
+    "simplest_viable_design": "Call the existing server-side analytics adapter once after the committed signup succeeds.",
+    "evidence": [
+      "The product already has a server analytics adapter",
+      "The activation funnel requires a signup-success event"
+    ],
+    "new_abstractions": [],
+    "new_runtime_components": [],
+    "rejected_options": [
+      {"option": "New event bus", "reason": "One producer and one consumer do not justify another runtime component"},
+      {"option": "Generic analytics repository", "reason": "No second implementation or repeated change pressure exists"}
+    ],
+    "reversibility": {
+      "class": "reversible",
+      "rollback": "Remove the one adapter call and its regression test.",
+      "decision_record": null
+    },
+    "solid_justifications": []
+  },
+  "tests": [
+    "Unit: analytics helper redacts email",
+    "Manual: signup success fires event once"
+  ],
+  "approved_at": null,
+  "approved_by": null
+}

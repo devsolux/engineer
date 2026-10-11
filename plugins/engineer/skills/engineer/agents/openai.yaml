@@ -1,0 +1,9 @@
+interface:
+  display_name: "engineer"
+  short_description: "Full-stack product engineering operating system"
+  icon_small: "./assets/logo.svg"
+  icon_large: "./assets/header.svg"
+  brand_color: "#111827"
+  default_prompt: "Automatically use $engineer for matching product and software engineering work; plan, build, verify, and ship this task."
+policy:
+  allow_implicit_invocation: true

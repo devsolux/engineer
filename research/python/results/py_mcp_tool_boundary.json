@@ -1,0 +1,250 @@
+{
+  "name": "MCP tools auth timeouts isolation",
+  "item_id": "py-mcp-tool-boundary",
+  "cluster": "interop",
+  "short_definition": "Model Context Protocol (MCP) exposes tools to LLMs/agents with explicit schemas, auth, timeouts, and isolation. Production Python servers use the official mcp package (FastMCP in SDK) and/or standalone fastmcp for streamable HTTP; fastapi-mcp bridges existing FastAPI routes. Never treat MCP as unauthenticated stdio on a shared host without sandboxing. As of 2026-07-13: mcp 1.28.1, fastapi-mcp 0.4.0. Tools MUST validate inputs, enforce authZ, bound runtime, and sanitize outputs.",
+  "scope_in": [
+    "MCP tools/list and tools/call contracts",
+    "Python server options: mcp SDK FastMCP, standalone fastmcp, fastapi-mcp",
+    "Transports: stdio (local), streamable HTTP (remote default), legacy SSE notes",
+    "Auth: OAuth 2.1 / bearer / API key for remote; dependency injection for FastAPI bridges",
+    "Timeouts, rate limits, output size limits, human-in-the-loop for destructive ops",
+    "Process/network isolation and least-privilege credentials for tool backends"
+  ],
+  "scope_out": [
+    "Full product RAG API design (py-ai-service-boundary)",
+    "LiteLLM gateway (py-llm-gateway)",
+    "Temporal durable orchestration of multi-step agents (py-durable-workflows)",
+    "Client IDE plugin development (Claude Desktop config minutiae beyond auth headers)",
+    "Building proprietary non-MCP tool routers"
+  ],
+  "priority": "P1",
+
+  "defaults": {
+    "server": "Official mcp Python SDK FastMCP for new tool servers; fastapi-mcp when reusing existing FastAPI routes+Depends auth",
+    "remote_transport": "streamable-http (not raw public stdio); mount under /mcp behind auth",
+    "local_dev": "stdio OK for single-user desktop agents with trusted tools only",
+    "auth_remote": "OAuth 2.1 or service bearer tokens; reject anonymous remote tools",
+    "schemas": "Pydantic/JSON Schema inputSchema (and outputSchema when structured); no dict[str, Any] free-for-all",
+    "timeouts": "Per-tool timeout (e.g. 5–30s default; explicit higher for long jobs with async handle pattern)",
+    "limits": "Rate limit tools/call; max response bytes; max concurrent calls per principal",
+    "destructive": "annotations + client confirmation; server-side authZ still mandatory",
+    "isolation": "Separate process/container; least-privilege DB/API credentials; no host shell by default"
+  },
+  "decision_gates": {
+    "use_mcp_when": [
+      "Exposing capabilities to multiple agent hosts (Claude, IDE, internal agents) with standard discovery",
+      "Need typed tool catalog separate from product REST API"
+    ],
+    "use_fastapi_rest_only_when": [
+      "Only first-party app calls tools via your HTTP API — MCP optional",
+      "Strict OpenAPI BFF already covers all clients"
+    ],
+    "use_fastapi_mcp_when": [
+      "Existing FastAPI endpoints should become tools without rewrite",
+      "Want Depends()-based auth reused"
+    ],
+    "do_not": [
+      "Don't expose production DB shell tools over unauthenticated MCP",
+      "Don't run untrusted MCP servers with full filesystem/network in CI agents without sandbox",
+      "Don't rely on tool annotations alone for security (untrusted unless server trusted)"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Validate every argument with schema/Pydantic",
+      "AuthN before tools/call; authZ per tool and resource",
+      "Set client and server timeouts; return isError on tool failure",
+      "Log tool name, principal, duration, success — not secrets",
+      "Design tools as goals/capabilities, not raw internal REST dumps",
+      "Sandbox outbound network (SSRF allowlists) for fetch-like tools"
+    ],
+    "dont": [
+      "Don't allow arbitrary SQL/shell tools in multi-tenant prod",
+      "Don't return multi-MB blobs into LLM context",
+      "Don't skip human confirm on payments, deletes, transfers",
+      "Don't share one credential for all tenants inside a tool",
+      "Don't block forever on upstream APIs without timeout",
+      "Don't mount MCP on public internet without TLS + auth"
+    ]
+  },
+  "code_skeleton": "# --- FastMCP (mcp SDK) tool server ---\nfrom mcp.server.fastmcp import FastMCP\nfrom pydantic import BaseModel, Field\n\nmcp = FastMCP(\"orders-tools\")\n\nclass OrderQuery(BaseModel):\n    order_id: str = Field(min_length=1, max_length=64)\n\n@mcp.tool()\nasync def get_order_status(order_id: str) -> str:\n    \"\"\"Return status for an order the caller is allowed to see.\"\"\"\n    # enforce auth from context/headers in HTTP mode; validate ownership\n    if not order_id:\n        return \"error: missing order_id\"\n    return f\"order {order_id}: shipped\"  # real DB call with tenant check\n\n# Remote: mcp.run(transport=\"streamable-http\", host=\"0.0.0.0\", port=8000)\n# Local:  mcp.run()  # stdio\n\n# --- fastapi-mcp bridge sketch ---\n# from fastapi import Depends, FastAPI\n# from fastapi_mcp import FastApiMCP\n# app = FastAPI()\n# @app.get(\"/orders/{order_id}\")\n# async def get_order(order_id: str, user=Depends(auth)):\n#     ...\n# FastApiMCP(app).mount()\n\n# --- Client-side timeout policy (agent host) ---\n# MCP_TOOL_TIMEOUT_MS=30000\n# On timeout: cancel, record failure, do not retry destructive tools without idempotency key\n",
+  "failure_modes": [
+    "Tool hangs → agent session timeout cascade",
+    "Unauthenticated remote MCP → data breach / RCE via tools",
+    "Prompt injection tricks model into calling destructive tools",
+    "Huge tool result floods context window (DoS)",
+    "Schema drift between server and clients after deploy",
+    "SSE/streamable HTTP proxy buffering breaks transport",
+    "Confused deputy: tool uses server's superuser credentials for attacker-controlled args"
+  ],
+  "anti_patterns": [
+    "MCP server with shell=True / unrestricted code exec",
+    "Auth only on HTTP middleware but tools bypass with internal calls",
+    "No timeout on tools/call",
+    "Returning raw exception stacks with secrets",
+    "Registering every internal REST route as a tool without curation",
+    "Trusting client-supplied tenant_id without server verification"
+  ],
+
+  "tools": {
+    "primary": ["mcp (official Python SDK, FastMCP)", "fastmcp standalone (advanced OAuth/HTTP)", "fastapi-mcp"],
+    "clients": ["MCP-compatible agent hosts", "mcp client APIs in SDK"],
+    "security": ["OAuth 2.1", "OPA/Cedar optional policy", "network policies"],
+    "related": ["Pydantic schemas", "httpx for tool backends", "Temporal activities wrapping long tools"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "mcp": "1.28.1",
+    "fastapi-mcp": "0.4.0",
+    "note": "FastMCP 1.x lives in official mcp package; standalone fastmcp package evolves faster (v2/v3 features, OAuth helpers) — pick one stack and pin"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"mcp>=1.28,<2\",\n  # optional bridge:\n  # \"fastapi-mcp>=0.4,<0.5\",\n  # \"fastapi>=0.139,<0.140\",\n]\n",
+    "env": "MCP_TRANSPORT=streamable-http\nMCP_HOST=0.0.0.0\nMCP_PORT=8000\nMCP_AUTH_ISSUER=https://auth.example.com\nMCP_TOOL_DEFAULT_TIMEOUT_S=30\n# Tool backend secrets (least privilege)\nORDERS_DB_URL=...\n",
+    "proxy": "# nginx: disable buffering for MCP HTTP streams; long read timeouts\n# authn at gateway or app middleware before /mcp\n"
+  },
+  "deprecation_watch": [
+    "Unauthenticated remote SSE MCP as default",
+    "Exposing all OpenAPI routes as tools without review",
+    "stdio MCP on multi-tenant servers",
+    "Ignoring MCP security guidance (human-in-the-loop for destructive tools)",
+    "Custom non-schema tool args (free-form strings only)"
+  ],
+
+  "ts_boundary": "TS/Next agents may host MCP clients or call your Python MCP over HTTP. Prefer server-side MCP client in BFF/agent worker — not browser direct to privileged tools. Product REST can remain separate from MCP tool surface; don't force browsers to speak MCP.",
+  "rust_boundary": "High-assurance sandboxes or ultra-low-latency tool runtimes may be Rust; keep MCP schema contract stable. Default tool business logic stays Python when it touches AI/data stack.",
+  "supabase_boundary": "Tools that read/write Supabase must use service credentials with explicit tenant checks, or user-scoped JWT passed carefully (no key leak into logs). Prefer dedicated RPC/SQL functions over open table access. RLS is not a substitute for tool authZ when using service_role.",
+  "boundary_contracts": [
+    "MCP tools/list JSON Schema inputSchema (+ outputSchema optional)",
+    "Auth: OAuth bearer or API key on remote transport",
+    "Timeout and rate-limit SLOs documented per tool",
+    "Env for transport and tool secrets",
+    "OpenAPI remains separate for product HTTP; MCP is agent-facing contract"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Expose agent-callable tools safely",
+    "python": "mcp FastMCP or fastapi-mcp; auth+timeouts+isolation",
+    "ts": "MCP client in server agent; UI confirms destructive ops",
+    "rust": "Optional sandbox executor behind same MCP schema"
+  },
+
+  "threats": [
+    "RCE via unsafe tools (shell, eval, pickle)",
+    "Data exfiltration tools (email send, arbitrary HTTP)",
+    "Privilege escalation through over-scoped credentials",
+    "DoS via slow or huge tool results",
+    "Token theft on remote MCP endpoints",
+    "Supply-chain malicious MCP packages"
+  ],
+  "mitigations": [
+    "Allowlist tools; no generic code execution in prod",
+    "OAuth/mTLS; short-lived tokens; audit log",
+    "Per-tool timeouts + response size caps",
+    "SSRF allowlists; block link-local/metadata IPs",
+    "Container isolation + dropped caps",
+    "Human approval for high-risk annotations",
+    "Pin mcp dependency; review third-party MCP servers before install"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Typed tool inputs (Pydantic/JSON Schema)",
+      "Auth on remote MCP or documented local-only stdio",
+      "Timeouts and isError-style failure handling",
+      "Tenant/ownership checks inside mutating/read tools",
+      "Minimal curated tool set — not entire API dump"
+    ],
+    "must_not_generate": [
+      "Unauthenticated public MCP with DB/shell tools",
+      "subprocess shell with user-controlled strings",
+      "Tools without timeouts",
+      "Logging of Authorization headers or raw secrets",
+      "Trusting annotations as sole security control"
+    ]
+  },
+
+  "tests_required": [
+    "tools/list schema snapshot test",
+    "tools/call validation errors for bad args",
+    "Auth rejection without token (HTTP mode)",
+    "Timeout test with slow mock upstream",
+    "AuthZ negative test (wrong tenant order_id)",
+    "Output size limit if implemented"
+  ],
+  "ci_gates": [
+    "pytest for tool handlers",
+    "ruff + basedpyright",
+    "Grep ban for shell=True in mcp tool modules",
+    "No secrets in MCP fixtures"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "from mcp.server.fastmcp import FastMCP",
+      "@mcp.tool",
+      "fastapi_mcp / FastApiMCP",
+      "transport=streamable-http",
+      "tool timeout settings",
+      "Pydantic models for tool args"
+    ],
+    "negative": [
+      "MCP mounted without auth on 0.0.0.0",
+      "shell=True in tool implementation",
+      "tools/call handlers with no timeout",
+      "service_role used without tenant check",
+      "registering entire OpenAPI surface blindly"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "MCP tools are model-controlled — authZ, timeouts, isolation mandatory",
+    "Python: mcp FastMCP default; fastapi-mcp to reuse FastAPI Depends auth",
+    "Remote: streamable HTTP + OAuth/bearer; stdio only trusted local",
+    "Per-tool timeout, rate limit, output size cap",
+    "Human-in-the-loop for destructive tools; don't trust annotations alone",
+    "Curate tools as capabilities; validate schemas; tenant checks",
+    "mcp 1.28.1 / fastapi-mcp 0.4.0 as_of 2026-07-13"
+  ],
+  "action_items": [
+    "python.md MCP section: auth, timeout, isolation checklist",
+    "Scan signals for unauthenticated MCP and shell tools",
+    "Example FastMCP service in templates",
+    "Cross-link ai-service-boundary and durable-workflows (tools as activities)"
+  ],
+  "checklist": [
+    "Auth on remote MCP",
+    "Typed inputSchema per tool",
+    "Timeouts configured",
+    "Rate limits",
+    "Output size bounds",
+    "Tenant authZ in handlers",
+    "No unrestricted shell/SQL",
+    "Audit logging",
+    "Destructive ops confirm path",
+    "Tests for auth and schema"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Official mcp SDK FastMCP vs standalone fastmcp package versioning confuses agents — document which import path the repo uses",
+    "fastapi-mcp vs pure FastMCP: bridge vs greenfield tradeoff",
+    "OpenAI Apps SDK / MCP extensions lag formal spec in places — stick to core tools/list + tools/call",
+    "Default timeouts vary by host (e.g. 60s in some clients) — always set explicit server-side timeouts"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2027-01-13",
+  "primary_sources": [
+    "https://modelcontextprotocol.io/docs/concepts/tools",
+    "https://github.com/modelcontextprotocol/python-sdk",
+    "https://pypi.org/project/mcp/",
+    "https://github.com/tadata-org/fastapi_mcp",
+    "https://github.com/PrefectHQ/fastmcp",
+    "https://mcp.directory/blog/fastmcp-vs-fastapi-mcp-vs-python-sdk-2026"
+  ],
+  "local_sources": [
+    "./research/python/outline.yaml",
+    "./research/python/results/py_auth_security.json",
+    "./research/python/results/py_ai_service_boundary.json",
+    "./references/backend-security.md"
+  ]
+}

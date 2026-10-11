@@ -1,0 +1,182 @@
+{
+  "name": "AWS edge, network, and cost — CloudFront, API Gateway vs ALB, VPC basics for Fargate/RDS, egress and NAT traps, budgets/alerts, free-tier cliffs",
+  "item_id": "aws-edge-network-cost",
+  "cluster": "aws",
+  "short_definition": "This item covers the network and cost surface that sits around AWS compute and data services: CloudFront as the CDN/edge layer, API Gateway vs Application Load Balancer as the entry point into compute, the minimal VPC topology needed for Fargate/RDS, the well-known NAT Gateway and data-transfer cost traps, and the budgeting/alerting discipline required to avoid bill shock — especially now that AWS's Free Tier has moved to a short, credit-based model for new accounts.",
+  "scope_in": "CloudFront distributions and caching, API Gateway (REST/HTTP) vs ALB choice for routing into Lambda/Fargate/App Runner, minimal VPC design (public/private subnets, NAT Gateway vs NAT instance vs no-NAT patterns, VPC endpoints), egress/data-transfer cost mechanics, AWS Budgets and Cost Anomaly Detection, and the 2025 Free Tier restructuring.",
+  "scope_out": "IAM/OIDC for CI or workload identity is in aws-identity-iam-oidc; the compute resources themselves (Lambda/Fargate/App Runner configuration) are in aws-compute-serverless; S3/RDS/DynamoDB/Secrets Manager/SQS/EventBridge internals are in aws-data-storage; Vercel's own edge network and CDN are in the vercel cluster; Cloudflare's zero-egress R2/Workers alternative is in the platforms cluster.",
+  "priority": "P1",
+  "defaults": [
+    "Front any public API on AWS with either API Gateway (HTTP API, not REST API, for a new greenfield build) in front of Lambda, or an Application Load Balancer in front of Fargate/EC2 — don't run both in front of the same compute unless a specific requirement (e.g. WAF at ALB plus API Gateway's request validation) justifies it.",
+    "Default to API Gateway's cheaper HTTP API type over the older REST API type for new Lambda-backed APIs unless a REST-API-only feature (request/response transformation, usage plans/API keys, private VPC endpoints for the API itself) is required.",
+    "Put CloudFront in front of any public S3-hosted static assets or Next.js-adjacent AWS content, using Origin Access Control (OAC) so the S3 bucket itself stays fully private.",
+    "Default new VPCs to a minimal two-AZ, public+private subnet layout; put Fargate tasks and RDS/Aurora instances in private subnets with no direct internet route.",
+    "Avoid NAT Gateways entirely where possible: give private-subnet resources reachability to AWS services (S3, DynamoDB, Secrets Manager, ECR) via VPC Gateway/Interface Endpoints instead of routing through a NAT Gateway to the public internet — NAT Gateway data-processing charges are one of the most common unexpected AWS bills.",
+    "When a NAT Gateway is genuinely required (e.g. outbound calls to third-party APIs from a private subnet), use exactly one NAT Gateway per AZ you need redundancy in, not one per subnet, and monitor its data-processing GB/month closely.",
+    "Set up AWS Budgets (cost budget + usage budget) and Cost Anomaly Detection on day one of any new account, before the first resource is deployed — this is now more urgent given the shortened Free Tier credit runway.",
+    "Enable CloudFront caching aggressively for static/cacheable content to reduce origin data-transfer cost, since CloudFront's own free tier (1TB/month) is larger and often cheaper than direct S3/EC2 data transfer out to the internet."
+  ],
+  "decision_gates": [
+    "Choose API Gateway over ALB when the backend is Lambda and you want built-in request throttling, API keys/usage plans, or native Lambda-proxy integration without managing a load balancer.",
+    "Choose ALB over API Gateway when the backend is Fargate/EC2, when you need WebSocket support beyond API Gateway's WebSocket API pricing model, or when you need path-based/host-based routing across many long-running services.",
+    "Choose HTTP API over REST API (API Gateway) by default for cost (roughly a third of REST API's per-request price) unless a REST-API-exclusive feature is required.",
+    "Choose to skip a NAT Gateway entirely when all outbound traffic from private subnets is to AWS services reachable via VPC Endpoints — only add a NAT Gateway when true public-internet egress from a private subnet is unavoidable.",
+    "Choose CloudFront in front of API Gateway/ALB when you need edge caching, geographic distribution, or a WAF attachment point close to users; skip it for purely internal/private APIs with no public caching benefit.",
+    "Escalate from a single NAT Gateway to one-per-AZ only once cross-AZ NAT data-processing charges or an availability requirement justifies the added ~$0.045/hour per additional NAT Gateway.",
+    "Reach for CloudFront's newer flat-rate bundled plans instead of pure pay-as-you-go pricing when usage is predictable and the bundled allowance (e.g. free plan: 1M requests/100GB) covers a small app's real traffic — otherwise pay-as-you-go remains more flexible for variable/growing traffic."
+  ],
+  "do_dont": [
+    "Do use VPC Gateway Endpoints (free) for S3 and DynamoDB traffic from private subnets, and Interface Endpoints (hourly + per-GB charge, but usually cheaper than NAT for steady traffic) for other AWS services like Secrets Manager and ECR.",
+    "Do set CloudFront cache behaviors explicitly per path pattern rather than relying on default caching for API-backed content that shouldn't be cached.",
+    "Do use AWS WAF (attached to CloudFront or ALB, not both redundantly) with at least the AWS Managed Rules baseline rule group for any public-facing API.",
+    "Do tag every resource with a cost-allocation tag (project/environment) from day one so AWS Budgets and Cost Explorer can attribute spend accurately.",
+    "Don't route Lambda/Fargate egress to other AWS services (S3, DynamoDB, ECR, Secrets Manager) through a NAT Gateway when a VPC Endpoint would eliminate the NAT data-processing charge entirely.",
+    "Don't create a NAT Gateway per subnet 'for isolation' when one per AZ (shared across subnets in that AZ) achieves the same redundancy at a fraction of the cost.",
+    "Don't leave a CloudFront distribution's default TTL at values that cache dynamic/user-specific API responses, causing stale or cross-user data leakage.",
+    "Don't skip AWS Budgets 'until we have real traffic' — set at least a low-threshold alert immediately so a misconfiguration (e.g. an open NAT-routed loop or a runaway Lambda) is caught within hours, not at month-end.",
+    "Don't assume the old 12-month/750-hour/1M-request free tier framing from older tutorials still applies unchanged to a brand-new account created after the 2025-07-15 change to a ~$200 6-month credit model."
+  ],
+  "config_skeleton": "# --- Minimal VPC with NAT-free private subnets using VPC Endpoints (Terraform, placeholders only) ---\nresource \"aws_vpc\" \"main\" {\n  cidr_block = \"10.0.0.0/16\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.0.1.0/24\"\n  availability_zone = \"us-east-1a\"\n}\n\n# Gateway endpoint: free, no NAT needed for S3/DynamoDB traffic from private subnets.\nresource \"aws_vpc_endpoint\" \"s3\" {\n  vpc_id            = aws_vpc.main.id\n  service_name      = \"com.amazonaws.us-east-1.s3\"\n  vpc_endpoint_type = \"Gateway\"\n  route_table_ids   = [aws_route_table.private.id]\n}\n\n# Interface endpoint for Secrets Manager (hourly + per-GB, still usually cheaper than NAT).\nresource \"aws_vpc_endpoint\" \"secretsmanager\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-1.secretsmanager\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id]\n  private_dns_enabled = true\n}\n\n# --- API Gateway HTTP API in front of Lambda (Terraform, placeholders only) ---\nresource \"aws_apigatewayv2_api\" \"http_api\" {\n  name          = \"my-app-api\"\n  protocol_type = \"HTTP\"\n}\n\nresource \"aws_apigatewayv2_integration\" \"lambda\" {\n  api_id                 = aws_apigatewayv2_api.http_api.id\n  integration_type       = \"AWS_PROXY\"\n  integration_uri        = \"arn:aws:lambda:us-east-1:123456789012:function:my-app-api\"\n  payload_format_version = \"2.0\"\n}\n\n# --- CloudFront distribution over a private S3 origin via OAC (Terraform excerpt) ---\nresource \"aws_cloudfront_origin_access_control\" \"oac\" {\n  name                              = \"my-app-oac\"\n  origin_access_control_origin_type = \"s3\"\n  signing_behavior                  = \"always\"\n  signing_protocol                  = \"sigv4\"\n}\n\n# --- AWS Budgets: cost budget with alert (Terraform, placeholders only) ---\nresource \"aws_budgets_budget\" \"monthly\" {\n  name         = \"my-app-monthly\"\n  budget_type  = \"COST\"\n  limit_amount = \"50\"\n  limit_unit   = \"USD\"\n  time_unit    = \"MONTHLY\"\n\n  notification {\n    comparison_operator        = \"GREATER_THAN\"\n    threshold                  = 80\n    threshold_type             = \"PERCENTAGE\"\n    notification_type          = \"ACTUAL\"\n    subscriber_email_addresses = [\"alerts@example.com\"]\n  }\n}\n",
+  "failure_modes": [
+    "NAT Gateway data-processing charges silently accumulating because private-subnet traffic to S3/DynamoDB/ECR is routed through NAT instead of a VPC Endpoint — one of the single most common 'surprise AWS bill' root causes reported across practitioner posts.",
+    "CloudFront caching a dynamic, per-user API response due to a default cache behavior, causing one user to see another user's cached data.",
+    "API Gateway REST API chosen by default (habit from older tutorials) when HTTP API would have cost roughly a third as much for the same traffic.",
+    "A misconfigured route table sending all private-subnet egress through a single NAT Gateway in one AZ, creating a cross-AZ data-transfer charge and a single point of failure.",
+    "Public S3 bucket used as a CloudFront origin without OAC, leaving the bucket directly accessible outside CloudFront despite the distribution being 'set up correctly'.",
+    "AWS Budgets alert configured but pointed at an email address nobody monitors, or set at a threshold so high (e.g. 100% of a large limit) that it fires only after the damage is done.",
+    "New account created after 2025-07-15 running out of its ~$200/6-month credit far faster than a team expects because architecture was designed assuming the old 12-month per-service free tier still applied.",
+    "Cross-region or cross-AZ data transfer between compute and RDS/Aurora/S3 treated as 'free like same-region' when it in fact incurs standard inter-AZ/inter-region transfer charges."
+  ],
+  "anti_patterns": [
+    "Generating a VPC + NAT Gateway for every private subnet's outbound traffic to AWS services without first checking whether a VPC Endpoint eliminates the need entirely.",
+    "Defaulting to API Gateway REST API for a new Lambda-backed HTTP API without considering HTTP API's lower cost.",
+    "Creating a CloudFront distribution with an S3 origin that's still bucket-policy-public 'in case CloudFront has an issue', defeating the purpose of OAC.",
+    "Skipping AWS Budgets/Cost Anomaly Detection setup in the initial IaC for a new account or environment.",
+    "Setting CloudFront default TTL to a long value on a behavior that serves personalized/authenticated API responses.",
+    "Assuming NAT Gateway hourly cost is the whole story and ignoring the per-GB data-processing charge, which usually dominates the bill for any real traffic volume."
+  ],
+  "tools": [
+    "AWS Cost Explorer and AWS Budgets — cost visibility and alerting.",
+    "AWS Cost Anomaly Detection — automatic anomaly alerts beyond static budget thresholds.",
+    "AWS Trusted Advisor (cost-optimization checks, even on lower support tiers) — flags idle NAT Gateways, unattached EIPs, etc.",
+    "VPC Reachability Analyzer — verify actual network paths (e.g. confirm a private subnet really has no internet route) before shipping.",
+    "AWS WAF — attach to CloudFront or ALB for a managed rule baseline.",
+    "Terraform/CDK — declarative VPC, CloudFront, API Gateway, ALB, and Budgets provisioning.",
+    "Third-party: Infracost or similar — pre-merge cost estimation on Terraform plans, useful for catching a NAT Gateway or over-provisioned resource before it ships."
+  ],
+  "versions_as_of": [
+    "API Gateway HTTP API and REST API types are both current and actively supported; HTTP API is the newer, more cost-efficient type and is the greenfield default. as_of 2026-08-29.",
+    "CloudFront now offers both traditional pay-as-you-go pricing and newer bundled flat-rate plans ($0–$1,000/month tiers) as of this research pass — evaluate which fits before defaulting to pay-as-you-go out of habit. [uncertain: exact rollout date and full feature-parity details of the flat-rate plans] as_of 2026-08-29.",
+    "VPC Gateway Endpoints (S3, DynamoDB) remain free; Interface Endpoints (PrivateLink-based, for services like Secrets Manager, ECR, SSM) carry an hourly + per-GB charge. as_of 2026-08-29."
+  ],
+  "limits_quotas_pricing": [
+    {"item": "NAT Gateway hourly charge", "value": "$0.045 per hour per NAT Gateway (per AZ if multiple)", "as_of": "2026-08-29", "source": "https://aws.amazon.com/vpc/pricing/"},
+    {"item": "NAT Gateway data processing charge", "value": "$0.045 per GB processed", "as_of": "2026-08-29", "source": "https://aws.amazon.com/vpc/pricing/"},
+    {"item": "VPC Gateway Endpoint (S3/DynamoDB) cost", "value": "No hourly or data-processing charge", "as_of": "2026-08-29", "source": "https://aws.amazon.com/vpc/pricing/"},
+    {"item": "ALB pricing", "value": "$0.0225/hour + $0.008 per LCU-hour (us-east-1)", "as_of": "2026-08-29", "source": "https://aws.amazon.com/elasticloadbalancing/pricing/"},
+    {"item": "API Gateway REST API pricing", "value": "$3.50/million requests (first 333M/month tier), down to $2.38/million beyond 1B; $0.09/GB data transfer", "as_of": "2026-08-29", "source": "https://aws.amazon.com/api-gateway/pricing/"},
+    {"item": "API Gateway HTTP API pricing", "value": "$1.00/million requests (first 300M/month), $0.90/million beyond; $0.09/GB data transfer", "as_of": "2026-08-29", "source": "https://aws.amazon.com/api-gateway/pricing/"},
+    {"item": "API Gateway WebSocket pricing", "value": "$1.00/million messages + $0.25/million connection minutes", "as_of": "2026-08-29", "source": "https://aws.amazon.com/api-gateway/pricing/"},
+    {"item": "API Gateway free tier (12 months, new customers)", "value": "1M REST API calls/month, 1M HTTP API calls/month, 1M WebSocket messages + 750,000 connection minutes/month [uncertain: interaction with the 2025-07-15 credit-based Free Tier shift]", "as_of": "2026-08-29", "source": "https://aws.amazon.com/api-gateway/pricing/"},
+    {"item": "CloudFront data transfer out (US/Canada/Mexico, pay-as-you-go)", "value": "First 1TB/month free, then $0.085/GB tapering to $0.020/GB at 5PB+", "as_of": "2026-08-29", "source": "https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/"},
+    {"item": "CloudFront request pricing", "value": "First 10M HTTP/HTTPS requests/month free; then $0.0075/10,000 (HTTP) or $0.0100/10,000 (HTTPS)", "as_of": "2026-08-29", "source": "https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/"},
+    {"item": "CloudFront flat-rate bundled plans", "value": "Tiers from $0/month (1M requests, 100GB transfer) up to $1,000/month, no overage charges [uncertain: full tier breakdown and whether this supersedes or supplements pay-as-you-go for typical greenfield use]", "as_of": "2026-08-29", "source": "https://aws.amazon.com/cloudfront/pricing/"},
+    {"item": "AWS Free Tier structure (new accounts)", "value": "As of 2025-07-15: up to $200 in credits over 6 months (vs the legacy 12-month per-service free tier); account auto-closes at 6 months or when credits exhaust; ~30 services remain 'always free' within monthly usage limits regardless of plan [uncertain: exact list of which service-specific free-tier allowances (e.g. Lambda 1M requests, S3 5GB) persist unchanged as 'always free' items post-transition]", "as_of": "2026-08-29", "source": "https://aws.amazon.com/free/"}
+  ],
+  "deprecation_watch": [
+    "API Gateway REST API is not deprecated but is the legacy/costlier type versus HTTP API for new Lambda-proxy use cases — avoid defaulting to it without a REST-API-specific need.",
+    "Classic Load Balancer (CLB) is long-superseded by ALB/NLB — never choose CLB for a greenfield build.",
+    "NAT instances (self-managed EC2 acting as NAT) are largely superseded by managed NAT Gateway for anything beyond a cost-sensitive dev environment; don't default to NAT Gateway either when a VPC Endpoint removes the need for NAT entirely.",
+    "The pre-2025-07-15 AWS Free Tier messaging (12 months of specific per-service allowances for new accounts) is stale for any account created after that date — treat older cost-planning blog posts and tutorials with this caveat in mind."
+  ],
+  "identity_model": "Network- and edge-layer resources are largely reached without their own separate identity model — CloudFront, API Gateway, and ALB are public-facing entry points secured by resource policies, WAF rules, and (for API Gateway) IAM/Lambda-authorizer/JWT-authorizer configurations rather than by the caller assuming an AWS role. Where identity does matter here: CloudFront's Origin Access Control (OAC) uses a SigV4-signed request (effectively a CloudFront-service identity) to reach a private S3 origin, replacing the older Origin Access Identity (OAI) mechanism; VPC Interface Endpoints can be restricted via endpoint policies scoping which IAM principals may use them; and any CI/CD pipeline that provisions this network/edge layer (VPC, CloudFront, API Gateway, ALB, Budgets) does so via the same OIDC-federated, least-privilege GitHub Actions role established in aws-identity-iam-oidc — never a static-keyed pipeline identity.",
+  "threats": [
+    "S3 origin behind CloudFront still directly public because OAC/bucket-policy wiring was left incomplete, letting attackers bypass CloudFront's caching/WAF entirely.",
+    "Security groups on Fargate/RDS in the VPC left overly permissive (0.0.0.0/0 ingress on a database port) instead of scoped to specific application security groups.",
+    "API Gateway or ALB exposed without any WAF or rate limiting, vulnerable to credential-stuffing or scraping traffic that also drives up per-request cost.",
+    "A misconfigured route table accidentally giving a 'private' subnet a direct internet gateway route, defeating the intended network isolation for RDS/Fargate.",
+    "Cost-based denial-of-wallet: an attacker or bot driving high request volume against a pay-per-request API Gateway/Lambda/CloudFront stack to inflate the victim's bill, not just to cause downtime.",
+    "Budget/anomaly alerts routed to an unmonitored inbox, meaning a real cost incident goes unnoticed until the invoice."
+  ],
+  "mitigations": [
+    "Always pair a CloudFront-fronted S3 origin with OAC and a bucket policy that only allows the specific CloudFront distribution's service principal — verify with VPC/S3 access logs, not just the console checkmark.",
+    "Scope every security group to the minimum required port/protocol and to specific source security groups (not CIDR ranges) wherever the source is another AWS resource in the same VPC.",
+    "Attach AWS WAF with at least the AWS Managed Rules Core rule set and a rate-based rule to any public CloudFront distribution, API Gateway stage, or ALB.",
+    "Use VPC Reachability Analyzer or a scripted check in CI to assert that 'private' subnets genuinely have no `0.0.0.0/0` route to an Internet Gateway.",
+    "Set AWS Budgets with multiple thresholds (e.g. 50%, 80%, 100% of expected monthly spend) routed to a monitored alert channel (Slack/PagerDuty), not just email.",
+    "Enable AWS Shield Standard (automatic, free) as baseline DDoS protection on CloudFront/ALB; evaluate Shield Advanced only if cost-of-attack risk is high enough to justify it.",
+    "Rate-limit and cache aggressively at the CloudFront/API Gateway layer to blunt both security and cost impact of abusive traffic before it reaches compute/data layers."
+  ],
+  "agent_codegen_policy": [
+    "Must default new Lambda-backed public APIs to API Gateway HTTP API, not REST API, unless a REST-API-only feature is explicitly required.",
+    "Must wire any CloudFront-to-S3 origin through Origin Access Control with a matching bucket policy, and must not leave the origin bucket independently public.",
+    "Must route private-subnet-to-AWS-service traffic through VPC Endpoints where available (S3, DynamoDB, Secrets Manager, ECR) instead of defaulting to a NAT Gateway.",
+    "Must generate security group rules scoped to specific ports and specific source security groups/CIDRs, never `0.0.0.0/0` ingress on a database or internal-service port.",
+    "Must include an AWS Budgets resource (with at least one alert threshold and a real notification target) in any IaC that provisions a new AWS account or environment.",
+    "Should attach AWS WAF with the managed baseline rule group to any newly generated public CloudFront distribution, API Gateway stage, or ALB listener.",
+    "Must flag (not silently proceed) if asked to generate a NAT Gateway without first checking whether the described traffic pattern could instead use a VPC Endpoint."
+  ],
+  "ci_gates": [
+    "IaC policy scanning blocking any security group with `0.0.0.0/0` ingress on a non-HTTP(S) port, or any S3-origin CloudFront distribution missing OAC.",
+    "A cost-estimation step (e.g. Infracost) on Terraform plans flagging newly introduced NAT Gateways, oversized ALBs, or unbounded API Gateway usage plans before merge.",
+    "A required check that every new environment's Terraform/CDK stack includes an `aws_budgets_budget` (or equivalent) resource.",
+    "VPC Reachability Analyzer or an equivalent scripted assertion run in CI against any VPC/route-table change touching private subnets."
+  ],
+  "observability": [
+    "VPC Flow Logs enabled on any VPC hosting RDS/Fargate, shipped to a log sink for anomaly review.",
+    "CloudFront and API Gateway access logs (and ALB access logs) enabled and shipped to a central log pipeline, not left in default S3 buckets with no retention policy.",
+    "AWS Cost Explorer dashboards segmented by cost-allocation tag (project/environment), reviewed weekly during early growth.",
+    "Alert on: NAT Gateway data-processing GB/month trending upward unexpectedly, CloudFront/API Gateway 4xx/5xx rate spikes, WAF blocked-request rate spikes (possible attack), and any Budgets/Cost Anomaly Detection alert routed to a monitored channel with an on-call owner."
+  ],
+  "cost_guardrails": [
+    "First surprise (most common across practitioner reports): NAT Gateway data-processing charges from routing AWS-service traffic through NAT instead of a VPC Endpoint — this alone has produced multi-hundred-dollar unexpected line items on otherwise small accounts.",
+    "Second surprise: choosing API Gateway REST API by habit when HTTP API would have cost roughly a third as much at the same request volume.",
+    "Third surprise: the 2025-07-15 Free Tier restructuring means a new AWS account now has roughly a 6-month, ~$200-credit runway rather than the previously-assumed 12-month per-service free allowances that many architecture-planning blog posts and tutorials still describe — plan initial cost expectations against the credit model, not the old framing.",
+    "Set AWS Budgets and Cost Anomaly Detection before deploying a single resource in any new account or environment; put NAT Gateway data-processing and CloudFront data-transfer-out as named line items in the budget review, since they are the two edge/network costs most likely to scale unexpectedly with real traffic.",
+    "Prefer CloudFront's free 1TB/month + cached responses over direct S3/ALB data transfer out wherever the content is cacheable — this is usually the cheapest way to serve static/semi-static content at scale."
+  ],
+  "skill_scan_signals": [
+    "Positive: VPC IaC including `aws_vpc_endpoint` resources for S3/DynamoDB (Gateway type) alongside any private subnet route table.",
+    "Positive: `aws_cloudfront_origin_access_control` paired with a bucket policy scoped to the specific distribution.",
+    "Positive: `aws_budgets_budget` present in every environment's IaC stack.",
+    "Negative (flag): `aws_nat_gateway` resource present without any accompanying VPC Endpoint resources in the same VPC — a strong signal of avoidable NAT cost.",
+    "Negative (flag): security group `ingress` block with `cidr_blocks = [\"0.0.0.0/0\"]` on a database port (5432, 3306) or any non-web port.",
+    "Negative (flag): `aws_s3_bucket_policy` granting public access on a bucket also used as a CloudFront origin.",
+    "Negative (flag): new AWS account/environment IaC with no `aws_budgets_budget` or equivalent cost-alerting resource anywhere in the stack."
+  ],
+  "skill_module_bullets": [
+    "HTTP API over REST API by default for new Lambda-backed public APIs — roughly a third of the per-request cost.",
+    "VPC Endpoints (free for S3/DynamoDB) instead of NAT Gateway for private-subnet-to-AWS-service traffic — the single biggest avoidable AWS cost trap.",
+    "CloudFront + OAC for any public S3 content; never leave the origin bucket independently public.",
+    "Security groups scoped to specific ports and source security groups, never `0.0.0.0/0` on internal/database ports.",
+    "AWS Budgets + Cost Anomaly Detection set up before the first resource deploys in any new account/environment.",
+    "AWS Free Tier changed 2025-07-15 to a ~$200/6-month credit model for new accounts — don't plan against the old 12-month per-service framing.",
+    "CloudFront's free 1TB/month + caching is usually cheaper than direct data transfer out for cacheable content.",
+    "WAF managed baseline rule group on any public CloudFront/API Gateway/ALB entry point."
+  ],
+  "checklist": [
+    "API Gateway HTTP API chosen over REST API unless a specific REST-only feature is needed.",
+    "No NAT Gateway exists without first confirming a VPC Endpoint couldn't cover the same traffic.",
+    "Every CloudFront S3 origin uses OAC with a matching bucket policy; the origin bucket has no independent public access.",
+    "All security groups scoped to specific ports and source security groups, no `0.0.0.0/0` on non-web ports.",
+    "AWS Budgets and Cost Anomaly Detection configured for the account/environment before first deploy.",
+    "WAF with managed baseline rules attached to any public CloudFront/API Gateway/ALB.",
+    "VPC Flow Logs and CloudFront/API Gateway/ALB access logs enabled and shipped to a log sink.",
+    "Cost-allocation tags applied to every network/edge resource for accurate Cost Explorer attribution.",
+    "Cost assumptions for the account are built against the current 2025-07-15+ credit-based Free Tier model, not older 12-month tutorials."
+  ],
+  "source_tier": "official",
+  "confidence": "medium",
+  "conflicts_noted": "CloudFront's pricing page surfaced newer flat-rate bundled plans ($0–$1,000/month) alongside the traditional pay-as-you-go structure; the exact scope and rollout date of these bundled plans versus classic pricing could not be fully confirmed in this pass and is marked [uncertain]. The AWS Free Tier restructuring (2025-07-15, credit-based model) is confirmed at a high level but the precise fate of individual legacy per-service free allowances (Lambda, S3, RDS, DynamoDB, API Gateway) for new accounts under the new model is not fully documented in what was fetched and is marked [uncertain] — most cost-planning blog content predating mid-2025 should be treated as describing a superseded model.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://aws.amazon.com/vpc/pricing/",
+    "https://aws.amazon.com/elasticloadbalancing/pricing/",
+    "https://aws.amazon.com/api-gateway/pricing/",
+    "https://aws.amazon.com/cloudfront/pricing/",
+    "https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/",
+    "https://aws.amazon.com/free/"
+  ],
+  "uncertain": ["versions_as_of", "limits_quotas_pricing", "conflicts_noted"]
+}

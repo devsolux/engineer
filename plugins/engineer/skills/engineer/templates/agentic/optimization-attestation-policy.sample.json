@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "provider": "github_sigstore",
+  "repository": "devsolux/engineer",
+  "signer_workflow": "github.com/devsolux/engineer/.github/workflows/optimization-eval.yml",
+  "signer_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "allowed_source_refs": ["refs/heads/main"],
+  "predicate_type": "https://slsa.dev/provenance/v1",
+  "oidc_issuer": "https://token.actions.githubusercontent.com",
+  "deny_self_hosted_runners": true
+}

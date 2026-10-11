@@ -1,0 +1,368 @@
+{
+  "name": "PaaS selection — Fly.io, Railway, Render, Netlify (plus Hetzner/VPS baseline) for Python services, workers, and Postgres; deploy, secrets, scaling, pricing",
+  "item_id": "paas-selection-fly-railway-render-netlify",
+  "cluster": "platforms",
+  "short_definition": "Decision framework for where to run Python backend services, background workers, Postgres, and static frontends when Vercel isn't the right fit, comparing Fly.io Machines, Railway, Render, Netlify, and a bare Hetzner VPS baseline on deploy model, secrets, scaling, and pricing.",
+  "scope_in": [
+    "Hosting stateless Python API services (FastAPI/Django/Flask-style long-running processes)",
+    "Hosting background workers / queue consumers (Celery, arq, RQ, custom loops)",
+    "Managed or self-hosted Postgres options outside of Supabase",
+    "Scheduled/cron job execution",
+    "WebSocket and other long-lived connection workloads",
+    "Static/JAMstack frontend hosting and edge/serverless functions (Netlify) as a comparator to Vercel",
+    "Bare VPS (Hetzner) as a cost/control baseline for all of the above",
+    "CI/CD deploy mechanics and secrets/identity model for GitHub Actions to each platform",
+    "Pricing structure, free-tier behavior, and cost traps per platform"
+  ],
+  "scope_out": [
+    "Vercel-specific deployment (covered in a separate cluster item)",
+    "Supabase itself as a platform (covered elsewhere; only referenced here as the primary DB)",
+    "AWS/GCP/Azure managed container or serverless services (ECS, Cloud Run, Azure Container Apps) — separate cluster item",
+    "Kubernetes cluster operation (Fly Kubernetes mentioned only as a pricing data point, not a recommended pattern here)",
+    "GPU training workloads (only inference placement is touched in the decision matrix)",
+    "Detailed Dockerfile/build optimization guidance (belongs in deploy-ops reference)"
+  ],
+  "priority": "P0",
+  "defaults": [
+    "Default Python API/worker target: Fly.io Machines (per-second billing, scale-to-zero, full Docker control, good for FastAPI + background workers in the same org).",
+    "Default when the team wants near-zero ops and predictable dashboard UX over lowest cost: Render (web service + worker + cron in one render.yaml blueprint).",
+    "Default when the team wants fastest iteration / best DX for small teams and is prepared for usage-based billing risk: Railway.",
+    "Default for the frontend (Next.js) and any purely static/edge-function surface: Netlify or Vercel — not Fly/Railway/Render.",
+    "Default Postgres when not using Supabase and need full control/cost predictability: self-hosted Postgres on a Hetzner VPS, or Fly Managed Postgres for less ops burden.",
+    "Default for cost-sensitive high-bandwidth (video/file serving) workloads: Hetzner VPS or object storage + CDN, not Netlify/Render bandwidth billing.",
+    "Default for scheduled cron jobs tied to the same codebase as the API: Render Cron Jobs or Fly Machines scheduled via flyctl/GitHub Actions cron trigger.",
+    "Treat all platform CLI/API tokens as long-lived secrets requiring the same rotation discipline as cloud IAM keys, since none support OIDC federation."
+  ],
+  "decision_gates": [
+    "Selection matrix — map each workload class to the best-fit platform:",
+    {
+      "matrix": [
+        {
+          "workload_class": "1. Stateless Python API service (FastAPI-style)",
+          "platform": "Fly.io Machines",
+          "why": "Per-second billing, scale-to-zero via min_machines_running=0, full Dockerfile control, multi-region placement near Supabase; Render is a close second for teams wanting less ops (managed TLS, dashboard-first, but always-on billing per instance-hour, not per-second)."
+        },
+        {
+          "workload_class": "2. Background worker / queue consumer",
+          "platform": "Fly.io Machines or Railway service (no public port)",
+          "why": "Both support a second process/service in the same app/project with no HTTP listener; Fly bills per-second so idle-but-waiting workers between queue pulls are cheaper than Render's always-on worker instance pricing."
+        },
+        {
+          "workload_class": "3. Postgres hosting when not using Supabase",
+          "platform": "Fly Managed Postgres, or self-hosted Postgres on Hetzner VPS",
+          "why": "Fly deprecated support/guidance for its old unmanaged Postgres pattern and now pushes Managed Postgres as the supported path; Hetzner is the cost-floor option for teams comfortable running their own backups/HA. Railway and Render both offer managed Postgres add-ons that are fine for small/medium workloads but cost more per GB than Hetzner at scale."
+        },
+        {
+          "workload_class": "4. Static/JAMstack frontend",
+          "platform": "Netlify (or Vercel)",
+          "why": "Purpose-built for static builds, previews, and edge functions; none of Fly/Railway/Render/Hetzner match Netlify's DX for this narrow case."
+        },
+        {
+          "workload_class": "5. Scheduled cron jobs",
+          "platform": "Render Cron Jobs, or Fly Machine triggered via GitHub Actions schedule + flyctl",
+          "why": "Render has a first-class Cron Job resource type in render.yaml; Fly has no native cron primitive, so cron must be driven externally (GitHub Actions `schedule:` trigger, or a Machine with an in-process scheduler)."
+        },
+        {
+          "workload_class": "6. WebSocket / long-lived connections",
+          "platform": "Fly.io Machines",
+          "why": "Machines are long-lived VMs, not request-scoped functions, so WebSockets work natively; avoid Netlify Functions entirely (execution-time-bounded, not designed for persistent connections) and be cautious with Render free tier (spin-down kills idle connections)."
+        },
+        {
+          "workload_class": "7. GPU/ML inference",
+          "platform": "Fly.io GPU Machines (where available/region-limited) or a dedicated GPU provider outside this set",
+          "why": "Railway/Render/Netlify do not offer GPU instances; Fly has limited GPU Machine availability by region — for heavy/production ML inference, treat this whole set as insufficient and research a dedicated GPU/inference platform separately [uncertain: Fly GPU region and pricing details not verified in this pass]."
+        },
+        {
+          "workload_class": "8. Cost-sensitive high-bandwidth workload (video/file serving)",
+          "platform": "Hetzner VPS + object storage/CDN",
+          "why": "Hetzner advertises high inclusive traffic allowances and is materially cheaper per-GB egress than Fly ($0.02-0.12/GB), Render, or Netlify bandwidth billing; for pure static asset serving, pair with a CDN rather than routing bytes through any of the four PaaS platforms."
+        }
+      ]
+    },
+    "Gate: if the workload needs true scale-to-zero with per-second billing and Docker-level control, choose Fly over Render/Railway.",
+    "Gate: if the team's top priority is minimizing ops/on-call surface and small pricing overhead is acceptable, choose Render's blueprint model over Fly's more manual Machines model.",
+    "Gate: if the workload is bursty/spiky in resource usage and the team can tolerate usage-based billing volatility for faster iteration, Railway is acceptable; set hard spending limits/alerts before trusting it in production.",
+    "Gate: never place a production long-running Python worker on Netlify Functions — function execution-time and runtime model are not designed for that (JAMstack/edge use case only).",
+    "Gate: if projected monthly compute+bandwidth exceeds roughly one mid-tier Hetzner VPS cost (~€5-20/mo range) 3-5x over, seriously evaluate moving that specific service to a Hetzner VPS + your own orchestration, accepting the added ops burden."
+  ],
+  "do_dont": [
+    "Do set min_machines_running=0 and auto_stop_machines on Fly for low-traffic internal APIs to actually get per-second billing benefit; don't leave min_machines_running>=1 by default and expect Fly to be cheap.",
+    "Do scope Fly deploy tokens with `flyctl tokens create deploy -x <TTL>` per app; don't reuse a full personal/org flyctl token in CI.",
+    "Do put all real secrets in `flyctl secrets set` / Railway sealed variables / Render 'sync: false' env vars; don't commit them into fly.toml, railway.json, or render.yaml.",
+    "Do use Render Blueprints (render.yaml) to keep web/worker/cron/db definitions in version control; don't hand-configure services only through the dashboard for anything beyond a quick prototype.",
+    "Do set Railway spending limits/usage alerts before going to production; don't assume Hobby/$5 credit behavior generalizes to real traffic.",
+    "Don't run a stateful Postgres primary as an 'unmanaged Fly Postgres' app for new projects — Fly explicitly says it can't support or guide unmanaged Postgres; use Managed Postgres or move it off Fly.",
+    "Do treat Render's free-tier spin-down (15 min idle, ~1 min cold start) as unacceptable for any user-facing API with a latency SLA; don't put customer-facing endpoints on the free plan.",
+    "Don't route large file/video downloads through Netlify Functions or Render/Railway compute; use object storage + CDN and only orchestrate signed URLs from these platforms.",
+    "Do pin exact Python/runtime versions in nixpacks.toml (Railway), the Render runtime env var, and the Fly Dockerfile base image; don't rely on platform-default 'latest' Python versions across three different platforms and expect parity.",
+    "Do keep worker and web processes as separate services/machines/dynos rather than cramming a background loop into the same process as the HTTP server, on every platform in this set."
+  ],
+  "config_skeleton": "\n# ---- fly.toml (Fly.io Machines app: Python FastAPI service) ----\napp = \"REPLACE_APP_NAME\"\nprimary_region = \"iad\"\n\n[build]\n  dockerfile = \"Dockerfile\"\n\n[env]\n  PORT = \"8080\"\n  ENVIRONMENT = \"production\"\n  # Non-secret config only. Secrets go via `flyctl secrets set`, never in [env].\n\n[http_service]\n  internal_port = 8080\n  force_https = true\n  auto_stop_machines = \"suspend\"   # or \"stop\" — controls scale-to-zero behavior\n  auto_start_machines = true\n  min_machines_running = 0          # 0 = scale to zero; >=1 for latency-sensitive APIs\n\n[[vm]]\n  size = \"shared-cpu-1x\"\n  memory = \"512mb\"\n\n# Secrets (NOT in this file):\n#   flyctl secrets set DATABASE_URL=postgres://... SUPABASE_SERVICE_ROLE_KEY=...\n#   flyctl secrets set --stage KEY=value   # stage without redeploying machines yet\n\n# ---- railway.json (Railway service config; also see nixpacks.toml) ----\n{\n  \"$schema\": \"https://railway.com/railway.schema.json\",\n  \"build\": {\n    \"builder\": \"NIXPACKS\"\n  },\n  \"deploy\": {\n    \"startCommand\": \"uvicorn app.main:app --host 0.0.0.0 --port $PORT\",\n    \"restartPolicyType\": \"ON_FAILURE\",\n    \"restartPolicyMaxRetries\": 5,\n    \"numReplicas\": 1\n  }\n}\n# Notes:\n# - nixpacks.toml can pin Python version and install steps if not using a Dockerfile.\n# - Background worker = a second Railway \"service\" in the same project with a\n#   different startCommand (e.g. `python worker.py`) and no public networking/domain.\n# - Env vars/secrets are set in the Railway dashboard or via `railway variables set KEY=VALUE`;\n#   sealed variables hide values from the UI after creation but cannot be un-sealed or read via CLI.\n\n# ---- render.yaml (Render Blueprint: web service + worker + cron + Postgres) ----\ndatabases:\n  - name: REPLACE_DB_NAME\n    plan: starter\n    postgresMajorVersion: \"16\"\n\nservices:\n  - type: web\n    name: REPLACE_API_NAME\n    runtime: python\n    plan: starter\n    buildCommand: \"pip install -r requirements.txt\"\n    startCommand: \"uvicorn app.main:app --host 0.0.0.0 --port $PORT\"\n    envVars:\n      - key: DATABASE_URL\n        fromDatabase:\n          name: REPLACE_DB_NAME\n          property: connectionString\n      - key: SUPABASE_SERVICE_ROLE_KEY\n        sync: false   # marks it a secret set manually in the dashboard, not committed\n\n  - type: worker\n    name: REPLACE_WORKER_NAME\n    runtime: python\n    plan: starter\n    buildCommand: \"pip install -r requirements.txt\"\n    startCommand: \"python worker.py\"\n\n  - type: cron\n    name: REPLACE_CRON_NAME\n    runtime: python\n    schedule: \"0 * * * *\"\n    buildCommand: \"pip install -r requirements.txt\"\n    startCommand: \"python run_hourly_job.py\"\n\n# ---- GitHub Actions: deploy to Fly.io (static API token, NOT OIDC) ----\nname: Fly Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    concurrency: deploy-group\n    steps:\n      - uses: actions/checkout@v4\n      - uses: superfly/flyctl-actions/setup-flyctl@master\n      - run: flyctl deploy --remote-only\n        env:\n          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}\n          # FLY_API_TOKEN should be a scoped deploy token:\n          #   flyctl tokens create deploy -x 999999h -a REPLACE_APP_NAME\n          # NOT a full personal/org token. Rotate periodically; no OIDC alternative exists.\n\n# ---- GitHub Actions: trigger Render deploy (deploy hook URL as secret) ----\nname: Render Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: curl -X POST \"${{ secrets.RENDER_DEPLOY_HOOK_URL }}\"\n      # RENDER_DEPLOY_HOOK_URL is a secret bearer-style URL, not a scoped OIDC token.\n\n# ---- GitHub Actions: Railway deploy (CLI + project token) ----\nname: Railway Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm i -g @railway/cli\n      - run: railway up --service REPLACE_SERVICE_NAME\n        env:\n          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}\n          # RAILWAY_TOKEN is a project or account API token, static, GitHub-secret-based.\n\n# ---- OIDC support summary ----\n# None of Fly.io, Railway, Render, or Netlify support GitHub Actions OIDC federation\n# (no \"assume role via OIDC\" equivalent to AWS/GCP/Azure). All four require a static\n# API token or deploy-hook secret stored as a GitHub Actions secret. This conflicts\n# with an \"identity-first, no long-lived static keys\" policy — the practical mitigation\n# is short-lived *scoped* deploy tokens (Fly's `flyctl tokens create deploy -x <TTL>`),\n# least-privilege project/service scoping (Railway/Render), secret rotation on a schedule,\n# and treating these tokens with the same handling rigor as cloud provider long-lived keys.\n",
+  "failure_modes": [
+    "Fly Machine configured with min_machines_running=0 for a WebSocket service, causing dropped connections mid-session when the platform decides to scale a machine down.",
+    "Railway usage-based billing surprise: a runaway worker loop or memory leak silently consumes CPU/RAM credits far beyond the Hobby/Pro included credit, producing an unexpectedly large bill.",
+    "Render free-tier web service used for a demo/staging API that customers hit directly; first request after idle takes ~1 minute and looks like an outage.",
+    "Team deploys an 'unmanaged Fly Postgres' cluster for production data with no one owning backups/failover, discovers Fly does not support it operationally when something breaks.",
+    "Long-running Python job or WebSocket handler deployed as a Netlify Function; it gets killed at the function timeout boundary mid-request under real load, unlike in local testing.",
+    "GitHub Actions FLY_API_TOKEN / RAILWAY_TOKEN / RENDER_DEPLOY_HOOK_URL leaked via a misconfigured workflow (e.g., printed in logs, or exposed to a fork PR's workflow_run context) because there is no OIDC short-lived-credential fallback.",
+    "Bandwidth-heavy service (file/video serving) hosted directly on Render or Netlify racks up unexpected egress charges because bandwidth was budgeted like a CDN instead of PaaS metered billing.",
+    "Cron job implemented as a Fly Machine with an in-process sleep loop stays billed 24/7 instead of running only for the job duration, erasing the cost advantage over Render's native Cron Job type.",
+    "Sealed variable set on Railway needs to be read back or copied to a new environment; team discovers sealed variables cannot be un-sealed or copied, causing a redeploy scramble."
+  ],
+  "anti_patterns": [
+    "Using Netlify Functions as a general-purpose Python backend because 'it's already there for the frontend' — wrong tool for long-running/stateful workloads.",
+    "Running the Postgres primary as an unmanaged Fly Postgres app in 2026 for a new project instead of Managed Postgres or Supabase.",
+    "Treating Railway's included credit ($5/$20) as a real production budget ceiling rather than a small buffer against the per-resource usage rates.",
+    "Putting all secrets in plain (non-sealed, non-`sync: false`, non-flyctl-secrets) environment variables visible in a platform dashboard UI accessible to the whole team.",
+    "Assuming any of Fly/Railway/Render/Netlify support GitHub OIDC role assumption the way AWS/GCP do, and designing a CI pipeline around that assumption.",
+    "Serving large static media (video, big downloads) directly from a Render/Railway/Fly compute instance instead of object storage + CDN, paying compute-tier bandwidth rates for CDN-shaped traffic.",
+    "Deploying background workers to the free tier of any platform and expecting them to run continuously — free tiers are designed around idle-spin-down or credit exhaustion, not always-on workers.",
+    "Hardcoding a single-region Fly Machine for a globally distributed user base and calling it 'edge deployment' without actually placing Machines in multiple regions."
+  ],
+  "tools": [
+    "flyctl (Fly.io CLI) — deploy, secrets, machine management",
+    "superfly/flyctl-actions (GitHub Action) — CI deploy wrapper for Fly",
+    "Railway CLI (@railway/cli) — deploy, variables, shell",
+    "Railway GitHub integration (auto-deploy on push, no CLI required for simple cases)",
+    "render.yaml Blueprints — Render's IaC config format",
+    "Render Deploy Hooks — secret URL-triggered redeploys from any CI",
+    "netlify-cli / Netlify GitHub integration — for the frontend/edge-function side only",
+    "Hetzner Cloud Console / hcloud CLI / Terraform hcloud provider — VPS provisioning",
+    "Terraform or Pulumi providers exist for Fly (community), Render, and Hetzner for IaC-managed infra",
+    "OpenTelemetry SDK / Prometheus exporters — for shipping metrics off-platform since native cross-platform observability is limited"
+  ],
+  "versions_as_of": "2026-08-29",
+  "limits_quotas_pricing": [
+    {
+      "item": "Fly shared-cpu-1x (256MB) Machine",
+      "value": "~$0.00000078/sec ≈ $2.02/month (Amsterdam region; varies by region)",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Fly performance-1x (2GB) Machine",
+      "value": "~$0.00001242/sec ≈ $32.19/month (Amsterdam region)",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Fly volume storage",
+      "value": "$0.15/GB/month, pro-rated hourly",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Fly data egress",
+      "value": "$0.02-0.12/GB depending on region group",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Fly Kubernetes cluster",
+      "value": "$75/month base + compute/volume costs",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Fly Postgres offering",
+      "value": "Unmanaged Fly Postgres still exists but is explicitly unsupported ('not able to provide support or guidance'); Fly Managed Postgres is now the recommended supported product with its own plan-based pricing",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/postgres/"
+    },
+    {
+      "item": "Fly free allowance",
+      "value": "(uncertain) No explicit blanket free tier found in current pricing docs; earlier (2022-2023) free allowances have widely been reported as removed/reduced industry-wide over 2024, could not fully re-verify current exact state in this pass",
+      "as_of": "2026-08-29",
+      "source": "https://fly.io/docs/about/pricing/"
+    },
+    {
+      "item": "Railway plans",
+      "value": "Free: $0/mo + $1 credit; Hobby: $5/mo + $5 usage credit; Pro: $20/mo + $20 usage credit; Enterprise: custom",
+      "as_of": "2026-08-29",
+      "source": "https://docs.railway.com/reference/pricing"
+    },
+    {
+      "item": "Railway usage rates",
+      "value": "RAM $10/GB/month, CPU $20/vCPU/month, network egress $0.05/GB, volume storage $0.15/GB/month",
+      "as_of": "2026-08-29",
+      "source": "https://docs.railway.com/reference/pricing"
+    },
+    {
+      "item": "Railway payment policy change",
+      "value": "As of March 30 (year not fully specified in doc, presumed 2025), Railway requires a post-paid card; prepayment no longer available, with mid-cycle partial charges",
+      "as_of": "2026-08-29",
+      "source": "https://docs.railway.com/reference/pricing"
+    },
+    {
+      "item": "Render free web service spin-down",
+      "value": "Suspends after 15 min inactivity; ~1 minute cold start on next request",
+      "as_of": "2026-08-29",
+      "source": "https://render.com/docs/free"
+    },
+    {
+      "item": "Render free Postgres",
+      "value": "1GB max storage, expires 30 days after creation, 14-day grace period, one free DB per workspace, no backups, no connection pooling",
+      "as_of": "2026-08-29",
+      "source": "https://render.com/docs/free"
+    },
+    {
+      "item": "Render paid compute plans (specs, not price)",
+      "value": "Starter: 0.5 CPU/512MB; Standard: 1 CPU/2GB; Pro: 2 CPU/4GB; Pro Plus: 4 CPU/8GB; Pro Max: 4 CPU/16GB; Pro Ultra: 8 CPU/32GB (up to 12 CPU/96GB at top tier) — (uncertain) exact $/month figures not retrievable from docs pages fetched, only visible on render.com/pricing rendered UI",
+      "as_of": "2026-08-29",
+      "source": "https://render.com/docs/compute-plans"
+    },
+    {
+      "item": "Netlify Functions billing (credit-based plans)",
+      "value": "Billed in GB-Hour compute units, default 1024MB memory, Pro/Enterprise up to 4096MB, 10 credits per GB-Hour unit",
+      "as_of": "2026-08-29",
+      "source": "https://docs.netlify.com/build/functions/usage-and-billing/"
+    },
+    {
+      "item": "Netlify Functions timeout limits",
+      "value": "(uncertain) Exact synchronous/background function timeout values (historically ~10s default / 26s hard sync limit, 15 min for background functions on some plans) not confirmed via fetch in this pass; treat prior published limits as unverified for 2026",
+      "as_of": "2026-08-29",
+      "source": "https://docs.netlify.com/functions/overview/"
+    },
+    {
+      "item": "Hetzner Cloud entry VPS pricing",
+      "value": "(uncertain) Could not extract exact CX/CPX current €/month, vCPU, RAM figures — Hetzner's pricing page renders prices via JS/region selector not captured by static fetch; historically entry shared-vCPU instances have started around €4-5/month with generous (multi-TB) included traffic",
+      "as_of": "2026-08-29",
+      "source": "https://www.hetzner.com/cloud/"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "Fly's unmanaged Postgres pattern is in a support-limbo state: still present in docs but explicitly called out as unsupported for guidance/help — treat as effectively deprecated for new production use in favor of Fly Managed Postgres.",
+    "Railway's pricing/billing terms have shifted (post-paid card requirement, mid-cycle partial charges) — re-check before assuming older Railway pricing blog posts or comparisons are current.",
+    "Netlify's legacy request-count-based Functions billing exists alongside newer credit/GB-Hour billing — confirm which billing model an account is on before estimating costs, as they are not equivalent.",
+    "Watch for further consolidation/renaming of Render's 'compute plans' naming (Starter/Standard/Pro family) which has changed tier names over time.",
+    "Fly GPU Machines availability and pricing is region-limited and evolving quickly; do not treat any GPU figure here as stable."
+  ],
+  "identity_model": "None of Fly.io, Railway, Render, or Netlify support GitHub Actions OIDC federation (no OpenID Connect 'assume role' pattern equivalent to AWS/GCP/Azure) as verified against their current CI docs. Fly.io: GitHub Actions authenticates via a static FLY_API_TOKEN GitHub secret, ideally a scoped deploy token created with `flyctl tokens create deploy -x <TTL>` rather than a full personal/org token; flyctl's own secrets model (`flyctl secrets set`) is separate from CI auth and only manages app runtime env vars via an encrypted vault that injects them into Machines at boot. Railway: CI/CD auth uses a RAILWAY_TOKEN (project or account API token) as a GitHub secret consumed by the Railway CLI, or the built-in GitHub App integration which auto-deploys on push (no explicit token in the user's workflow file, but still a static installed-app credential model, not OIDC); app secrets use env vars, shared variables, and 'sealed' variables that hide values in the UI once set. Render: CI triggers deploys via a Deploy Hook — a secret bearer URL stored as a GitHub secret and hit with a plain curl request; app secrets are plain environment variables or `sync: false` variables set manually per-environment outside the committed render.yaml. Netlify: primarily deploys via its own build system (Git integration) or netlify-cli with a personal/site API token as a GitHub secret; no OIDC federation. Net effect: this whole platform tier is a structural gap against an 'identity-first, no long-lived static keys' policy — the best available mitigation is scoped, short-TTL tokens plus rotation discipline, not true workload identity.",
+  "threats": [
+    "Long-lived FLY_API_TOKEN / RAILWAY_TOKEN / RENDER_DEPLOY_HOOK_URL / Netlify token stored as a GitHub Actions secret is a single static credential that, if leaked, can trigger arbitrary deploys or read secrets.",
+    "Workflow misconfiguration exposing secrets to `pull_request_target` or fork-triggered workflows, letting an external contributor exfiltrate deploy tokens.",
+    "Deploy hook URLs (Render) function as bearer credentials with no scoping beyond 'can trigger this one service's deploy' — leakage means anyone can trigger unwanted deploys.",
+    "Overly broad flyctl/Railway/Render account-level tokens used in CI instead of app/project/service-scoped tokens, widening blast radius of a leak.",
+    "Free-tier spin-down (Render) or scale-to-zero (Fly) can be abused for a denial-of-wallet style attack if a public endpoint is hammered to force repeated cold starts / machine starts, spiking cost or degrading availability.",
+    "Bandwidth-based billing (Fly, Railway, Netlify) creates a cost-based DoS vector: an attacker driving high egress traffic can produce large unexpected bills, not just downtime.",
+    "Secrets injected as plain environment variables (Render default, Fly runtime env) are visible to anything with process/dashboard access — insider risk if platform team access isn't scoped."
+  ],
+  "mitigations": [
+    "Use the narrowest-scoped token type each platform offers (Fly deploy token with TTL and app scope; Railway project token; Render deploy hook per-service) — never an account/org-wide token in CI.",
+    "Set an explicit expiry/TTL on Fly deploy tokens and rotate on a schedule (e.g., quarterly) rather than issuing 999999h tokens and forgetting them.",
+    "Restrict which workflows/branches can access deploy secrets (protected branches + required reviewers on workflow file changes; avoid exposing secrets to `pull_request` from forks).",
+    "Store deploy hook URLs and API tokens only as GitHub Actions encrypted secrets, never in repo files, and treat render.yaml `sync: false` / Railway sealed variables / flyctl secrets as the only path for real secrets.",
+    "Set Railway usage/spending alerts and Fly billing alerts to catch cost-based DoS or runaway resource usage early.",
+    "Put a CDN or WAF (e.g., Cloudflare) in front of publicly reachable Fly/Render/Railway/Netlify endpoints to absorb abusive traffic before it reaches metered compute/bandwidth.",
+    "Audit who has dashboard access to each platform (Fly org members, Railway project members, Render team members) with the same rigor as cloud IAM, since dashboard access can read/change env vars.",
+    "Periodically diff and re-verify each platform's current CI-auth documentation for OIDC support, since this is an active area of platform development and could change."
+  ],
+  "agent_codegen_policy": [
+    "Never hardcode API tokens, deploy hook URLs, or database credentials into fly.toml, railway.json, render.yaml, netlify.toml, or any committed workflow file — always reference `${{ secrets.NAME }}` or platform secret managers.",
+    "When generating a Fly config, default to `auto_stop_machines`/`auto_start_machines` with `min_machines_running = 0` for low-traffic services, and explicitly call out when to raise it for latency-sensitive or WebSocket workloads.",
+    "When generating a GitHub Actions workflow for Fly, use `flyctl tokens create deploy -x <TTL>` guidance in comments and scope the token to a single app; do not suggest using a personal flyctl token.",
+    "Never generate a Netlify Function intended to run a long-lived Python process, WebSocket server, or background worker — flag this as an architecture mismatch and suggest Fly/Railway/Render instead.",
+    "When asked to set up Postgres on Fly, default to recommending Fly Managed Postgres (or Supabase) over the legacy unmanaged Fly Postgres pattern, and note the support gap if the user insists on unmanaged.",
+    "When generating render.yaml, mark any credential-bearing env var with `sync: false` rather than inlining a plausible-looking placeholder value that could be mistaken for a real secret.",
+    "Always state explicitly in generated docs/comments that none of these four platforms support GitHub OIDC — do not imply OIDC is available or silently omit the caveat.",
+    "When cost is a stated constraint and the workload is bandwidth-heavy (file/video serving), recommend Hetzner + object storage/CDN over routing traffic through Fly/Render/Railway/Netlify compute billing."
+  ],
+  "ci_gates": [
+    "Require `flyctl deploy --build-only` (or equivalent dry-run/build check) in a PR workflow before merge so build failures surface pre-merge, not on push to main.",
+    "Gate production deploys on GitHub Environments with required reviewers for any workflow that reads a Fly/Railway/Render/Netlify API token or deploy hook secret — these platforms lack OIDC, so the Environment protection rule is the substitute review gate.",
+    "Run `render.yaml` / `railway.json` / `fly.toml` schema validation (or `flyctl config validate`) in CI so a malformed config fails fast instead of failing mid-deploy.",
+    "Block merges on a health-check smoke step post-deploy (curl the service's `/health` endpoint with retries) before marking the deploy job green.",
+    "Pin the deploy CLI version in the workflow (`flyctl`/`railway`/`render-cli`) rather than `@latest`, and bump it deliberately via a reviewed PR.",
+    "Require a passing `pytest`/build step for Python services before the deploy job runs — never let CI deploy on a red test suite.",
+    "For Postgres-hosting choices (Fly Postgres, Render Postgres, Railway Postgres), require a migration-plan step (e.g. `alembic upgrade --sql` dry run) in CI before any migration job runs against production.",
+    "Alert-on-deploy: wire the deploy job's success/failure to the same channel as the cost/budget alerts so a bad deploy and a cost spike are visible in the same place."
+  ],
+  "observability": [
+    "Fly: built-in metrics (Grafana-based dashboards) and log streaming via `flyctl logs`; supports shipping logs to external sinks; OpenTelemetry export is possible by instrumenting the app itself and exporting to a third-party OTel collector — no first-party managed OTel backend.",
+    "Railway: dashboard shows per-service CPU/RAM/network usage graphs and build/deploy logs; no first-party OTel backend, but env vars/logs can be piped to external tools (e.g., via log drains where supported).",
+    "Render: dashboard metrics (CPU, memory, bandwidth) per service, plus log streams and log drains to external services (e.g., Datadog, papertrail-style integrations); no native OTel collector, app must self-instrument.",
+    "Netlify: function invocation logs and basic analytics in the dashboard; deeper observability requires third-party APM since Netlify Functions are ephemeral/short-lived by design.",
+    "Across all four: the practical pattern is self-instrumenting the app with OpenTelemetry SDKs and exporting to an external observability backend (e.g., Grafana Cloud, Honeycomb, Datadog) rather than relying on platform-native OTel ingestion, since none of the four confirmed first-party OTel collector endpoints in this research pass. [uncertain]",
+    "Hetzner (bare VPS): no platform observability at all — team is fully responsible for metrics/log shipping (Prometheus node_exporter, Grafana, Loki, etc.), which is the tradeoff for lowest cost/most control."
+  ],
+  "cost_guardrails": [
+    "Render free tier: cold-spin-down after 15 min idle with ~1 min cold start — never point production or demo-to-customer traffic at a free web service.",
+    "Render free Postgres: 1GB cap and 30-day hard expiry — never store data you can't afford to lose or re-provision.",
+    "Railway usage-based billing: RAM/CPU/network charges accrue beyond the plan's included credit with no hard cap by default — set spending limits/alerts before production traffic.",
+    "Fly per-second billing is cheap only if machines actually stop; `min_machines_running >= 1` on many machines silently reintroduces always-on costs.",
+    "Fly/Railway/Netlify bandwidth is billed per-GB and is not competitive with CDN pricing for high-bandwidth (video/large file) workloads — route that traffic through object storage + CDN instead.",
+    "Netlify Functions credit/GB-Hour billing on newer plans differs fundamentally from legacy per-request billing — verify which billing model an account uses before estimating costs from older blog posts.",
+    "Watch Railway's shift to mandatory post-paid billing and mid-cycle partial charges — budget forecasting based on older prepaid-model assumptions will be wrong.",
+    "Hetzner has no metered-compute cost surprises (flat monthly VPS price) but shifts 100% of scaling/failover/ops cost to the team — factor in engineering time, not just the dollar price, when comparing to managed PaaS.",
+    "Any workload with unauthenticated public endpoints on usage-billed platforms (Fly, Railway, Netlify) is a cost-based DoS surface — put rate limiting or a CDN/WAF in front before going live."
+  ],
+  "skill_scan_signals": [
+    "Repo contains a fly.toml, railway.json/railway.toml, render.yaml, or netlify.toml — signals which PaaS(s) are already in use.",
+    "GitHub Actions workflow references FLY_API_TOKEN, RAILWAY_TOKEN, or RENDER_DEPLOY_HOOK_URL secrets — signals static-token CI deploy pattern in place.",
+    "Dockerfile present alongside fly.toml — signals Fly Machines Docker-based deploy path.",
+    "Presence of `nixpacks.toml` — signals Railway (or other Nixpacks-based) buildpack deploy rather than Dockerfile.",
+    "requirements.txt or pyproject.toml combined with a `worker.py`/`celery` entrypoint — signals a background worker workload that needs a non-web service definition on whichever platform is chosen.",
+    "Presence of scheduled/cron-style scripts (e.g., `run_hourly_job.py`) without a corresponding render.yaml cron service or GitHub Actions schedule trigger — signals a cron gap to flag.",
+    "Any large media/file assets or video-serving routes implemented as API endpoints rather than pointing at object storage/CDN — signals a bandwidth cost-guardrail violation to flag.",
+    "`.env` files or hardcoded connection strings committed to the repo instead of using platform secrets mechanisms — signals a secrets-hygiene violation regardless of which PaaS is used."
+  ],
+  "skill_module_bullets": [
+    "For Python API services and background workers outside Vercel, default to Fly.io Machines for cost/control, or Render for lowest ops overhead; never Netlify Functions for long-running or stateful work.",
+    "None of Fly/Railway/Render/Netlify support GitHub OIDC — CI auth is always a static scoped API token or deploy-hook secret; apply key-rotation discipline as if it were a cloud IAM key.",
+    "Fly's unmanaged Postgres is effectively unsupported for new production use — recommend Fly Managed Postgres or Supabase instead.",
+    "Use the selection matrix (workload class -> platform) as the first filter before any deeper platform-specific config generation.",
+    "Treat Render/Railway free tiers and usage-based billing as demo/staging-only unless spending limits and monitoring are explicitly configured.",
+    "Route high-bandwidth static/media traffic through object storage + CDN, and treat Hetzner as the cost-floor baseline for any workload where PaaS pricing looks disproportionate.",
+    "Cron jobs: prefer Render's native Cron Job resource; on Fly, drive cron externally via GitHub Actions schedule or an explicit scheduler, since Fly has no native cron primitive.",
+    "Cross-platform observability requires self-instrumenting with OpenTelemetry and exporting to a third-party backend — no platform here provides a first-party OTel collector."
+  ],
+  "checklist": [
+    "Workload classified against the 8-class selection matrix and a specific platform chosen with a documented reason.",
+    "CI deploy workflow uses a scoped, TTL-limited token (Fly deploy token, Railway project token, Render deploy hook, Netlify site token) stored only as a GitHub Actions secret.",
+    "No secrets committed in fly.toml / railway.json / render.yaml / netlify.toml / workflow files — verified with a secret-scan pass.",
+    "Fly Machines configured with explicit `auto_stop_machines`/`min_machines_running` decision matching the workload's latency/statefulness needs.",
+    "Postgres hosting decision made explicitly (Supabase vs Fly Managed Postgres vs Render/Railway managed vs self-hosted Hetzner) with backup/HA ownership assigned.",
+    "Spending limits or budget alerts configured on Railway/Fly/Render/Netlify before production traffic is routed.",
+    "Free-tier usage (if any) confirmed to be staging/demo-only, never customer-facing.",
+    "High-bandwidth static/media traffic confirmed to be served via object storage + CDN, not through PaaS compute billing.",
+    "Cron/scheduled jobs have a concrete execution mechanism (native Render Cron, or externally triggered Fly job) rather than an always-on sleep loop.",
+    "Observability plan in place (OTel SDK + external backend) since no platform here provides first-party OTel ingestion."
+  ],
+  "source_tier": "T1 (primary vendor docs fetched directly) with some T2 gaps ([uncertain]-flagged figures not retrievable via static fetch, e.g. Hetzner/Render/Netlify exact tables rendered client-side)",
+  "confidence": "medium-high on architecture/deploy/secrets model claims (directly fetched from vendor docs); medium on exact current pricing figures, several of which render via JS and could not be scraped in this pass and are flagged [uncertain]",
+  "conflicts_noted": [
+    "OIDC-vs-API-token gap: the outline's identity-first, no-long-lived-static-keys policy is directly in tension with all four platforms (Fly, Railway, Render, Netlify), none of which support GitHub OIDC federation as of this research pass — confirmed via each platform's own CI/deploy docs. This is a structural exception to the policy, not an oversight; mitigation is scoped/short-TTL tokens plus rotation, not true workload identity.",
+    "Fly's Postgres story has materially changed: unmanaged Fly Postgres is still present in docs but explicitly flagged as unsupported for guidance/help, with Fly Managed Postgres positioned as the new supported product. Older comparison posts or cached knowledge describing 'Fly Postgres' as a first-class managed offering are likely describing the deprecated/legacy pattern.",
+    "Pricing verification gaps: exact Render compute-plan dollar figures, Netlify Functions timeout limits, and Hetzner VPS per-month/vCPU/RAM/bandwidth figures could not be extracted via static WebFetch because those pages render pricing tables via client-side JS/region selectors. These are marked [uncertain] in limits_quotas_pricing rather than asserted from memory.",
+    "Tension with deploy-ops.md: that reference file lists 'Fly.io / Railway' as a pairing specifically in a Rust-service-deploy context ('Docker + health checks'), a narrower framing than this item's broader Python-services-and-workers scope. No direct contradiction found, but this item should be read as the general Python/worker/Postgres decision layer, while deploy-ops.md's mention is a narrower Rust-specific note — flagging so a future editor doesn't assume deploy-ops.md already covers this ground.",
+    "Web search (WebSearch tool) was unavailable for this research pass (session budget exhausted before any queries ran) — all findings come from direct WebFetch of primary docs; the requested 2025-2026 practitioner comparison posts ('Fly.io vs Railway vs Render 2026', etc.) were not fetched and are not reflected here.",
+    "Uncertainty notes (from research pass): limits_quotas_pricing (Fly free-allowance status, Render exact compute-plan $/month, Netlify Functions exact timeout limits, Hetzner exact CX/CPX pricing table) | decision_gates (GPU/ML inference row — Fly GPU Machine region/pricing specifics not verified) | observability (whether any platform has added first-party OTel ingestion since last training knowledge — not confirmed either way via fetched docs) | conflicts_noted (2025-2026 practitioner comparison posts requested in the task were not fetched due to WebSearch budget exhaustion)"
+  ],
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://fly.io/docs/about/pricing/",
+    "https://fly.io/docs/postgres/",
+    "https://fly.io/docs/reference/secrets/",
+    "https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/",
+    "https://docs.railway.com/reference/pricing",
+    "https://docs.railway.com/guides/variables",
+    "https://render.com/pricing",
+    "https://render.com/docs/free",
+    "https://render.com/docs/web-services",
+    "https://render.com/docs/compute-plans",
+    "https://render.com/docs/environment-variables",
+    "https://render.com/docs/deploy-hooks",
+    "https://docs.netlify.com/functions/overview/",
+    "https://docs.netlify.com/build/functions/usage-and-billing/",
+    "https://www.hetzner.com/cloud/"
+  ],
+  "uncertain": [
+    "confidence",
+    "conflicts_noted",
+    "limits_quotas_pricing",
+    "observability",
+    "source_tier"
+  ]
+}

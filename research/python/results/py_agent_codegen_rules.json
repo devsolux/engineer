@@ -1,0 +1,378 @@
+{
+  "name": "Agent must/must-not generate rules + scan IDs for Python services",
+  "item_id": "py-agent-codegen-rules",
+  "cluster": "synthesis",
+  "short_definition": "Binding agent codegen policy for Python in the engineer stack: what agents must always emit (uv+src layout, FastAPI lifespan, Pydantic v2, basedpyright, PyJWT with algorithms, timeouts, health probes, OpenAPI contracts) and must never emit (Poetry/Black/mypy greenfield defaults, python-jose, sync requests in async routes, BackgroundTasks for money, dual migrations, leaked secrets). Pairs machine-checkable scan IDs with positive/negative signals for engineer-scan and code review. As of 2026-07-13, synthesizes all researched py-* leaf items into one agent-facing rule surface.",
+  "scope_in": [
+    "Must-generate / must-not-generate checklists for agents scaffolding or editing Python services",
+    "Scan ID catalog (PY-*) for enforcement and review rubrics",
+    "Positive and negative code signals mapped to clusters (tooling, language, web, data, workers, quality)",
+    "Greenfield template completeness bar (files, CI, settings, auth, DB, tests)",
+    "How agent policy differs from human brownfield exception process",
+    "Cross-language boundary rules agents must respect (TS BFF owns cookies; Python verifies Bearer; Rust for measured hot paths)"
+  ],
+  "scope_out": [
+    "Full narrative tutorials (live in leaf research + future references/python.md)",
+    "UI/Next.js/React codegen (typescript.md, stack-rules.md, frontend modules)",
+    "Rust Axum codegen (rust.md)",
+    "Notebook / data-science product architecture",
+    "One-off ops scripts outside services/packages layout"
+  ],
+  "priority": "P0",
+  "defaults": {
+    "agent_posture": "Python is a peer service language for AI, workers, OpenAPI APIs — never the UI shell; Next/TS remains product boundary",
+    "scaffold_stack": "CPython 3.13 + uv + ruff + basedpyright + pytest + FastAPI + Pydantic v2 + SQLAlchemy 2 async + uvicorn",
+    "always_emit_files": [
+      "pyproject.toml with [project], requires-python, [dependency-groups], [tool.ruff], [tool.basedpyright], [tool.pytest.ini_options]",
+      ".python-version",
+      "uv.lock (after deps)",
+      "src/<pkg>/{main,config,deps,routers,domain,db}/",
+      "tests/ with unit markers",
+      ".env.example without real secrets",
+      "Dockerfile without --reload (when containerized)"
+    ],
+    "always_emit_patterns": [
+      "lifespan asynccontextmanager for engine/httpx/redis",
+      "Annotated[..., Depends] aliases",
+      "pydantic-settings BaseSettings + SecretStr",
+      "AppError + exception handlers; no stack traces to clients",
+      "jwt.decode(..., algorithms=[...]) when JWT auth",
+      "httpx.Timeout explicit; shared AsyncClient",
+      "/health/live and /health/ready",
+      "response_model / separate In/Out models; extra='forbid' on public inputs"
+    ],
+    "scan_id_prefix": "PY-",
+    "policy_severity": "hard-fail on must_not_generate in greenfield; warn+ticket for brownfield migration"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Agent generates or refactors any Python service under services/ or packages/",
+      "engineer plan/audit/fix/api touches Python paths",
+      "Writing scan rules, evals, or skill module bullets for Python",
+      "Greenfield monorepo adding first Python package"
+    ],
+    "do_not_use_when": [
+      "Pure TS/Next feature with no Python process",
+      "Legacy codebase under explicit migration plan that temporarily violates a rule with documented exception",
+      "Research notebooks or one-off analysis scripts not shipping as product services"
+    ],
+    "alternatives": [
+      "typescript.md agent norms for Server Actions/Zod",
+      "rust.md no-unwrap / Axum extractor norms",
+      "Leaf py-* research for domain depth beyond this synthesis"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Emit uv-only packaging: pyproject + uv.lock + .python-version; never Poetry greenfield",
+      "Use FastAPI lifespan (not on_event) for pools and clients",
+      "Validate all external input with Pydantic v2 model_validate; ConfigDict not class Config",
+      "Annotate public APIs; PEP 695 / X|None / list[str]; CI basedpyright",
+      "Verify JWT with explicit algorithms; AuthN Depends + AuthZ ownership checks",
+      "Time-box all external I/O; structured concurrency (TaskGroup/anyio) for multi-child work",
+      "Tier jobs: BackgroundTasks only best-effort; Taskiq for durable async; Temporal for multi-step",
+      "One migration owner per DB; RLS with CREATE TABLE when Supabase owns schema",
+      "Map domain errors at edge; log with request_id; return safe client messages",
+      "Include ruff format+check, basedpyright, pytest unit, uv audit in CI"
+    ],
+    "dont": [
+      "Don't scaffold black/isort/flake8/mypy as greenfield defaults",
+      "Don't use python-jose, jwt.decode without algorithms, or verify_signature=False",
+      "Don't use requests or time.sleep inside async routes",
+      "Don't create_task without a supervisor for request-scoped work",
+      "Don't use BackgroundTasks for payments, compliance, or must-not-lose work",
+      "Don't dual-migrate the same tables with Alembic and Supabase",
+      "Don't return ORM objects as JSON; don't session.query in new code",
+      "Don't hardcode secrets or log SecretStr/settings dumps",
+      "Don't CORS allow_origins=['*'] with allow_credentials=True",
+      "Don't put --reload in production CMD/Dockerfile"
+    ]
+  },
+  "code_skeleton": "# Agent greenfield checklist (emit all of these or document exception)\n\n# pyproject.toml essentials\n# [project] name, requires-python = \">=3.13\", dependencies = [...]\n# [dependency-groups] dev = [\"ruff\", \"basedpyright\", \"pytest\", \"pytest-asyncio\", \"httpx\"]\n# [tool.ruff] target-version = \"py313\"\n# [tool.basedpyright] typeCheckingMode = \"recommended\", pythonVersion = \"3.13\"\n# [tool.pytest.ini_options] asyncio_mode = \"auto\", markers = [\"unit\", \"integration\"]\n\n# src/app/main.py shape\nfrom contextlib import asynccontextmanager\nfrom typing import Annotated, AsyncIterator\nfrom fastapi import Depends, FastAPI\nfrom pydantic import BaseModel, ConfigDict, Field\n\nclass ItemIn(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n    name: str = Field(min_length=1, max_length=200)\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    # create engine, httpx.AsyncClient, redis; yield; aclose/dispose\n    yield\n\napp = FastAPI(lifespan=lifespan)\n\n# MUST: health, settings via Depends, JWT algorithms explicit, thin routers\n",
+  "failure_modes": [
+    "Agent scaffolds Poetry + Black + mypy → fights monorepo uv/ruff policy and CI",
+    "Agent copies FastAPI tutorials with on_event and global engine at import → flaky tests, leaked pools",
+    "Agent uses BackgroundTasks for billing/webhooks → silent data loss on crash",
+    "Agent omits algorithms= on jwt.decode → algorithm confusion / none alg attacks",
+    "Agent uses Supabase pooler URL without asyncpg prepared-statement mitigations → intermittent 500s",
+    "Agent dual-writes schema via create_all + manual SQL → prod drift",
+    "Agent emits untyped public handlers → basedpyright fails or is skipped",
+    "Agent logs full settings/tokens → secret sprawl in log sinks"
+  ],
+  "anti_patterns": [
+    "Generating 'compatible with everything' stacks (Poetry AND uv, Black AND ruff)",
+    "Silent # type: ignore / # noqa without rule codes",
+    "Tutorial-default CORS * and reload in prod manifests",
+    "Treating Python as the cookie session authority instead of verifying Bearer from Next/Supabase",
+    "Msgspec or Celery as silent defaults without tier decision",
+    "Inventing requires-python >=3.8 for new services"
+  ],
+  "tools": {
+    "primary": [
+      "uv",
+      "ruff",
+      "basedpyright",
+      "pytest",
+      "FastAPI",
+      "Pydantic v2",
+      "SQLAlchemy 2 async",
+      "httpx",
+      "PyJWT",
+      "structlog"
+    ],
+    "enforcement": [
+      "engineer-scan (PY-* rules)",
+      "CI frozen sync + audit",
+      "prek/ruff hooks"
+    ],
+    "reference_leaves": "All py-* research results under research/python/results/"
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "policy_note": "Use py-default-stack-snapshot for blessed pins; this item owns agent behavior not pin arithmetic",
+    "python": "3.13 default (.python-version + requires-python >=3.13)",
+    "uv": "0.11.28",
+    "ruff": "0.15.21",
+    "basedpyright": "1.39.9",
+    "fastapi": "0.139.0",
+    "pydantic": "2.13.4"
+  },
+  "config_snippets": {
+    "scan_ids": {
+      "PY-UV-LOCK": "uv.lock committed; CI uv sync --frozen/--locked",
+      "PY-NO-POETRY-GF": "no poetry.lock / [tool.poetry] greenfield",
+      "PY-RUFF-ONLY": "no black/isort/flake8 deps",
+      "PY-TYPECHECK-CI": "basedpyright in CI",
+      "PY-NO-MYPY-GF": "mypy not sole greenfield typecheck",
+      "PY-PYTHON-VERSION": ".python-version present; requires-python >=3.12+",
+      "PY-LIFESPAN": "lifespan present; no @app.on_event in new code",
+      "PY-NO-RELOAD-PROD": "no --reload in Dockerfile/k8s CMD",
+      "PY-HEALTH": "/health/live and /health/ready (or documented aliases)",
+      "PY-HTTPX-TIMEOUT": "explicit Timeout on clients",
+      "PY-NO-REQUESTS-ASYNC": "no requests. in async def routes",
+      "PY-JWT-ALG": "jwt.decode includes algorithms=",
+      "PY-NO-JOSE": "no from jose import jwt greenfield",
+      "PY-SECRETSTR": "secrets via SecretStr / settings not literals",
+      "PY-PYDANTIC-V2": "model_validate/model_dump; no .dict()/parse_obj",
+      "PY-EXTRA-FORBID": "public In models extra forbid",
+      "PY-SA20": "select() not session.query",
+      "PY-SESSION-SCOPE": "yield session dependency; dispose on shutdown",
+      "PY-POOLER-MITIGATION": "transaction pooler URL has NullPool/prepared-stmt fixes",
+      "PY-MIG-OWNER": "single migration tool owns schema",
+      "PY-NO-CREATE-ALL-PROD": "no metadata.create_all in prod path",
+      "PY-JOB-TIER": "durable work not only BackgroundTasks",
+      "PY-CORS-CREDS": "no allow_origins * with credentials",
+      "PY-STRUCTLOG": "structured logging; no secret fields",
+      "PY-UV-AUDIT": "uv audit (+ UV_MALWARE_CHECK) in CI",
+      "PY-TEST-ASYNC": "pytest-asyncio configured; unit marker path"
+    },
+    "agent_system_prompt_fragment": "Python services: uv+ruff+basedpyright+pytest; FastAPI lifespan; Pydantic v2 only; PyJWT algorithms=; no Poetry/Black/mypy/python-jose; no BackgroundTasks for money; OpenAPI contract to TS; Supabase migrations own RLS DB."
+  },
+  "deprecation_watch": [
+    "Tutorial stacks still teaching Poetry+Black+mypy as modern default",
+    "FastAPI on_event startup examples",
+    "python-jose default JWT samples",
+    "arq as new greenfield queue (maintenance-only 2026)",
+    "ty as sole CI typecheck while still beta",
+    "Agents inventing free-threading as default architecture"
+  ],
+  "ts_boundary": "Agents must keep cookie SSR auth, Server Actions, and UI in Next/TS. Python agents generate Bearer/JWT verification and OpenAPI servers that TS consumes via codegen — never dual session systems. Mirror typescript.md: Zod at TS boundary ↔ Pydantic at Python boundary.",
+  "rust_boundary": "Agents must not rewrite working FastAPI into Axum without measured need. When generating hot-path services, follow rust.md (no unwrap in handlers, timeouts). Prefer Python for AI glue/RAG/iteration; Rust for p99/cpu-bound gateways.",
+  "supabase_boundary": "Agents: product schema + RLS → supabase/migrations. Python service-role SQLAlchemy for server transactions with explicit authz in code. Never put SERVICE_ROLE in client-facing handlers or NEXT_PUBLIC_*.",
+  "boundary_contracts": [
+    "OpenAPI 3 exported in CI as contract artifact",
+    "JSON Schema / OpenAPI → TS types codegen (no hand-sync DTOs)",
+    "Env contract via .env.example + pydantic-settings",
+    "Migration ownership documented in service README",
+    "Auth: JWT claims (iss/aud/sub/exp) agreed with Supabase/IdP",
+    "MCP/tool timeouts and auth when exposing agent tools (future leaf)"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "What may an agent generate for a new backend capability?",
+    "python": "FastAPI service/worker/AI boundary with this policy applied",
+    "ts": "Same-app BFF Server Action / Route Handler with Zod + getUser",
+    "rust": "Measured hot path / gateway only; rust.md policy"
+  },
+  "threats": [
+    "Agent-introduced auth bypass (missing algorithms, trust client roles)",
+    "Secret leakage via scaffolded defaults and logs",
+    "SSRF from open URL fetch patterns",
+    "Supply-chain: unpinned deps, no lock, no audit",
+    "Data loss: non-durable background work for critical paths",
+    "Mass assignment via permissive Pydantic models",
+    "SQL injection / N+1 / pool exhaustion from naive ORM scaffolding"
+  ],
+  "mitigations": [
+    "Hard must_not_generate list + PY-* scan IDs in CI",
+    "SecretStr + gitleaks + no .env commit",
+    "SSRF allowlist helper required for user-controlled URLs",
+    "uv.lock + frozen sync + uv audit + UV_MALWARE_CHECK",
+    "Job tier decision required in PR for background work",
+    "extra='forbid' + Field constraints on public models",
+    "Repository/SQL-first patterns + pool budget comments"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "requires-python >=3.13 (or >=3.12 max-compat) + .python-version",
+      "uv project: pyproject, dependency-groups, committed uv.lock",
+      "src layout under services/<name>/ or packages/<name>/",
+      "[tool.ruff] format+lint; target-version matching pin",
+      "[tool.basedpyright] recommended + pythonVersion",
+      "pytest + asyncio_mode=auto + unit/integration markers",
+      "FastAPI app factory + lifespan + APIRouter modules",
+      "pydantic-settings Settings with SecretStr; get_settings cache",
+      "Pydantic v2 In/Out models; ConfigDict; extra forbid on inputs",
+      "Annotated Depends for auth, db session, settings",
+      "jwt.decode with algorithms= list when JWT used",
+      "Shared httpx.AsyncClient with explicit Timeout in lifespan",
+      "Exception handlers mapping AppError/ValidationError; no str(e) to clients",
+      "health live/ready endpoints",
+      "CI: setup-uv pin, UV_MALWARE_CHECK=1, sync frozen, ruff, basedpyright, pytest unit, uv audit",
+      "Production process without --reload; worker/pool rationale comment",
+      "If SQL: create_async_engine + async_sessionmaker + yield session + dispose",
+      "If jobs: explicit tier (BackgroundTasks|Taskiq|Temporal|Celery) with justification",
+      "If Supabase product DB: migrations under supabase/migrations with RLS; no dual Alembic on same tables",
+      "structlog/OTel request_id binding; no secrets in log events"
+    ],
+    "must_not_generate": [
+      "Poetry/Pipenv/pip-tools as primary greenfield packaging",
+      "Black, isort, flake8, pylint as default format/lint stack",
+      "mypy as sole greenfield type checker",
+      "@app.on_event startup/shutdown in new code",
+      "python-jose; jwt.decode without algorithms; verify_signature False",
+      "Hardcoded API keys, service_role, DB passwords in source",
+      "requests library or time.sleep inside async def routes",
+      "asyncio.create_task for business work without TaskGroup/supervision",
+      "BackgroundTasks for payments, webhooks that must not lose, multi-minute jobs",
+      "pickle of untrusted job payloads",
+      "session.query / sync create_engine in async apps",
+      "ORM objects returned directly as API responses",
+      "metadata.create_all for production schema management",
+      "Dual Alembic + Supabase migrations on same tables",
+      "allow_origins=['*'] with allow_credentials=True",
+      "--reload in Docker/k8s production commands",
+      "msgspec as default for all FastAPI models without measured hot path",
+      "Free-threaded CPython as silent default runtime",
+      "SQLite standing in for Postgres integration tests of PG apps",
+      "V1 Pydantic APIs: parse_obj, .dict(), class Config"
+    ]
+  },
+  "tests_required": [
+    "Unit: settings load from env; AppError mapping; pure domain",
+    "API: httpx ASGITransport happy path + 401/403/422",
+    "Auth: JWT valid/invalid/expired/wrong alg fixtures",
+    "DB integration (when SQL): testcontainers + migrations; session rollback isolation",
+    "Contract (when public OpenAPI): Schemathesis from_asgi optional job",
+    "Scan self-test: fixture repo trips each PY-* negative signal"
+  ],
+  "ci_gates": [
+    "uv sync --frozen with UV_MALWARE_CHECK=1",
+    "ruff format --check && ruff check",
+    "basedpyright",
+    "pytest -m unit",
+    "uv audit",
+    "Optional: integration + Schemathesis + gitleaks"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "uv.lock + .python-version + src layout",
+      "lifespan= on FastAPI()",
+      "model_validate / ConfigDict / SecretStr",
+      "jwt.decode(..., algorithms=",
+      "httpx.Timeout / AsyncClient in lifespan",
+      "create_async_engine + async_sessionmaker",
+      "ruff + basedpyright in CI yaml",
+      "UV_MALWARE_CHECK or uv audit step",
+      "markers unit/integration"
+    ],
+    "negative": [
+      "poetry.lock without migration note",
+      "black/isort/flake8 in dependencies",
+      "from jose import",
+      "jwt.decode without algorithms",
+      "@app.on_event",
+      "session.query(",
+      "BackgroundTasks + payment|stripe|transfer in same file without queue",
+      "--reload in Dockerfile",
+      "allow_origins=[\"*\"] near allow_credentials=True",
+      "parse_obj|\\.dict\\(\\)|class Config:",
+      "requests.get|time.sleep inside async def files"
+    ]
+  },
+  "skill_module_bullets": [
+    "Agent hard policy lives in references/python.md § Agent codegen rules — must_generate / must_not_generate are binding for greenfield.",
+    "Scan ID catalog PY-* (uv lock, ruff-only, lifespan, JWT alg, no jose, no reload prod, pooler mitigation, mig owner, job tier, CORS creds, uv audit) feeds engineer-scan and audit rubrics.",
+    "Always scaffold: CPython 3.13, uv, ruff, basedpyright, pytest-asyncio, FastAPI lifespan, Pydantic v2 In/Out, pydantic-settings SecretStr, health live/ready.",
+    "Never scaffold: Poetry/Black/mypy/python-jose/on_event/requests-in-async/BackgroundTasks-for-money/dual-migrations/create_all-prod.",
+    "Auth: Next/Supabase owns browser session; Python verifies Bearer JWT with explicit algorithms + ownership checks; 401 vs 403.",
+    "Data: SQLAlchemy 2 async + select(); one migration owner; pool budget workers×(pool+overflow); NullPool mitigations on transaction pooler.",
+    "Jobs: tier explicitly (BackgroundTasks | Taskiq | Celery legacy | Temporal); idempotency + DLQ for durable work.",
+    "Boundaries: OpenAPI→TS codegen; no hand-sync DTOs; service_role never client-side; Rust only after measure.",
+    "CI bar: frozen sync + ruff + basedpyright + pytest unit + uv audit + malware check env.",
+    "Observability: structlog JSON + request_id; timeouts on all I/O; no secrets in logs.",
+    "Typing: PEP 695, Protocol ports, no typing.List/Optional, ban Any on public APIs, py.typed on libraries.",
+    "Async: TaskGroup/anyio; no fire-and-forget create_task; to_thread for blocking SDKs.",
+    "Middleware: document order; CORS explicit; Depends for auth/session not middleware-only auth.",
+    "Tests: httpx ASGITransport; testcontainers Postgres for SQL; never SQLite-as-Postgres for PG apps.",
+    "Supply chain: commit lock, exclude-newer ~7d, UV_MALWARE_CHECK=1, review lock diffs like package-lock."
+  ],
+  "action_items": [
+    "Write references/python.md § Agent codegen rules with must_generate / must_not_generate tables copied from this item (binding).",
+    "Implement PY-* scan rules in scripts/engineer-scan.sh (or python scanner) for top negative signals: poetry greenfield, black/flake8, on_event, jose, jwt without algorithms, --reload prod, session.query, parse_obj/.dict(), CORS*+credentials, missing uv.lock.",
+    "Add agent prompt fragment to SKILL.md hard gates / operating principles once Python peer is declared (coordinate with py-engineer-module-design).",
+    "Seed templates/python/ (pyproject, main.py lifespan, settings, CI workflow) that pass all must_generate checks.",
+    "Extend evals/evals.json with cases: agent must refuse Poetry scaffold; must emit algorithms=; must not use BackgroundTasks for Stripe-like work.",
+    "Cross-link leaf research IDs in module footers so agents load depth on demand only.",
+    "Document brownfield exception process: ticket ID in comment + scan allowlist entry when violating a must_not.",
+    "Wire prek/ruff hooks monorepo template to match PY-RUFF-ONLY.",
+    "Add audit rubric section under engineer audit for Python services scoring against this checklist.",
+    "Keep scan IDs stable; version additions in CHANGELOG when new PY-* rules ship.",
+    "Map each must_not to a primary_source or local leaf so policy is evidence-backed under review.",
+    "After interop leaves (py-ts-boundary, py-ai-service-boundary) land, fold additional must_generate bullets without rewriting IDs."
+  ],
+  "checklist": [
+    "uv.lock + .python-version + requires-python correct",
+    "No Poetry/Black/mypy/python-jose greenfield artifacts",
+    "lifespan owns engine/httpx/redis; dispose/aclose on shutdown",
+    "Pydantic v2 only; public inputs extra=forbid",
+    "JWT algorithms explicit; AuthZ ownership on mutations",
+    "No secrets in source/logs; SecretStr + .env.example",
+    "CI: ruff, basedpyright, pytest unit, uv audit",
+    "Prod CMD without --reload; health probes present",
+    "Job tier + migration owner documented",
+    "OpenAPI contract path to TS documented"
+  ],
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Some leaf items store agent_codegen_policy as free text vs structured must_generate lists — synthesis normalizes to structured",
+    "ty editor vs basedpyright CI: agents must not drop CI checker while ty beta",
+    "Granian optional vs uvicorn default: agents must not force Granian without measurement note",
+    "Taskiq preferred greenfield async vs Celery in Celery-standardized orgs — require justification comment",
+    "Interop leaves (py-vs-ts-vs-rust, py-ts-boundary, py-ai-service-boundary, py-docker-deploy) not yet in results — boundary bullets provisional from existing leaf ts_boundary/rust_boundary fields"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.astral.sh/uv/",
+    "https://docs.astral.sh/ruff/",
+    "https://fastapi.tiangolo.com/",
+    "https://docs.pydantic.dev/latest/",
+    "https://docs.sqlalchemy.org/en/20/",
+    "https://pyjwt.readthedocs.io/",
+    "https://www.basedpyright.com/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/MANIFEST.md",
+    "./references/stack-rules.md",
+    "./SKILL.md",
+    "./research/python/outline.yaml",
+    "./research/python/results/",
+    "./research/python/results/py_fastapi.json",
+    "./research/python/results/py_auth_security.json",
+    "./research/python/results/py_uv_packaging.json",
+    "./research/python/results/py_ci_gates.json"
+  ]
+}

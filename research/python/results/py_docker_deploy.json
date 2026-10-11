@@ -1,0 +1,84 @@
+{
+  "name": "Slim multi-stage non-root Docker deploy for Python services",
+  "item_id": "py-docker-deploy",
+  "cluster": "quality",
+  "priority": "P0",
+  "short_definition": "Production packaging for Python ASGI/worker services: multi-stage images with uv lockfile install, slim (not full/alpine-by-default) base, non-root runtime USER, HEALTHCHECK/readiness probes, bytecode compile, and no secrets or build toolchain in the final layer. Aligns with deploy-ops Rust container rules and polyglot monorepo peers. As of 2026-07-13: uv 0.11.28; pin ghcr.io/astral-sh/uv:0.11.28; prefer python:3.12|3.13-slim matching .python-version.",
+  "scope_in": "Dockerfile multi-stage patterns with uv; base image choice (slim vs alpine vs distroless); non-root USER; HEALTHCHECK and k8s/Fly probes; .dockerignore; layer caching (deps before code); UV_COMPILE_BYTECODE / UV_LINK_MODE / frozen|locked sync; runtime CMD (uvicorn/granian/worker); graceful SIGTERM; image security (no secrets, minimal packages); CI build+smoke; compose for local parity.",
+  "scope_out": "Full k8s HPA/service mesh cookbook; Vercel Next deploy (deploy-ops); ASGI server choice details (py-asgi-servers); CI quality gates before image (py-ci-gates); supply-chain uv audit (py-uv-audit-supply-chain); free-threading production images.",
+
+  "defaults": "Base: python:<pin>-slim (Debian/trixie-slim family) matching .python-version — not full python image, not Alpine unless pure-Python and proven. Install tool: copy pinned uv binary COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/. Build: multi-stage — builder runs uv sync --locked|--frozen --no-dev with UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy and cache mount; final stage copies .venv (and app source if not --no-editable pure venv copy) only. Runtime: non-root user (uid 1000 or dedicated app user), PATH=/app/.venv/bin:$PATH, CMD without --reload, prefer 1 worker process per container and horizontal scale. HEALTHCHECK HTTP /healthz or /health/live. Secrets only via env/secret mount at runtime. Migrations run as release step outside or init job — not implicit in every web start unless documented.",
+  "decision_gates": "USE multi-stage uv Docker for any long-running Python service (API, worker) on Fly/Railway/K8s/VM. USE --no-editable + copy .venv alone when you want final image without full source tree. USE alpine only after C-extension deps build cleanly (numpy/scipy often prefer glibc slim). USE distroless/runtime-minimal only if team can own debugging tradeoffs. DO NOT ship root-running production containers. DO NOT use python:latest or unpinned uv:latest in prod Dockerfiles. DO NOT put .env secrets or uv.lock-less pip install in image. DO NOT enable reload or debug in final CMD. Prefer separate images/cmds for api vs worker sharing same base stages.",
+  "do_dont": "DO: pin uv image tag or digest; .dockerignore .venv/.git/tests/secrets; order layers deps→code; non-root USER after install; health path independent of heavy deps when possible; SIGTERM graceful stop; read-only rootfs where feasible; resource limits; scan image (Trivy/Grype) in CI. DON'T: run as root; COPY secrets; install gcc in final stage; alpine cargo-cult; multi-GB full python base; pip install unpinned; leave curl/build-essential in runtime; bind 0.0.0.0 without network policy on shared hosts; bake prod DATABASE_URL into image.",
+  "code_skeleton": "# syntax=docker/dockerfile:1\n# .dockerignore: .venv, .git, **/__pycache__, .env, tests, .pytest_cache\n\nFROM python:3.13-slim-trixie AS builder\nCOPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /bin/\nWORKDIR /app\nENV UV_COMPILE_BYTECODE=1 \\\n    UV_LINK_MODE=copy \\\n    UV_PYTHON_DOWNLOADS=0 \\\n    UV_NO_DEV=1\n\nRUN --mount=type=cache,target=/root/.cache/uv \\\n    --mount=type=bind,source=uv.lock,target=uv.lock \\\n    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \\\n    uv sync --locked --no-install-project --no-editable\n\nCOPY . /app\nRUN --mount=type=cache,target=/root/.cache/uv \\\n    uv sync --locked --no-editable\n\nFROM python:3.13-slim-trixie AS runtime\nRUN groupadd -r app && useradd -r -g app -u 10001 -d /app -s /sbin/nologin app \\\n && apt-get update && apt-get install -y --no-install-recommends ca-certificates \\\n && rm -rf /var/lib/apt/lists/*\nWORKDIR /app\nCOPY --from=builder --chown=app:app /app/.venv /app/.venv\nCOPY --from=builder --chown=app:app /app/src /app/src\nENV PATH=\"/app/.venv/bin:$PATH\" \\\n    PYTHONUNBUFFERED=1 \\\n    PYTHONDONTWRITEBYTECODE=1\nUSER app\nEXPOSE 8000\nHEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n  CMD python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\"\nCMD [\"uvicorn\", \"mypkg.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n# Worker variant: CMD [\"taskiq\", \"worker\", \"mypkg.broker:broker\"]",
+  "failure_modes": "1) Root container → host escape blast radius. 2) Unpinned base/uv → supply-chain or breakage. 3) Missing .dockerignore copies local .venv (wrong arch) → mysterious ImportError. 4) Editable install + only-copy-venv without source → broken imports. 5) No healthcheck → bad deploys stay in rotation. 6) Too many workers × DB pool → connection storm. 7) SIGKILL without graceful drain → 502 spikes. 8) Secrets in layers (ENV in Dockerfile, COPY .env). 9) Alpine musl wheels missing → long builds or runtime fails. 10) Image builds without --locked and drifts from CI lock.",
+  "anti_patterns": "Agents must not: generate single-stage root Dockerfiles for prod; pip install without lock; python:latest; leave --reload in CMD; store JWT/DB passwords in image ENV; install poetry+pip dual; skip USER; alpine default for ML stacks; bake test secrets; run migrations from every replica race without leadership.",
+
+  "tools": "Primary: Docker BuildKit, ghcr.io/astral-sh/uv pinned, official python slim, uvicorn/granian or worker CLI. Compose for local. CI: docker build, Trivy/Grype, smoke curl health. Hosting: Fly.io, Railway, K8s, any OCI runtime. Optional: distroless final, cosign sign images. Not default: full python image, unpinned latest tags.",
+  "versions_as_of": "as_of 2026-07-13 — uv 0.11.28 (pin COPY --from=ghcr.io/astral-sh/uv:0.11.28); Astral docker guide updated 2026-07-07; Python base tags 3.12/3.13/3.14-*-slim/trixie available; uvicorn 0.51.0 typical CMD. Prefer digest pin for high-assurance. Official images: python:3.x-slim-trixie / bookworm depending on host pin policy.",
+  "config_snippets": "# .dockerignore\n.venv\n.git\n.env\n.env.*\n**/__pycache__\n.pytest_cache\n.mypy_cache\n.ruff_cache\ntests\n*.md\n.github\n\n# compose health (dev)\n# services:\n#   api:\n#     build: .\n#     ports: [\"8000:8000\"]\n#     environment:\n#       DATABASE_URL: ${DATABASE_URL}\n#     healthcheck:\n#       test: [\"CMD\", \"python\", \"-c\", \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\"]\n#       interval: 10s\n\n# k8s readiness (align deploy-ops)\n# readinessProbe:\n#   httpGet: { path: /health/ready, port: 8000 }\n# livenessProbe:\n#   httpGet: { path: /health/live, port: 8000 }\n# securityContext:\n#   runAsNonRoot: true\n#   runAsUser: 10001\n#   readOnlyRootFilesystem: true\n# lifecycle:\n#   preStop:\n#     exec: { command: [\"sleep\", \"10\"] }",
+  "deprecation_watch": "python:latest / uv:latest in prod Dockerfiles; root USER; Poetry-only multi-stage as greenfield default when stack is uv; Alpine-as-default for scientific deps; putting uv binary permanently in final image when only .venv needed; Gunicorn+reload patterns; shipping notebooks as product images.",
+
+  "ts_boundary": "Next.js on Vercel does not use this Dockerfile. Python services are separate OCI deploys (Fly/K8s). BFF timeouts must exceed Python readiness + request budget. Preview envs: never point Python image at prod Supabase (deploy-ops tiers). Shared contracts via OpenAPI URL or committed openapi.json — not shared Docker networks as a type system.",
+  "rust_boundary": "Rust services use multi-stage rustc build (non-root, health) per deploy-ops/rust.md — do not force Python uv patterns onto Cargo. Prefer separate images. If both serve same domain, terminate TLS at gateway; Python image stays private network peer.",
+  "supabase_boundary": "Pass DATABASE_URL / SUPABASE_SERVICE_ROLE via runtime secrets only. Prefer pooler URL for multi-replica. Do not bake service role into image. Migration ownership separate from container start race; one writer per table still holds.",
+  "boundary_contracts": "PORT/HOST env; /health/live and /health/ready paths; image tag = git sha; lockfile uv.lock is dependency contract; OpenAPI served or exported artifact; secret names documented in pydantic-settings — never Dockerfile ARG secrets for prod keys.",
+  "decision_matrix_row": "Problem: package Python API/worker for Linux deploy → multi-stage slim + uv + non-root + health. Problem: Next UI → Vercel (no Python Docker). Problem: hot path native service → Rust multi-stage binary image. Problem: one-off script → uv run / CLI image optional, not always long-running service. Problem: serverless Python → still prefer thin image or managed runtime; same no-secret rules.",
+
+  "threats": "Malicious base layer or tag rewrite; secrets in image history; root RCE → host; exposed debug ports; supply-chain in unpinned COPY --from; writable filesystem + attacker write; SSRF from misconfigured egress; dependency malware in build stage if no audit.",
+  "mitigations": "Pin tags/digests; multi-stage drop build tools; non-root + read-only rootfs; UV_MALWARE_CHECK/uv audit in CI before build; no secrets in ARG/ENV Dockerfile; network policies; image scan; SBOM optional; drop CAP_NET_RAW etc. where platform allows; private registry + signed images for high assurance.",
+  "agent_codegen_policy": "MUST generate: multi-stage Dockerfile; pinned uv version; uv sync --locked or --frozen; non-root USER; HEALTHCHECK or documented k8s probes; .dockerignore excluding .venv/.env; CMD without --reload; PYTHONUNBUFFERED=1. MUST NOT: root runtime; latest tags; pip install unpinned; secrets in image; alpine default without reason; single-stage fat image for greenfield services.",
+
+  "tests_required": "docker build succeeds; container starts and /healthz 200; non-root (id) check; optional trivy high/crit fail; smoke import of app module; compose integration with test DB.",
+  "ci_gates": "After py-ci-gates quality job: docker build -t app:$SHA .; docker run --rm health smoke; optional scan. Block merge if Dockerfile runs as root or uses :latest without exception. Release job tags and pushes image only after gates green.",
+  "skill_scan_signals": "POSITIVE: multi-stage; ghcr.io/astral-sh/uv pinned; uv sync --locked/--frozen; USER non-root; HEALTHCHECK; .dockerignore with .venv; no --reload in CMD; UV_COMPILE_BYTECODE. NEGATIVE: USER root or missing USER; pip install -r without lock; :latest base; COPY .env; --reload prod; single fat stage with build-essential left in; no health endpoint.",
+
+  "skill_module_bullets": [
+    "Python services: multi-stage Docker, python:slim + pinned uv, uv sync --locked, non-root USER, HEALTHCHECK.",
+    "UV_COMPILE_BYTECODE=1 + UV_LINK_MODE=copy; cache mount on /root/.cache/uv; .dockerignore .venv.",
+    "Prefer 1 process/container; horizontal scale; graceful SIGTERM; no secrets in image layers.",
+    "Pin ghcr.io/astral-sh/uv:0.11.x (or digest); never python:latest for prod.",
+    "API vs worker: same image different CMD; migrations as release step.",
+    "Align readiness with deploy-ops: /health/live vs /health/ready."
+  ],
+  "action_items": [
+    "Add canonical Dockerfile template to references/python.md.",
+    "Scan skill for root USER / :latest / --reload.",
+    "Wire docker build smoke after quality gates.",
+    "Document secret injection per host (Fly secrets, K8s, Railway)."
+  ],
+  "checklist": [
+    "Pinned Python slim base matching .python-version",
+    "Pinned uv COPY --from version/digest",
+    "Multi-stage; no compilers in runtime",
+    "uv sync --locked|--frozen --no-dev",
+    "Non-root USER",
+    "HEALTHCHECK or orchestrator probes",
+    ".dockerignore excludes .venv and secrets",
+    "CMD no --reload",
+    "No secrets in image",
+    "Graceful shutdown tested",
+    "Image scan clean for high/crit policy",
+    "Worker/API CMD variants documented"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Astral examples use both --locked and --frozen; apps in CI prefer frozen sync elsewhere — Docker build often --locked against committed lock. --no-editable venv-only final vs copy source both valid. Alpine size wins conflict with wheel ecosystem — slim default. Whether uv stays in final image (uv run) vs PATH to .venv only: prefer .venv bin for smaller attack surface.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.astral.sh/uv/guides/integration/docker/",
+    "https://github.com/astral-sh/uv-docker-example",
+    "https://hynek.me/articles/docker-uv/",
+    "https://pythonspeed.com/docker/",
+    "https://docs.docker.com/build/building/multi-stage/"
+  ],
+  "local_sources": [
+    "./references/deploy-ops.md",
+    "./references/system-architecture.md",
+    "./references/rust.md",
+    "./research/python/results/py_asgi_servers.json",
+    "./research/python/results/py_ci_gates.json"
+  ]
+}

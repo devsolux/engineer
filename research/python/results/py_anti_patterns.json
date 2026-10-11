@@ -1,0 +1,445 @@
+{
+  "name": "Banned Python patterns for engineer agents and reviews",
+  "item_id": "py-anti-patterns",
+  "cluster": "synthesis",
+  "short_definition": "Canonical banned-pattern catalog for Python services in the engineer stack as of 2026-07-13: packaging, typing, async, FastAPI, auth, data, workers, testing, and deploy anti-patterns that agents must not generate and reviewers must flag. Aggregates anti_patterns + deprecation_watch from all researched py-* leaves into a single scan-oriented list with severity and remediation.",
+  "scope_in": [
+    "Banned patterns by cluster with severity (blocker/major/minor)",
+    "Remediation one-liners for each ban",
+    "Grep/scan hints for automation",
+    "Brownfield triage guidance (fix-now vs schedule)",
+    "Cross-stack mirrors of TS/Rust anti-patterns (any↔Any, unwrap↔bare except)"
+  ],
+  "scope_out": [
+    "Style nits already covered by ruff defaults without policy weight",
+    "Framework bugs unrelated to agent/codegen choices",
+    "Non-Python frontend anti-patterns (stack-rules.md)"
+  ],
+  "priority": "P0",
+  "defaults": {
+    "severity_model": {
+      "blocker": "Must not merge / agent must not emit — security, data loss, or wrong stack default",
+      "major": "Fix before ship of feature; allowed only with migration ticket",
+      "minor": "Cleanup; ruff/typecheck may already catch"
+    },
+    "response_to_hit": "Replace with blessed alternative from py-default-stack-snapshot + leaf item; do not dual-stack",
+    "documentation_home": "references/python.md § Anti-patterns (table) + scan negatives"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Code review, engineer audit, agent output validation",
+      "Migrating brownfield Python into monorepo",
+      "Writing scan rules or pre-commit bans"
+    ],
+    "do_not_use_when": [
+      "Evaluating intentional exceptions with ADR/ticket",
+      "Third-party vendor code vendored as-is (isolate; don't 'fix' inside vendor)"
+    ],
+    "alternatives": [
+      "Leaf anti_patterns fields for deeper rationale",
+      "ruff/basedpyright for mechanical subsets"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Treat blocker list as hard gate in greenfield",
+      "Prefer delete-and-replace over multi-tool coexistence",
+      "Document temporary exceptions with ticket + expiry",
+      "Align bans with PY-* scan IDs from py-agent-codegen-rules",
+      "Mirror TS anti-patterns culture (no any, validate at boundary)"
+    ],
+    "dont": [
+      "Don't 'allow until broken' on auth/SSRF/secret patterns",
+      "Don't add a second formatter/typechecker to silence a ban",
+      "Don't copy Django/Flask tutorial patterns into FastAPI async services blindly",
+      "Don't weaken requires-python or skip lock to make a banned dep install"
+    ]
+  },
+  "code_skeleton": "# Banned → Blessed (quick map)\n\n# Packaging\n# BAD: poetry init / pip freeze > requirements.txt as sole truth\n# GOOD: uv init; uv add; commit uv.lock\n\n# Format/lint\n# BAD: black + isort + flake8\n# GOOD: ruff format + ruff check\n\n# Types\n# BAD: mypy-only greenfield; typing.List; Any everywhere\n# GOOD: basedpyright CI; list[str]; X | None; Protocol\n\n# FastAPI lifecycle\n# BAD: @app.on_event(\"startup\"); global engine = create_async_engine(...) at import\n# GOOD: lifespan; engines on app.state; dispose on exit\n\n# Auth\n# BAD: from jose import jwt; jwt.decode(token, key)  # no algorithms\n# GOOD: import jwt; jwt.decode(token, key, algorithms=[\"RS256\"], audience=..., issuer=...)\n\n# Async\n# BAD: requests.get(...); time.sleep(1) in async def\n# GOOD: await client.get(...); await asyncio.sleep(1)\n\n# Jobs\n# BAD: background_tasks.add_task(capture_payment, ...)\n# GOOD: await taskiq_broker.kick(capture_payment, ...)  # durable queue\n\n# Data\n# BAD: session.query(User).all(); response = orm_user\n# GOOD: (await session.scalars(select(User).where(...))).all(); UserOut.model_validate(row)\n\n# CORS\n# BAD: allow_origins=[\"*\"], allow_credentials=True\n# GOOD: allow_origins=settings.cors_origins  # explicit list\n",
+  "failure_modes": [
+    "Banned stack accumulates (Poetry+uv) → non-reproducible CI",
+    "Auth anti-patterns ship → account takeover",
+    "Async blocking anti-patterns → event-loop stalls under load",
+    "Non-durable job anti-patterns → lost money/events",
+    "Pool/pooler anti-patterns → connection exhaustion and 500 storms",
+    "Dual migrations → RLS drift and broken deploys"
+  ],
+  "anti_patterns": [
+    {
+      "id": "AP-PKG-POETRY",
+      "severity": "blocker",
+      "pattern": "Poetry/Pipenv/pip-tools as greenfield primary",
+      "remediation": "uv only; migrate lock once"
+    },
+    {
+      "id": "AP-PKG-NOLOCK",
+      "severity": "blocker",
+      "pattern": "App without committed uv.lock",
+      "remediation": "uv lock && commit"
+    },
+    {
+      "id": "AP-FMT-BLACK",
+      "severity": "blocker",
+      "pattern": "Black/isort/flake8 greenfield",
+      "remediation": "ruff sole formatter+linter"
+    },
+    {
+      "id": "AP-TYPE-MYPY-GF",
+      "severity": "major",
+      "pattern": "mypy-only greenfield typecheck",
+      "remediation": "basedpyright CI; mypy only for legacy plugins"
+    },
+    {
+      "id": "AP-TYPE-ANY",
+      "severity": "major",
+      "pattern": "Any / untyped public APIs",
+      "remediation": "annotate; Protocol; Pydantic at edges"
+    },
+    {
+      "id": "AP-TYPE-LEGACY",
+      "severity": "minor",
+      "pattern": "typing.List/Dict/Optional in new 3.12+ code",
+      "remediation": "list/dict/X|None; ruff UP"
+    },
+    {
+      "id": "AP-FAST-ONEVENT",
+      "severity": "blocker",
+      "pattern": "@app.on_event startup/shutdown",
+      "remediation": "lifespan context manager"
+    },
+    {
+      "id": "AP-FAST-MONOLITH",
+      "severity": "major",
+      "pattern": "50 routes in main.py",
+      "remediation": "APIRouter by domain"
+    },
+    {
+      "id": "AP-FAST-THICK",
+      "severity": "major",
+      "pattern": "Business logic in path operations",
+      "remediation": "thin handlers → domain services"
+    },
+    {
+      "id": "AP-ASYNC-REQUESTS",
+      "severity": "blocker",
+      "pattern": "requests/time.sleep in async routes",
+      "remediation": "httpx.AsyncClient; asyncio.sleep"
+    },
+    {
+      "id": "AP-ASYNC-CREATETASK",
+      "severity": "major",
+      "pattern": "create_task without supervisor",
+      "remediation": "TaskGroup/anyio; or durable queue"
+    },
+    {
+      "id": "AP-AUTH-JOSE",
+      "severity": "blocker",
+      "pattern": "python-jose greenfield",
+      "remediation": "PyJWT + cryptography"
+    },
+    {
+      "id": "AP-AUTH-NOALG",
+      "severity": "blocker",
+      "pattern": "jwt.decode without algorithms / verify_signature False",
+      "remediation": "explicit algorithms + claims"
+    },
+    {
+      "id": "AP-AUTH-SECRETS",
+      "severity": "blocker",
+      "pattern": "Hardcoded secrets / service_role in client paths",
+      "remediation": "pydantic-settings SecretStr; server-only"
+    },
+    {
+      "id": "AP-AUTH-SSRF",
+      "severity": "blocker",
+      "pattern": "Fetch user-controlled URL without allowlist",
+      "remediation": "https + host allowlist + block metadata"
+    },
+    {
+      "id": "AP-PYD-V1",
+      "severity": "blocker",
+      "pattern": "V1 APIs parse_obj/.dict()/class Config",
+      "remediation": "model_validate/model_dump/ConfigDict"
+    },
+    {
+      "id": "AP-PYD-PERMISSIVE",
+      "severity": "major",
+      "pattern": "Public models allow extra fields by default",
+      "remediation": "extra='forbid' on inputs"
+    },
+    {
+      "id": "AP-SA-QUERY",
+      "severity": "blocker",
+      "pattern": "session.query legacy API",
+      "remediation": "select() 2.0 style"
+    },
+    {
+      "id": "AP-SA-ORMJSON",
+      "severity": "major",
+      "pattern": "Return ORM as JSON response",
+      "remediation": "Pydantic Out DTO"
+    },
+    {
+      "id": "AP-SA-NPLUS1",
+      "severity": "major",
+      "pattern": "Lazy load after await / N+1 loops",
+      "remediation": "selectinload/joinedload/raiseload"
+    },
+    {
+      "id": "AP-POOL-MATH",
+      "severity": "major",
+      "pattern": "pool_size copy-paste ignoring workers",
+      "remediation": "budget workers×(pool+overflow)"
+    },
+    {
+      "id": "AP-POOL-PGBOUNCER",
+      "severity": "blocker",
+      "pattern": "Transaction pooler without prepared-stmt mitigations",
+      "remediation": "NullPool + cache size 0 / unique names"
+    },
+    {
+      "id": "AP-MIG-DUAL",
+      "severity": "blocker",
+      "pattern": "Alembic + Supabase both owning same tables",
+      "remediation": "single owner"
+    },
+    {
+      "id": "AP-MIG-CREATEALL",
+      "severity": "blocker",
+      "pattern": "create_all in production",
+      "remediation": "versioned migrations only"
+    },
+    {
+      "id": "AP-JOB-BGTASKS",
+      "severity": "blocker",
+      "pattern": "BackgroundTasks for money/compliance/durable",
+      "remediation": "Taskiq/Celery/Temporal tier"
+    },
+    {
+      "id": "AP-JOB-PICKLE",
+      "severity": "blocker",
+      "pattern": "pickle untrusted job payloads",
+      "remediation": "Pydantic JSON payloads"
+    },
+    {
+      "id": "AP-JOB-ARQ-NEW",
+      "severity": "major",
+      "pattern": "New arq systems without maintenance note",
+      "remediation": "Taskiq greenfield async"
+    },
+    {
+      "id": "AP-IDEM-INF",
+      "severity": "blocker",
+      "pattern": "Infinite retries / no DLQ",
+      "remediation": "max attempts + DLQ + classify errors"
+    },
+    {
+      "id": "AP-CORS-STAR",
+      "severity": "blocker",
+      "pattern": "CORS * with credentials",
+      "remediation": "explicit origins list"
+    },
+    {
+      "id": "AP-RELOAD-PROD",
+      "severity": "blocker",
+      "pattern": "--reload in prod container",
+      "remediation": "production CMD without reload"
+    },
+    {
+      "id": "AP-TEST-SQLITE",
+      "severity": "major",
+      "pattern": "SQLite as Postgres stand-in for PG apps",
+      "remediation": "testcontainers Postgres"
+    },
+    {
+      "id": "AP-OBS-SECRETS",
+      "severity": "blocker",
+      "pattern": "Log tokens/passwords/settings dumps",
+      "remediation": "structlog redaction; SecretStr"
+    },
+    {
+      "id": "AP-MSGSPEC-DEFAULT",
+      "severity": "major",
+      "pattern": "msgspec default for all HTTP models",
+      "remediation": "Pydantic default; msgspec after measure"
+    },
+    {
+      "id": "AP-FT-DEFAULT",
+      "severity": "major",
+      "pattern": "Free-threaded runtime as silent default",
+      "remediation": "GIL+asyncio default; FT opt-in"
+    }
+  ],
+  "tools": {
+    "primary": [
+      "engineer-scan PY-* rules",
+      "ruff",
+      "basedpyright",
+      "gitleaks",
+      "uv audit"
+    ],
+    "review": [
+      "engineer audit rubric",
+      "PR checklist"
+    ]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "note": "Bans are version-stable; re-verify tool-specific bans (arq maintenance, ty beta, uv audit preview) by review_by",
+    "arq": "0.28.0 maintenance-only — ban new adoptions",
+    "python-jose": "avoid greenfield regardless of 3.5.0 on PyPI",
+    "ty": "0.0.x beta — ban as sole CI gate"
+  },
+  "config_snippets": {
+    "grep_blockers": "# quick local greps (also automate as PY-*)\nrg -n 'from jose import|@app\\\\.on_event|session\\\\.query\\\\(|parse_obj|\\\\.dict\\\\(\\\\)|--reload' services packages\nrg -n 'allow_origins\\\\s*=\\\\s*\\\\[\\\\s*[\\\"']\\\\*[\\\"']' services\nrg -n 'jwt\\\\.decode\\\\(' services -A2 | rg -v algorithms\nrg -n 'BackgroundTasks' services | rg -i 'payment|stripe|transfer|webhook'\n",
+    "severity_table_header": "| ID | Severity | Pattern | Fix | Scan |"
+  },
+  "deprecation_watch": [
+    "uWSGI greenfield ASGI",
+    "passlib as sole modern password stack without argon2/bcrypt care",
+    "nest_asyncio in production",
+    "Gunicorn assumed mandatory for all FastAPI",
+    "Granian free-threaded production claims",
+    "Floating git deps and requirements.txt-only apps",
+    "OAuth implicit flow",
+    "Safety/pip-audit as primary when uv audit available"
+  ],
+  "ts_boundary": "TS anti-patterns (any, client-only validation, getSession without server verify) mirror Python (Any, missing Pydantic, trusting JWT claims without verify). Keep bans aligned in spirit across typescript.md and python.md.",
+  "rust_boundary": "Rust unwrap-in-handler ban ↔ Python bare except / str(e) to client. Don't replace Python anti-pattern piles by rewriting to Rust without fixing design.",
+  "supabase_boundary": "Banned: service_role in browser; dual migration owners; RLS-off 'just for the Python service' without compensating authz. Python may use service role server-side with explicit filters — still not an excuse to skip ownership checks.",
+  "boundary_contracts": [
+    "OpenAPI must not document endpoints that skip auth without explicit public:true review",
+    "Error responses must not include stack traces (contract test / middleware check)",
+    "Migration files must not mix tools on same table names"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Detect and ban unsafe/outdated Python patterns",
+    "python": "This catalog + ruff/basedpyright/scan",
+    "ts": "typescript.md anti-patterns + ESLint",
+    "rust": "rust.md anti-patterns + clippy deny"
+  },
+  "threats": [
+    "Auth bypass and alg confusion from jose/no-algorithms",
+    "Secret exfiltration via logs and committed .env",
+    "SSRF to cloud metadata",
+    "Data loss from non-idempotent/non-durable jobs",
+    "DB outage from pool misconfig",
+    "Supply-chain malware from unlocked installs"
+  ],
+  "mitigations": [
+    "Blocker-severity bans as merge gates",
+    "Automated greps + uv audit + gitleaks",
+    "Durable job tier + idempotency/DLQ",
+    "Pool budget + pooler mitigations documented",
+    "extra=forbid and ownership checks"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "When touching banned pattern, replace with blessed alternative in same PR when scope allows",
+      "Severity-tagged comments only for temporary exceptions with ticket",
+      "Scan allowlist entries that expire"
+    ],
+    "must_not_generate": [
+      "Any blocker anti-pattern from this catalog in greenfield",
+      "Dual-stack 'compatibility' layers that preserve bans forever",
+      "Disabling ruff/typecheck to hide a ban"
+    ]
+  },
+  "tests_required": [
+    "Fixture corpus of banned snippets fails scanner",
+    "Blessed scaffold passes scanner",
+    "Auth tests cover wrong-alg tokens",
+    "Chaos: kill worker mid-BackgroundTasks-equivalent critical path → proves durable path exists for money"
+  ],
+  "ci_gates": [
+    "engineer-scan --backend or Python mode including AP-* / PY-* blockers",
+    "ruff + basedpyright + uv audit",
+    "gitleaks on PR"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "Blessed stack imports only (fastapi, pydantic, sqlalchemy, httpx, jwt, structlog)",
+      "lifespan, select(, model_validate, algorithms=",
+      "Taskiq/Temporal for durable jobs with idempotency keys"
+    ],
+    "negative": [
+      "All AP-* patterns above",
+      "poetry.lock + no migration doc",
+      "from jose",
+      "session.query",
+      "metadata.create_all",
+      "allow_origins * credentials",
+      "pickle.loads on job payload"
+    ]
+  },
+  "skill_module_bullets": [
+    "Anti-patterns section in references/python.md is a severity table (blocker/major/minor) with remediation — not a blog.",
+    "Blockers: Poetry greenfield, no lock, Black/flake8 stack, on_event, python-jose, jwt without algorithms, hardcoded secrets, requests-in-async, BackgroundTasks for money, dual migrations, create_all prod, CORS*+creds, --reload prod, pooler without mitigations, log secrets, infinite retries.",
+    "Majors: mypy-only greenfield, Any public APIs, thick handlers, create_task leaks, N+1/lazy async, ORM-as-JSON, arq new systems, msgspec-as-default, free-threading default, SQLite-as-Postgres tests.",
+    "Minors: typing.List/Optional, tutorial-only style issues already fixed by ruff UP/I.",
+    "Each ban maps to scan ID (AP-* / PY-*) and blessed alternative from default stack snapshot.",
+    "Mirror TS/Rust culture: validate at boundary, no silence compilers, no leak internals.",
+    "Brownfield: ticketed exceptions with expiry; do not normalize dual-tool forever.",
+    "Workers: pickle ban; infinite-retry ban; DLQ required for poison; no ack-then-forget for critical.",
+    "Data: SQL-first repos; no string-interpolated SQL; service_role still filters tenant in SQL.",
+    "Auth/SSRF: never open fetch; never trust client role alone; 401 vs 403 discipline.",
+    "Deprecation watch list separate from bans — tools that are outdated but may appear in old blogs (uWSGI, nest_asyncio, OAuth implicit).",
+    "Agent evals should include 'reject banned scaffold' cases for top 10 blockers."
+  ],
+  "action_items": [
+    "Publish full AP-* table into references/python.md § Anti-patterns with columns: ID, Severity, Pattern, Remediation, Scan.",
+    "Implement automated detection for all blocker AP-* in engineer-scan; start with jose, on_event, session.query, --reload, CORS*+creds, parse_obj/.dict(), poetry.lock.",
+    "Add CONTRIBUTING or skill note: new bans require research leaf citation + review_by date.",
+    "Create tests/fixtures/banned/ corpus for scanner unit tests.",
+    "Cross-link each major ban to leaf research JSON for rationale depth.",
+    "In audit template, add Critical bucket pre-filled with blocker anti-pattern checks.",
+    "Train agent system prompt with top-15 blockers only (progressive disclosure); full table on-demand in python.md.",
+    "Schedule quarterly review of deprecation_watch (arq, ty, uv audit stability, Granian claims).",
+    "Align gitleaks + secret scanning with AP-AUTH-SECRETS and AP-OBS-SECRETS.",
+    "Document migration playbooks: Poetry→uv, Black→ruff, mypy→basedpyright, jose→PyJWT, Celery-keep vs Taskiq-new.",
+    "When py-docker-deploy research lands, add Docker root/--reload/health anti-patterns if not already covered.",
+    "Ensure typescript.md and rust.md anti-pattern sections cross-link python.md for polyglot PRs."
+  ],
+  "checklist": [
+    "No blocker AP-* in changed Python files",
+    "Scanner clean or exceptions ticketed",
+    "Auth paths use PyJWT+algorithms",
+    "No secrets in diffs",
+    "Durable path for money/webhooks",
+    "Single migration owner",
+    "Prod manifests without --reload",
+    "Tests not using SQLite-as-Postgres for PG apps"
+  ],
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Celery is banned as silent greenfield default but allowed when org-standard — severity major not blocker for presence alone",
+    "mypy banned as greenfield default but valid brownfield — scan should warn not always fail",
+    "Some communities still prefer aiohttp; stack standard is httpx — ban is 'default agent choice' not 'never use'",
+    "Granian is not banned; forcing it without measure is the anti-pattern"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/async/",
+    "https://docs.pydantic.dev/latest/migration/",
+    "https://docs.sqlalchemy.org/en/20/changelog/migration_20.html",
+    "https://pyjwt.readthedocs.io/en/stable/",
+    "https://docs.astral.sh/uv/",
+    "https://docs.astral.sh/ruff/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/MANIFEST.md",
+    "./references/stack-rules.md",
+    "./SKILL.md",
+    "./research/python/outline.yaml",
+    "./research/python/results/",
+    "./research/python/results/py_auth_security.json",
+    "./research/python/results/py_background_jobs.json",
+    "./research/python/results/py_sqlalchemy_async.json",
+    "./references/typescript.md",
+    "./references/rust.md"
+  ]
+}

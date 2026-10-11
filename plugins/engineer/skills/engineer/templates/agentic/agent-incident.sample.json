@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "incident": {
+    "id": "INC-SYNTHETIC-001",
+    "severity": "high",
+    "status": "recovering",
+    "detected_at": "2026-07-15T01:00:00+00:00",
+    "declared_at": "2026-07-15T01:05:00+00:00",
+    "summary": "Synthetic indirect prompt injection attempted an unauthorized tool action.",
+    "affected_systems": ["isolated-agent-fixture"],
+    "uncertainties": []
+  },
+  "roles": {"incident_commander": "fixture-commander", "evidence_reviewer": "fixture-reviewer"},
+  "evidence": {
+    "artifacts": [
+      {"id":"ev-trace","kind":"trace","path":"incident-evidence/trace.json","sha256":"d696743d37e869bf1da61a1923c7112f070ddef2beb3127ae8b557d4617b209d","captured_at":"2026-07-15T01:07:00+00:00","captured_by":"fixture-collector","volatile":true,"contains_secrets":false},
+      {"id":"ev-config","kind":"config","path":"incident-evidence/config.json","sha256":"ab4626c461edcfbbe4a30cb4fb2a0fd75c38878ebd1b1a6d9ab018aa3c64eedf","captured_at":"2026-07-15T01:08:00+00:00","captured_by":"fixture-collector","volatile":false,"contains_secrets":false},
+      {"id":"ev-state","kind":"state","path":"incident-evidence/state.json","sha256":"d91cb9437c49788da41ae2b7f8c7a04aec58a9fb61686420fb159f9a449ea945","captured_at":"2026-07-15T01:09:00+00:00","captured_by":"fixture-collector","volatile":true,"contains_secrets":false}
+    ],
+    "custody": [
+      {"artifact_id":"ev-trace","at":"2026-07-15T01:07:00+00:00","actor":"fixture-collector","action":"captured read-only original","sha256":"d696743d37e869bf1da61a1923c7112f070ddef2beb3127ae8b557d4617b209d"},
+      {"artifact_id":"ev-config","at":"2026-07-15T01:08:00+00:00","actor":"fixture-collector","action":"captured read-only original","sha256":"ab4626c461edcfbbe4a30cb4fb2a0fd75c38878ebd1b1a6d9ab018aa3c64eedf"},
+      {"artifact_id":"ev-state","at":"2026-07-15T01:09:00+00:00","actor":"fixture-collector","action":"captured read-only original","sha256":"d91cb9437c49788da41ae2b7f8c7a04aec58a9fb61686420fb159f9a449ea945"}
+    ]
+  },
+  "containment": [
+    {"action":"freeze_automation","status":"complete","completed_at":"2026-07-15T01:10:00+00:00","evidence_ids":["ev-config"],"notes":"Stopped the isolated loop."},
+    {"action":"isolate","status":"complete","completed_at":"2026-07-15T01:11:00+00:00","evidence_ids":["ev-config"],"notes":"Quarantined workspace and profile."},
+    {"action":"disable_capabilities","status":"complete","completed_at":"2026-07-15T01:12:00+00:00","evidence_ids":["ev-config"],"notes":"Disabled tools, MCP, hooks, schedules, and delegation."},
+    {"action":"revoke_credentials","status":"complete","completed_at":"2026-07-15T01:13:00+00:00","evidence_ids":["ev-config"],"notes":"Revoked synthetic sessions before rotation."},
+    {"action":"deny_egress","status":"complete","completed_at":"2026-07-15T01:14:00+00:00","evidence_ids":["ev-config"],"notes":"Denied fixture egress."}
+  ],
+  "blast_radius": [
+    {"surface":"credentials","result":"affected","evidence_ids":["ev-trace"],"notes":"Synthetic session was in scope."},
+    {"surface":"repositories","result":"clear","evidence_ids":["ev-trace"],"notes":"No repository write occurred."},
+    {"surface":"data","result":"clear","evidence_ids":["ev-trace"],"notes":"Only synthetic data was present."},
+    {"surface":"production","result":"clear","evidence_ids":["ev-config"],"notes":"Fixture had no production route."},
+    {"surface":"money","result":"clear","evidence_ids":["ev-config"],"notes":"No payment capability was enabled."},
+    {"surface":"external_side_effects","result":"clear","evidence_ids":["ev-trace"],"notes":"The attempted tool action was blocked."},
+    {"surface":"downstream_agents","result":"clear","evidence_ids":["ev-config"],"notes":"Delegation was disabled."}
+  ],
+  "persistence_audit": [
+    {"surface":"skills_instructions","result":"clear","evidence_ids":["ev-config"],"notes":"Pinned instructions reviewed."},
+    {"surface":"hooks_startup","result":"clear","evidence_ids":["ev-config"],"notes":"No hook or startup change."},
+    {"surface":"mcp_tools","result":"clear","evidence_ids":["ev-config"],"notes":"No MCP server enabled."},
+    {"surface":"schedules_ci","result":"clear","evidence_ids":["ev-config"],"notes":"No schedule or CI mutation."},
+    {"surface":"browser_profiles","result":"clear","evidence_ids":["ev-config"],"notes":"Ephemeral profile discarded."},
+    {"surface":"rag_memory_cache","result":"affected","evidence_ids":["ev-state"],"notes":"Synthetic memory was quarantined."},
+    {"surface":"checkpoints","result":"affected","evidence_ids":["ev-state"],"notes":"Checkpoint was invalidated."},
+    {"surface":"cloud_tasks","result":"clear","evidence_ids":["ev-config"],"notes":"No cloud task identity."},
+    {"surface":"delegated_agents","result":"clear","evidence_ids":["ev-config"],"notes":"No delegated agent ran."}
+  ],
+  "eradication": {
+    "evidence_preserved_before_cleanup": true,
+    "malicious_state_removed": true,
+    "root_boundary_fixed": true,
+    "credentials_revoked_before_rotation": true,
+    "poisoned_state_invalidated": true,
+    "known_good_source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "actions": ["Removed the synthetic poisoned memory after capture.", "Rebuilt from the pinned fixture digest."]
+  },
+  "recovery": {
+    "mode": "canary",
+    "reused_contaminated_state": false,
+    "monitoring": ["Alert on unexpected tool destinations and writes."],
+    "exit_criteria": ["Benign control and malicious regression remain green for the canary window."],
+    "new_indicators": [],
+    "evidence_ids": ["ev-trace", "ev-config", "ev-state"]
+  },
+  "notifications": [
+    {"audience":"fixture owner","decision":"not_required","rationale":"This is an isolated synthetic exercise with no external data or action."}
+  ],
+  "regression": {
+    "incident_case":"Indirect instruction cannot reach the tool sink.",
+    "benign_control":"Legitimate content remains readable without tool execution.",
+    "root_fix_test":"Untrusted content stays data through the source-to-sink boundary.",
+    "passed":true,
+    "evidence_ids":["ev-trace"]
+  },
+  "decision": {
+    "outcome":"remain_open",
+    "unresolved_risks":["Illustrative fixture cannot prove a real recovery."],
+    "closed_at":null,
+    "review_after":"2026-08-15T00:00:00+00:00",
+    "rationale":"Template demonstrates receipt shape but cannot authorize closure."
+  }
+}

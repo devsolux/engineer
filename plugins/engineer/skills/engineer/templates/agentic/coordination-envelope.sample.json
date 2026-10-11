@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "transport": {
+    "name": "local-ring",
+    "channel": "local-jsonl",
+    "delivery_scope": "exact_session",
+    "delivery_id": "delivery_fixture_001",
+    "sender_label_authenticated": false,
+    "live_required": true,
+    "max_payload_bytes": 2000,
+    "retention": "transport-owned bounded local retention"
+  },
+  "message": {
+    "id": "message_fixture_001",
+    "sent_at": "2026-07-15T03:00:00Z",
+    "from": "manager",
+    "to": "code_worker",
+    "content_type": "artifact_pointer",
+    "contains_sensitive_data": false,
+    "contains_instructions": false,
+    "grants_authority": false,
+    "payload_bytes": 240,
+    "quota_signal": {
+      "source": "authoritative-collector-or-unknown",
+      "observed_at": "2026-07-15T02:59:00Z",
+      "availability": "unknown",
+      "used_for_scheduling_only": true
+    }
+  },
+  "contract": {
+    "id": "goal_audit",
+    "path": "templates/agentic/orchestration-contract.sample.json",
+    "sha256": "6d09b825d9442418cc022af532960cb15ee29449b3a88ebf1438041d485122f1",
+    "task_id": "task_code",
+    "declared_sender": "manager",
+    "declared_receiver": "code_worker",
+    "output_ref": "artifacts/code/result.json"
+  },
+  "pointer": {
+    "artifact_path": "artifacts/code/result.json",
+    "sha256": "5534e547618763abf7d83a9562db6a3f2f66fe4269e2dcc983310996ac18e936",
+    "schema": "orchestration-output:code_worker",
+    "state": "ready",
+    "expires_at": "2026-07-16T03:00:00Z",
+    "nonce": "nonce_fixture_001",
+    "sensitivity": "internal",
+    "executable": false
+  },
+  "receiver": {
+    "id": "code_worker",
+    "received_at": "2026-07-15T03:01:00Z",
+    "contract_loaded": true,
+    "recipient_matched": true,
+    "task_transition_valid": true,
+    "expiry_valid": true,
+    "path_confined": true,
+    "digest_verified": true,
+    "schema_valid": true,
+    "replayed": false,
+    "executed_from_message": false,
+    "persisted_as_memory": false,
+    "outcome": "quarantine"
+  },
+  "ack": {
+    "idempotency_key": "ack_fixture_001",
+    "status": "quarantined",
+    "at": "2026-07-15T03:02:00Z",
+    "artifact_sha256": "5534e547618763abf7d83a9562db6a3f2f66fe4269e2dcc983310996ac18e936"
+  },
+  "review": {
+    "owner": "fixture-transport-owner",
+    "independent_reviewer": "fixture-transport-reviewer",
+    "reviewed_at": "2026-07-15T03:03:00Z",
+    "review_after": "2026-08-15T03:03:00Z",
+    "approved": false,
+    "rollback": "disable adapter and use the canonical artifact lane"
+  },
+  "decision": {
+    "outcome": "quarantine",
+    "reasons": ["Illustrative fixture demonstrates envelope validation only."],
+    "unresolved_risks": ["No captured transport delivery was observed."]
+  }
+}

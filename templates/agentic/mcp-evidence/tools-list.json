@@ -1,0 +1,42 @@
+{
+  "tools": [
+    {
+      "name": "get_order",
+      "description": "Read one synthetic order visible to the caller.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {"order_id": {"type": "string"}},
+        "required": ["order_id"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "status": {"type": "string"}
+        },
+        "required": ["order_id", "status"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_order_note",
+      "description": "Update a synthetic order note after explicit confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "note": {"type": "string"}
+        },
+        "required": ["order_id", "note"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {"updated": {"type": "boolean"}},
+        "required": ["updated"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

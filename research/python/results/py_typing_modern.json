@@ -1,0 +1,57 @@
+{
+  "name": "Modern Python typing (Protocols, TypedDict, PEP 695)",
+  "item_id": "py-typing-modern",
+  "cluster": "language",
+  "priority": "P0",
+  "short_definition": "2026 default static typing style for Python ≥3.12: PEP 695 type-parameter syntax and type aliases, structural Protocols, TypedDict for JSON-shaped dicts, builtins list/dict/| unions, and boundary validation with Pydantic — checked by basedpyright in CI (ty optional in editor), not mypy-first greenfield.",
+  "scope_in": "PEP 695 generics/aliases; Protocol vs ABC; TypedDict/NotRequired/ReadOnly/Unpack; type vs TypeAlias; never Any policy; cast/assert_type discipline; py.typed; gradual typing for legacy; interop with Pydantic models; mapping to TS interfaces/Zod at boundaries.",
+  "scope_out": "Full basedpyright config matrix (py-typecheck); Pydantic v2 deep dive (py-pydantic-v2); runtime performance of typing; mypy plugin ecosystem as default; type stubs authoring for third-party C extensions beyond consuming typeshed.",
+
+  "defaults": "requires-python >=3.12. Prefer PEP 695: `def f[T](x: T) -> T`, `class Repo[T]:`, `type Result[T] = Ok[T] | Err`. Use `X | None` not Optional; `list[str]` not List. Protocols for duck-typed deps (repositories, clock, HTTP client ports). TypedDict for wire JSON dicts when not using Pydantic models; Pydantic BaseModel for validated API/domain boundaries. Avoid Any; use unknown-equivalent patterns: object + narrow, TypeVar, or Protocol. New TypeVar/Generic[] only when supporting <3.12 (don't). Export public types from package; ship py.typed. CI: basedpyright (strict-ish); editor: basedpyright or ty for speed. Align mental model with typescript.md: domain types vs DTOs; validate at edges.",
+  "decision_gates": "USE Protocol: interchangeable implementations, test fakes, hex ports. USE TypedDict: closed JSON objects without full validation yet / kwargs typing with Unpack. USE Pydantic: external input, settings, serialization. USE ABC: true shared implementation hierarchy needing isinstance registration. USE PEP 695 aliases for unions/results reused widely. DO NOT Protocol everything that should be a concrete dataclass. DO NOT TypedDict when you need runtime validation — use Pydantic. DO NOT mypy as greenfield default if basedpyright/ty stack chosen.",
+  "do_dont": "DO: annotate public functions; PEP 695 generics; Protocol for IO ports; TypedDict total=False/NotRequired carefully; type aliases for Result-like unions; py.typed. DON'T: from typing import List, Dict, Optional (unless <3.9 — not our pin); bare Any to silence; type: ignore without code; cast without comment; mutable class vars without ClassVar; leak ORM models as API types; hand-sync TS interfaces to Python without codegen/contract.",
+  "code_skeleton": "from __future__ import annotations\n\nfrom typing import Protocol, TypedDict, NotRequired, runtime_checkable\nfrom dataclasses import dataclass\n\ntype UserId = str\ntype Result[T] = tuple[T, None] | tuple[None, str]\n\nclass UserDto(TypedDict):\n    id: UserId\n    name: str\n    email: NotRequired[str]\n\nclass UserRepo(Protocol):\n    async def get(self, user_id: UserId) -> UserDto | None: ...\n    async def save(self, user: UserDto) -> None: ...\n\ndef first[T](items: list[T]) -> T | None:\n    return items[0] if items else None\n\n@dataclass(frozen=True, slots=True)\nclass User:\n    id: UserId\n    name: str\n\ndef to_dto(user: User) -> UserDto:\n    return {\"id\": user.id, \"name\": user.name}\n\n# PEP 695 generic class\nclass Cache[K, V]:\n    def __init__(self) -> None:\n        self._data: dict[K, V] = {}\n    def get(self, key: K) -> V | None:\n        return self._data.get(key)",
+  "failure_modes": "1) Any contagion silences real bugs. 2) Protocol mismatch only at typecheck — runtime still fails if not tested. 3) TypedDict total defaults surprise (missing keys). 4) PEP 695 syntax breaks if someone runs 3.11. 5) Circular imports from typing-only modules without TYPE_CHECKING / future annotations. 6) Pydantic model vs TypedDict drift. 7) Invariant list mutation errors misunderstood → incorrect cast.",
+  "anti_patterns": "Agents must not: emit untyped public APIs; use List/Dict/Optional under 3.12+; default to Any; use TypeVar('T') boilerplate when PEP 695 works; # type: ignore without reason; isinstance hell instead of Protocol where structural fit; duplicate DTO fields in 5 modules; treat typing as optional in services.",
+
+  "tools": "Primary: basedpyright (CI), ty (editor optional, Astral), ruff (UP rules pyupgrade-style), typing/typing_extensions only when backport needed (avoid if ≥3.12). Alternatives: mypy (legacy/brownfield with heavy plugin needs), pyright stock. Runtime: Pydantic v2 for validation.",
+  "versions_as_of": "as_of 2026-07-13: Python 3.12–3.14 supported; PEP 695 since 3.12; basedpyright 1.39.9; ty 0.0.58 (pre-1.0 — editor assist, not sole CI gate yet); ruff 0.15.x with pyupgrade/UP rules. Prefer language features from stdlib typing docs current 3.x.",
+  "config_snippets": "# pyproject.toml\n[project]\nrequires-python = \">=3.12\"\n\n[tool.basedpyright]\ninclude = [\"src\"]\ntypeCheckingMode = \"standard\"  # or strict when ready\nreportAny = \"warning\"\nreportUnknownParameterType = \"warning\"\n\n[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\", \"UP\", \"B\", \"ANN\"]  # ANN optional if basedpyright owns annotations\n\n# CI\n# uv run basedpyright\n# uv run ruff check",
+  "deprecation_watch": "typing.List/Dict/Optional/Tuple in new code; TypeVar+Generic boilerplate for 3.12+; mypy as default greenfield; typing_extensions for features already in 3.12; comment-based type hints; untyped **kwargs without TypedDict Unpack.",
+
+  "ts_boundary": "Map conceptually: Protocol ≈ interface; TypedDict ≈ type shape for JSON; Pydantic ≈ Zod at runtime. Contract-first OpenAPI generates TS types (typescript.md) — do not hand-sync. Domain vs DTO split mirrors TS guidance. Prefer Result unions similar to TS Result<T>.",
+  "rust_boundary": "Rust enums/Result are stronger; Python uses unions + conventions. When correctness-critical parsers needed, implement in Rust and expose via API — don't over-type fragile Python. Shared schema still OpenAPI/protobuf.",
+  "supabase_boundary": "DB rows: TypedDict or Pydantic models matching generated schema; never trust PostgREST JSON without validation at boundary. Keep snake_case DTOs at DB edge; map to domain types inside service (same as TS domain vs DTO rule).",
+  "boundary_contracts": "OpenAPI schemas ↔ Pydantic models source of truth for HTTP; JSON Schema for events; env via pydantic-settings typed model. MCP tool args: explicit TypedDict or Pydantic, never dict[str, Any].",
+  "decision_matrix_row": "Problem: structural ports/fakes → Python Protocol. Problem: validated HTTP body → Pydantic (Python) / Zod (TS). Problem: closed JSON dict typing without validators → TypedDict. Problem: max memory-safety parser → Rust. Problem: UI state types → TypeScript only.",
+
+  "threats": "Type holes (Any, unchecked cast) give false security; confused deputies via structurally typed Protocols accepting malicious objects if runtime not validated; desync between types and runtime validation enabling injection at edges.",
+  "mitigations": "Validate all external input at runtime (Pydantic); forbid bare Any in public APIs via checker settings; no cast on untrusted data; CI typecheck gate; pair Protocols with tests on real implementations.",
+  "agent_codegen_policy": "MUST: annotate public functions/methods; use PEP 695 and | unions; Protocol for ports; TypedDict or Pydantic for wire data; py.typed on packages. MUST NOT: Any to silence; List/Dict/Optional imports; untyped **kwargs; type: ignore without code; skip basedpyright in service templates.",
+
+  "tests_required": "Typecheck in CI (basedpyright). Unit tests for runtime validation paths (Pydantic). Protocol fakes in tests must match Protocol. Optional: typing pytest plugins not required if checker is strict.",
+  "ci_gates": "basedpyright clean (or agreed severity); ruff UP for modern syntax; no new type: ignore without review label.",
+  "skill_scan_signals": "POSITIVE: PEP 695 syntax, Protocol ports, TypedDict/Pydantic DTOs, py.typed, | None, basedpyright config. NEGATIVE: rampant Any; typing.List; untyped public API; only runtime without types; mypy.ini without basedpyright in new repos; # type: ignore sprawl.",
+
+  "skill_module_bullets": "- Python ≥3.12: PEP 695 generics/aliases; list/dict/X|Y builtins; no typing.List/Optional in new code.\n- Protocol for ports; TypedDict for JSON shapes; Pydantic for validated boundaries.\n- Domain types vs DTOs (mirror TS module); map at edges.\n- CI basedpyright; ty optional editor; mypy not greenfield default.\n- py.typed on libraries; ban Any in public APIs.",
+  "action_items": "1) Typing section in references/python.md. 2) basedpyright defaults in template pyproject. 3) Scan rules for typing.List/Any/public untyped defs. 4) Examples Protocol+TypedDict+PEP695. 5) Cross-link py-typecheck and py-pydantic-v2.",
+  "checklist": "[ ] requires-python >=3.12\n[ ] Public APIs annotated\n[ ] PEP 695 used for new generics\n[ ] No unnecessary typing.List/Dict/Optional\n[ ] Protocols for swappable deps\n[ ] Runtime validation at external edges\n[ ] py.typed present for packages\n[ ] basedpyright in CI\n[ ] Minimal Any / justified ignores only\n[ ] DTO vs domain separation",
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "ty is fast but pre-1.0 (0.0.x as of research) — keep basedpyright as CI source of truth until ty stable. mypy still better for some plugin ecosystems (Django) — brownfield exception. TypedDict vs Pydantic: teams disagree; policy is Pydantic at trust boundaries, TypedDict for lightweight internal shapes.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://peps.python.org/pep-0695/",
+    "https://docs.python.org/3/library/typing.html",
+    "https://typing.python.org/en/latest/",
+    "https://github.com/DetachHead/basedpyright",
+    "https://docs.astral.sh/ty/"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md"
+  ]
+}

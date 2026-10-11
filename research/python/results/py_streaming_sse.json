@@ -1,0 +1,238 @@
+{
+  "name": "SSE streaming for LLM tokens and server push",
+  "item_id": "py-streaming-sse",
+  "cluster": "web",
+  "short_definition": "Server-Sent Events (SSE) are the default way to stream LLM tokens and one-way server push from FastAPI to browsers and BFF clients over HTTP. As of FastAPI 0.135+, use fastapi.sse.EventSourceResponse (built-in; current FastAPI 0.139.0). For advanced disconnect/shutdown control, sse-starlette 3.4.5 remains a strong alternative. Prefer SSE over WebSockets for token streams unless true bidirectional channel is required.",
+  "scope_in": [
+    "fastapi.sse EventSourceResponse and ServerSentEvent",
+    "sse-starlette production options (ping, send_timeout, shutdown)",
+    "LLM token streaming patterns (event types: token, error, done)",
+    "Client disconnect cancellation and resource cleanup",
+    "Proxy buffering (nginx X-Accel-Buffering, timeouts)",
+    "Auth on streaming endpoints and backpressure basics",
+    "POST+SSE for chat/MCP-style protocols"
+  ],
+  "scope_out": [
+    "WebRTC / binary media streaming",
+    "Next.js RSC Suspense streaming (frontend-streaming.md)",
+    "Full WebSocket app design",
+    "Provider-specific SDK deep dives (OpenAI/Anthropic) beyond stream consumption",
+    "gRPC streaming"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "api": "from fastapi.sse import EventSourceResponse, ServerSentEvent (FastAPI ≥0.135)",
+    "alt": "sse-starlette EventSourceResponse when you need explicit shutdown_event/send_timeout knobs",
+    "handler": "async generator yield Pydantic models or ServerSentEvent; response_class=EventSourceResponse",
+    "events": "token | error | done (raw_data='[DONE]' optional for OpenAI-like clients)",
+    "headers": "Framework sets Cache-Control: no-cache and X-Accel-Buffering: no; keep-alive ping ~15s",
+    "method": "POST for chat with body; GET for subscribe/feeds; EventSource browser API is GET-only so BFF/fetch often used for POST",
+    "cancel": "On client disconnect, cancel upstream LLM task; don't continue billing after disconnect",
+    "auth": "Depends before stream starts; don't stream secrets; re-check authZ for resource id",
+    "gzip": "Avoid GZipMiddleware buffering SSE; exclude stream routes (py-middleware-stack)"
+  },
+  "decision_gates": {
+    "use_sse_when": [
+      "LLM/chat token streaming",
+      "One-way progress, logs, notifications over HTTP",
+      "Browser or fetch clients that understand text/event-stream"
+    ],
+    "use_websocket_when": [
+      "True bidirectional interactive protocol",
+      "Binary frames or custom multiplexed channels"
+    ],
+    "use_json_lines_when": [
+      "Non-browser pipelines that prefer NDJSON without SSE field framing"
+    ],
+    "do_not": [
+      "Don't use BackgroundTasks to 'stream' to nowhere",
+      "Don't buffer entire model response then fake stream",
+      "Don't apply response cache middleware to SSE routes"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Yield small events frequently; send done/error terminal events",
+      "Propagate cancellation to provider streams (aclose / cancel task)",
+      "Set proxy read timeouts longer than max generation time",
+      "Include id on events if clients resume with Last-Event-ID",
+      "Rate limit and auth stream endpoints (cost control)",
+      "Structured events as JSON in data field via Pydantic"
+    ],
+    "dont": [
+      "Don't block event loop in generator (no sync SDK without to_thread)",
+      "Don't leave orphaned LLM requests after disconnect",
+      "Don't log full token streams with PII at info level",
+      "Don't compress/buffer SSE at nginx without X-Accel-Buffering off",
+      "Don't use WebSocket by default 'because AI demos did'",
+      "Don't ignore send failures (broken pipe) as success"
+    ]
+  },
+  "code_skeleton": "from collections.abc import AsyncIterator\nfrom typing import Annotated\n\nfrom fastapi import Depends, FastAPI, Header, HTTPException\nfrom fastapi.sse import EventSourceResponse, ServerSentEvent\nfrom pydantic import BaseModel, Field\n\napp = FastAPI()\n\nclass ChatIn(BaseModel):\n    prompt: str = Field(min_length=1, max_length=8000)\n\nasync def get_user() -> str:\n    return \"user_123\"  # real JWT dep\n\nCurrentUser = Annotated[str, Depends(get_user)]\n\nasync def llm_tokens(prompt: str) -> AsyncIterator[str]:\n    # replace with provider stream; yield tokens\n    for word in prompt.split():\n        yield word + \" \"\n\n@app.post(\"/v1/chat/stream\", response_class=EventSourceResponse)\nasync def chat_stream(\n    body: ChatIn,\n    user: CurrentUser,\n) -> AsyncIterator[ServerSentEvent]:\n    try:\n        async for token in llm_tokens(body.prompt):\n            yield ServerSentEvent(data={\"token\": token, \"user\": user}, event=\"token\")\n        yield ServerSentEvent(raw_data=\"[DONE]\", event=\"done\")\n    except Exception:\n        yield ServerSentEvent(data={\"message\": \"generation failed\"}, event=\"error\")\n        raise\n\n@app.get(\"/v1/feed\", response_class=EventSourceResponse)\nasync def feed(\n    last_event_id: Annotated[int | None, Header()] = None,\n) -> AsyncIterator[ServerSentEvent]:\n    start = (last_event_id or -1) + 1\n    for i in range(start, start + 3):\n        yield ServerSentEvent(data={\"n\": i}, id=str(i), event=\"tick\")\n",
+  "failure_modes": [
+    "Proxy buffers entire stream → client sees one dump at end",
+    "Worker killed by idle timeouts during long generation",
+    "Upstream LLM continues after client abort → cost leak",
+    "GZip/middleware consumes body and breaks event framing",
+    "Unhandled exception mid-stream without error event",
+    "Starlette/uvicorn reload drops connections mid-demo",
+    "Too-large events / unbounded prompt causing memory spikes"
+  ],
+  "anti_patterns": [
+    "Collect list of tokens then yield once",
+    "StreamingResponse with wrong content-type and hand-rolled half SSE",
+    "Auth only on a separate non-stream route",
+    "Infinite generator without disconnect checks (pre-built-in edge cases)",
+    "Notebooks as production streaming servers"
+  ],
+
+  "tools": {
+    "primary": ["fastapi.sse (built-in ≥0.135)", "sse-starlette"],
+    "clients": ["browser EventSource (GET)", "fetch ReadableStream", "httpx.AsyncClient.stream"],
+    "related": ["anyio cancellation", "httpx for upstream provider streams"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "fastapi": "0.139.0 (native SSE since 0.135.0)",
+    "starlette": "1.3.1",
+    "sse-starlette": "3.4.5",
+    "httpx": "0.28.1",
+    "anyio": "4.14.1",
+    "uvicorn": "0.51.0"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"fastapi>=0.139,<0.140\",\n  \"uvicorn[standard]>=0.51,<0.52\",\n  # optional advanced: \"sse-starlette>=3.4,<4\",\n  \"httpx>=0.28,<0.29\",\n]\n",
+    "nginx": "# location /v1/chat/ {\n#   proxy_buffering off;\n#   proxy_cache off;\n#   proxy_read_timeout 3600s;\n#   proxy_set_header Connection '';\n#   chunked_transfer_encoding on;\n# }\n",
+    "uvicorn": "uv run uvicorn mypkg.main:app --timeout-keep-alive 75 --timeout-graceful-shutdown 15"
+  },
+  "deprecation_watch": [
+    "Only documenting sse-starlette while ignoring fastapi.sse for new FastAPI ≥0.135 apps",
+    "Fake streaming by returning full JSON",
+    "Long-polling as default for tokens when SSE available"
+  ],
+
+  "ts_boundary": "Browser UI often consumes streams via fetch to Next Route Handler which proxies to Python, or directly to Python with CORS. EventSource cannot set custom Authorization headers easily — prefer fetch streams for Bearer auth. Next RSC streaming is unrelated UI shell streaming; LLM tokens are API SSE. Type events in shared OpenAPI/event schema when generating clients.",
+  "rust_boundary": "Rust can terminate SSE/proxy at the edge for ultra-high concurrency; Python remains ideal for LLM orchestration. Same event contract if dual implementation.",
+  "supabase_boundary": "Don't stream through Postgres LISTEN as a substitute for LLM SSE without need. Persist final messages to Supabase after stream completes; optional Realtime for multi-tab UX separate from generation stream.",
+  "boundary_contracts": [
+    "Content-Type: text/event-stream",
+    "Event names: token|error|done (+ schema for data JSON)",
+    "Auth before first byte when possible",
+    "Idempotency/conversation id in request body for POST streams",
+    "Document max duration and disconnect cancel semantics"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Stream LLM tokens / one-way server events",
+    "python": "FastAPI fastapi.sse EventSourceResponse default",
+    "ts": "fetch ReadableStream / EventSource; Next proxy optional",
+    "rust": "Axum SSE for edge fan-out when needed"
+  },
+
+  "threats": [
+    "Unauthenticated expensive generation (cost DoS)",
+    "Prompt injection reflected into other systems mid-stream",
+    "Token/PII leakage via verbose logging or shared caches",
+    "Connection holding as resource exhaustion",
+    "Cache poisoning if CDNs cache streams"
+  ],
+  "mitigations": [
+    "Auth + rate limits + max tokens/duration",
+    "Private no-store headers (framework defaults help)",
+    "Cancel upstream on disconnect",
+    "Per-user concurrency caps",
+    "Sanitize logs; don't cache SSE at CDN"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "response_class=EventSourceResponse with async generator",
+      "Terminal done or error event",
+      "Auth dependency on stream routes",
+      "Note on proxy buffering for deploy"
+    ],
+    "must_not_generate": [
+      "WebSocket scaffold as default for simple token stream",
+      "Buffer-all-then-return for chat UX",
+      "GZip on SSE routes",
+      "Stream without any rate limit on public AI endpoints"
+    ]
+  },
+
+  "tests_required": [
+    "ASGI test client reads multiple SSE events in order",
+    "done event present on success",
+    "Auth failure before stream (401)",
+    "Disconnect/cancellation path (unit with mock generator)",
+    "error event or status on upstream failure",
+    "Last-Event-ID resume if supported"
+  ],
+  "ci_gates": [
+    "pytest stream tests",
+    "ruff + basedpyright",
+    "Optional integration against mock LLM stream"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "from fastapi.sse import EventSourceResponse",
+      "response_class=EventSourceResponse",
+      "ServerSentEvent(",
+      "event=\"token\" or event='token'"
+    ],
+    "negative": [
+      "WebSocket for pure token stream without bidirectional need",
+      "yield entire completion once only",
+      "GZipMiddleware without SSE exclusion",
+      "missing done/error terminal event pattern on chat routes"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "FastAPI native SSE via fastapi.sse since 0.135; pin FastAPI 0.139.x as_of 2026-07-13",
+    "SSE default for LLM tokens; WebSocket only if bidirectional required",
+    "Ping/keep-alive and X-Accel-Buffering: no handled by framework",
+    "Cancel provider stream on client disconnect to control cost",
+    "POST+/sse for chat bodies; EventSource limited to GET",
+    "Exclude SSE from GZip and response caches"
+  ],
+  "action_items": [
+    "python.md SSE section with fastapi.sse first, sse-starlette second",
+    "Scan signals for missing EventSourceResponse on stream routes",
+    "Deploy notes for nginx buffering",
+    "Cross-link py-middleware-stack gzip exclusion"
+  ],
+  "checklist": [
+    "EventSourceResponse used",
+    "Auth + rate limit on AI streams",
+    "Terminal done/error events",
+    "Disconnect cancels upstream",
+    "Proxy buffering disabled",
+    "No GZip on stream paths",
+    "Prompt size limits",
+    "Tests for multi-event stream"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Older posts say FastAPI has no SSE and require sse-starlette only — true before 0.135; skill prefers built-in for greenfield FastAPI 0.139",
+    "EventSource vs fetch: browsers' EventSource lacks custom headers → many apps use fetch streams for auth",
+    "WebSocket tutorials still dominate AI demos despite SSE simplicity for one-way tokens"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/tutorial/server-sent-events/",
+    "https://github.com/sysid/sse-starlette",
+    "https://html.spec.whatwg.org/multipage/server-sent-events.html",
+    "https://developer.mozilla.org/en-US/docs/Web/API/EventSource",
+    "https://pypi.org/project/sse-starlette/",
+    "https://pypi.org/project/fastapi/"
+  ],
+  "local_sources": [
+    "./references/backend-api.md",
+    "./references/frontend-streaming.md",
+    "./references/api-data-flows.md",
+    "./research/python/results/py_middleware_stack.json",
+    "./research/python/outline.yaml"
+  ]
+}

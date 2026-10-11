@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "goal": {"id":"goal_audit","summary":"Audit two independent surfaces and synthesize evidence.","requirements":["req_code","req_ui","req_report"],"multi_agent_justification":"Code and rendered UI evidence are separable and use isolated lanes."},
+  "limits": {"max_agents":3,"max_depth":2,"max_fanout":2,"max_steps":40,"max_cost_usd":4.0,"max_wall_seconds":900,"max_retries_per_task":2,"no_progress_limit":2,"synthesis_reserve_cost_usd":1.0},
+  "agents": [
+    {"id":"manager","role":"synthesizer","parent_id":null,"task":"Delegate isolated audits, join evidence, and verify the report.","requirements":["req_report"],"tools":["read","search","edit","browser"],"denied_tools":["network","message","deploy","money","permission_admin","shell"],"destinations":["artifacts/final"],"secret_classes":[],"approval_class":"local_write","revocation_handle":"lease-manager","budget":{"max_steps":20,"max_cost_usd":2.0,"max_wall_seconds":900,"max_descendants":2},"output_schema":{"type":"object","required":["findings","evidence"]},"stop_conditions":["requirements_evidenced","budget_exhausted","unsafe_action","no_progress"]},
+    {"id":"code_worker","role":"code auditor","parent_id":"manager","task":"Inspect code without modifying the product tree.","requirements":["req_code"],"tools":["read","search"],"denied_tools":["edit","shell","browser","network","message","deploy","money","permission_admin"],"destinations":["artifacts/code"],"secret_classes":[],"approval_class":"none","revocation_handle":"lease-code","budget":{"max_steps":8,"max_cost_usd":1.0,"max_wall_seconds":300,"max_descendants":1},"output_schema":{"type":"object","required":["findings","artifact_hash"]},"stop_conditions":["artifact_written","budget_exhausted","unsafe_action","no_progress"]},
+    {"id":"ui_worker","role":"browser auditor","parent_id":"manager","task":"Inspect the isolated rendered fixture and save evidence.","requirements":["req_ui"],"tools":["read","browser"],"denied_tools":["edit","shell","network","message","deploy","money","permission_admin"],"destinations":["artifacts/ui","http://127.0.0.1:3000"],"secret_classes":[],"approval_class":"fixture_browser","revocation_handle":"lease-ui","budget":{"max_steps":8,"max_cost_usd":1.0,"max_wall_seconds":300,"max_descendants":1},"output_schema":{"type":"object","required":["findings","screenshots"]},"stop_conditions":["artifact_written","budget_exhausted","unsafe_action","no_progress"]}
+  ],
+  "delegations": [
+    {"from":"manager","to":"code_worker","task_id":"task_code","input_refs":["fixture/repo"],"context_allowlist":["goal","req_code","read_policy"],"authority_tools":["read","search"],"output_ref":"artifacts/code/result.json","evidence_required":["file references","artifact hash"],"approval_required":false},
+    {"from":"manager","to":"ui_worker","task_id":"task_ui","input_refs":["fixture/url"],"context_allowlist":["goal","req_ui","browser_policy"],"authority_tools":["read","browser"],"output_ref":"artifacts/ui/result.json","evidence_required":["screenshot hash","console summary"],"approval_required":false}
+  ],
+  "lanes": [
+    {"agent_id":"manager","read":["artifacts/code","artifacts/ui"],"write":["artifacts/final"],"worktree":"worktrees/manager","browser_profile":"profiles/manager","artifact_dir":"artifacts/final"},
+    {"agent_id":"code_worker","read":["fixture/repo"],"write":["artifacts/code"],"worktree":"worktrees/code","browser_profile":"profiles/code","artifact_dir":"artifacts/code"},
+    {"agent_id":"ui_worker","read":["fixture/web"],"write":["artifacts/ui"],"worktree":"worktrees/ui","browser_profile":"profiles/ui","artifact_dir":"artifacts/ui"}
+  ],
+  "join": {"strategy":"all","quorum":null,"timeout_seconds":360,"on_missing":"partial_with_disclosure","conflict_resolution":"Prefer direct end-state evidence; disclose unresolved conflicts.","cancel_remaining":true},
+  "failure_policy": {"retry_only_transient":true,"idempotency_required":true,"circuit_breakers":["correlated worker failure","fan-out or cost limit","invalid shared state","repeated no-progress"],"heartbeat_seconds":15,"lease_seconds":60,"cancel_descendants":true,"orphan_detection":true,"human_escalation":"Stop and request the goal owner when authority, evidence, or safe recovery is unclear."},
+  "trace_policy": {"workflow_trace":true,"parented_spans":true,"events":["agent","handoff","tool","guardrail","join","cancel","approval"],"include_sensitive_data":false,"redaction":"Replace payloads with typed redacted references and hashes.","artifact_hashes":true,"retention":"Retain fixture traces for 30 days."},
+  "synthesis": {"agent_id":"manager","provenance_required":true,"conflicts_disclosed":true,"missing_results_disclosed":true,"independent_verification":true,"final_evidence_ref":"artifacts/final/report.json"},
+  "review": {"owner":"fixture-owner","independent_reviewer":"fixture-reviewer","approved":false,"review_after":"2026-08-15","rollback":"Cancel all leases and discard isolated fixture lanes."}
+}

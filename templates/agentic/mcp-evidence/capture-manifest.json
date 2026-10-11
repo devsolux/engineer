@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "compiled_transcript",
+  "transcript": {
+    "path": "transcript.jsonl",
+    "sha256": "acf8e75750fb5c6148de7faf30b2ff80cb16008e8654b6a88e2069f66c14f616",
+    "redacted": true
+  },
+  "protocol": {
+    "protocol_version": "2025-11-25",
+    "transport": "streamable_http",
+    "session_id_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+    "client_info": {"name": "fixture-client", "version": "1.0.0"},
+    "server_info": {"name": "fixture-orders-mcp", "version": "1.0.0"},
+    "capabilities": {
+      "tools": {"listChanged": true},
+      "resources": {"subscribe": false, "listChanged": true},
+      "prompts": {"listChanged": true},
+      "completions": {}
+    },
+    "message_count": 17,
+    "request_count": 8,
+    "pagination": {
+      "tools/list": {"pages": 1, "complete": true, "cursor_sha256": []},
+      "resources/list": {"pages": 1, "complete": true, "cursor_sha256": []},
+      "resources/templates/list": {"pages": 1, "complete": true, "cursor_sha256": []},
+      "prompts/list": {"pages": 1, "complete": true, "cursor_sha256": []}
+    },
+    "initialized_seq": 3
+  },
+  "outputs": {
+    "tools_list": {
+      "path": "tools-list.json",
+      "canonical_sha256": "e3738adddfcd18fdbe3dda2289e91d72a017faf5833bd955d26d46c55d3b0182"
+    },
+    "server_content": {
+      "path": "server-content.json",
+      "canonical_sha256": "28448b2c36eb79a3b872d1db25a505f40da36989c5bdf3aeb330b9a3e007e542"
+    }
+  },
+  "compiler": {"name": "engineer-compile-mcp-transcript", "schema_version": 1}
+}

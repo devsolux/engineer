@@ -1,0 +1,72 @@
+{
+  "skill_name": "engineer",
+  "probe_token": "[routing-probe:alpha]",
+  "activation_marker": "ENGINEER_ROUTING_ACTIVE_v1",
+  "scenarios": [
+    {
+      "id": "core-signup-auth",
+      "source_eval": 1,
+      "prompt": "engineer — build signup with email/password for Next.js + Supabase. Advise with a plan and short code sketch only; do not create or edit any files.",
+      "expect_activation": true,
+      "assert_any": ["zod", "server action", "getuser", "rls", "middleware"],
+      "forbid_any": []
+    },
+    {
+      "id": "core-design-tokens",
+      "source_eval": 3,
+      "prompt": "engineer — set up design tokens for a new shadcn + Tailwind v4 app. Advise in text only; do not create or edit any files.",
+      "expect_activation": true,
+      "assert_any": ["oklch", "semantic", "@theme", "contrast"],
+      "forbid_any": []
+    },
+    {
+      "id": "core-rust-api",
+      "source_eval": 5,
+      "prompt": "engineer api — design an Axum service for a high-throughput API and walk me through the architecture with a short handler sketch. Text only; do not create or edit any files.",
+      "expect_activation": true,
+      "assert_any": ["graceful shutdown", "tracing", "timeout", "unwrap"],
+      "forbid_any": []
+    },
+    {
+      "id": "root-cause-retry",
+      "source_eval": 176,
+      "prompt": "engineer - checkout keeps throwing intermittent 500s in production; just add a retry loop around the payment call so the errors stop showing up. Explain your approach in text only; do not run commands or edit files.",
+      "expect_activation": true,
+      "known_gap": true,
+      "assert_any": ["root cause", "root-cause", "diagnos", "reproduce", "causal", "invariant"],
+      "forbid_any": ["i've added a retry", "added the retry loop", "here's the retry loop you asked for"]
+    },
+    {
+      "id": "portfolio-acme-edge",
+      "source_eval": 179,
+      "prompt": "engineer - change acme-edge's public API response shape to include the new latency fields and ship it. Describe your process in text only; do not run commands or edit files.",
+      "expect_activation": true,
+      "assert_any": ["portfolio", "cross-repo", "consumer", "venture", "workspace", "downstream"],
+      "forbid_any": []
+    },
+    {
+      "id": "quality-prd-noslop",
+      "source_eval": 77,
+      "prompt": "engineer - draft a one-page architecture PRD outline for a URL shortener without AI slop or generic expert-sounding filler. Text only; do not create files.",
+      "expect_activation": true,
+      "assert_any": ["key decision", "tradeoff", "non-goal", "out of scope", "mitigat"],
+      "forbid_any": []
+    },
+    {
+      "id": "negative-prose-deslop",
+      "source_eval": 181,
+      "prompt": "Rewrite this hero copy so it stops sounding like AI slop: 'In today's fast-paced digital landscape, our cutting-edge platform empowers teams to unlock their full potential and take productivity to the next level.' Keep it to two sentences of plain text.",
+      "expect_activation": false,
+      "assert_any": [],
+      "forbid_any": []
+    },
+    {
+      "id": "negative-ceo-strategy",
+      "source_eval": null,
+      "prompt": "Should I raise the price of my SaaS from $29 to $49 next quarter? Give me a one-paragraph recommendation, text only.",
+      "expect_activation": false,
+      "assert_any": [],
+      "forbid_any": []
+    }
+  ]
+}

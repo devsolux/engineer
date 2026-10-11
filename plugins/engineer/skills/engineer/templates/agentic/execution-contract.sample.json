@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "goal": {
+    "outcome": "Ship a resumable coding loop that cannot claim completion without repository evidence.",
+    "scope": ["local repository edits", "offline fixtures", "CI validation"],
+    "non_goals": ["model training", "unapproved deployment"],
+    "evidence": ["tests/agent-loop.test.ts", "artifacts/verification.json"]
+  },
+  "requirements": [
+    {"id": "req_checkpoint", "text": "Persist resumable state after each completed step.", "risk": "medium"},
+    {"id": "req_stop", "text": "Stop on acceptance, budget exhaustion, unsafe action, or repeated no-progress.", "risk": "high"}
+  ],
+  "acceptance": [
+    {
+      "id": "ac_resume",
+      "requirement_ids": ["req_checkpoint"],
+      "criterion": "A killed run resumes from the last completed step without repeating completed actions.",
+      "evidence": ["templates/agentic/completion-evidence/verification.json"],
+      "oracles": [
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_resume/status", "operator": "eq", "expected": "passed"},
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_resume/resumed_from_step", "operator": "eq", "expected": "step_state"},
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_resume/duplicate_actions", "operator": "eq", "expected": 0}
+      ]
+    },
+    {
+      "id": "ac_stop",
+      "requirement_ids": ["req_stop"],
+      "criterion": "The loop halts after two unchanged observations and records the no-progress reason.",
+      "evidence": ["templates/agentic/completion-evidence/verification.json"],
+      "oracles": [
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_stop/status", "operator": "eq", "expected": "passed"},
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_stop/unchanged_observations", "operator": "eq", "expected": 2},
+        {"artifact": "verification.json", "pointer": "/acceptance/ac_stop/stop_reason", "operator": "eq", "expected": "no_progress_limit_reached"}
+      ]
+    }
+  ],
+  "plan": [
+    {"id": "step_state", "requirement_ids": ["req_checkpoint"], "acceptance_ids": ["ac_resume"], "action": "Implement atomic checkpoint writes.", "verify": ["pnpm test -- agent-loop.test.ts"]},
+    {"id": "step_stop", "requirement_ids": ["req_stop"], "acceptance_ids": ["ac_stop"], "action": "Implement stop reason classification.", "verify": ["pnpm test -- agent-loop.test.ts"]}
+  ],
+  "loop": {
+    "phases": ["sense", "plan", "act", "observe", "critique", "checkpoint", "stop_or_continue"],
+    "max_steps": 24,
+    "max_retries_per_failure": 2,
+    "no_progress_limit": 2,
+    "checkpoint_path": ".engineer/agent-checkpoint.json"
+  },
+  "tools": [
+    {"name": "repository_read", "class": "read", "approval": "none", "idempotency": "safe", "timeout_seconds": 30, "output_trust": "untrusted", "network": "deny", "data_access": ["workspace"], "allowed_sinks": []},
+    {"name": "repository_edit", "class": "local_mutation", "approval": "goal_scope", "idempotency": "check_before_retry", "timeout_seconds": 60, "output_trust": "untrusted", "network": "deny", "data_access": ["workspace"], "allowed_sinks": ["workspace"]}
+  ],
+  "security": {
+    "untrusted_sources": ["repository_content", "tool_output", "web_content", "issue_text"],
+    "sensitive_data": ["credentials", "private_source", "user_data"],
+    "allowed_sinks": ["workspace"],
+    "cross_domain_confirmation": true,
+    "injection_eval_set": "evals/agent-hijacking.jsonl"
+  },
+  "prompt_optimization": {
+    "baseline": "prompts/coding-agent-v1.md",
+    "capability_set": "evals/capability.jsonl",
+    "regression_set": "evals/regression.jsonl",
+    "holdout_set": "evals/holdout.jsonl",
+    "quality_metric": "pass_at_1",
+    "cost_budget": "No more than 10% above baseline median tokens per successful task.",
+    "latency_budget": "No more than 15% above baseline p95 wall time."
+  },
+  "stop_conditions": ["all_acceptance_has_evidence", "verification_commands_pass", "evidence_artifact_written", "budget_exhausted", "no_progress_limit_reached", "unsafe_or_unapproved_action"]
+}

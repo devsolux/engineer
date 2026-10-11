@@ -1,0 +1,241 @@
+{
+  "name": "Vercel plans, pricing units, spend management, hard limits, and the Hobby→Pro→Enterprise cliffs; when to move a workload off Vercel",
+  "item_id": "vercel-cost-limits",
+  "cluster": "vercel",
+  "short_definition": "Vercel bills primarily on consumption of managed-infrastructure resources (Fast Data Transfer, Edge Requests, Function Invocations, Fluid Compute Active CPU + Provisioned Memory, ISR reads/writes, Image Optimization transforms) layered on top of a $0 Hobby / $20-per-seat Pro / custom Enterprise account tier. In a greenfield Next.js 16 + Python services + Supabase stack, Vercel typically hosts the Next.js frontend and light API routes/edge middleware; the cost-guardrail question this item owns is which plan tier to run on, how to budget and cap spend (Spend Management), which usage-based line items cause the most billing surprises, and at what point a workload's shape (long-running batch, high-concurrency background work, heavy egress) makes AWS/GCP/Fly/Railway cheaper and more predictable than Vercel Functions.",
+  "scope_in": "Hobby vs Pro vs Enterprise plan differences and hard cliffs; Vercel's consumption-based pricing units (Fast Data Transfer, Edge Requests, Function Invocations, Fluid Compute Active CPU, Provisioned Memory GB-hours, ISR reads/writes, Image Optimization transforms); Spend Management (budgets, alert thresholds, auto-pause, webhooks); build minutes/build machine limits; seats and RBAC/billing-role access control; commercial-use restriction on Hobby; decision criteria for moving compute-heavy or long-running workloads off Vercel to AWS/GCP/Fly/Railway.",
+  "scope_out": "OIDC/WIF federation from Vercel to AWS/GCP for runtime cloud access (see aws-compute-serverless / gcp-cloud-run-functions identity sections); Next.js framework-level deployment config, ISR/ SSR mechanics themselves (see deploy-ops.md); Supabase pricing/limits (separate cluster item); general AWS Fargate/Lambda or GCP Cloud Run pricing (covered in their own items) — this item only supplies the decision gate for when to leave Vercel, not the target platform's own cost model; Vercel Sandbox / v0 pricing (adjacent product, not covered here).",
+  "priority": "P1",
+  "defaults": "- Start every greenfield project on Hobby only for prototyping/personal use; move to Pro before any real user traffic or any commercial use, since Hobby's terms of service prohibit commercial use outright.\n- On Pro, enable Spend Management on day one with a conservative budget (e.g. $50-100/mo for an early-stage app) and turn on \"pause production deployments\" plus email + SMS alerts at 50/75/100% — do not leave it in notify-only mode once real spend is possible.\n- Default Fluid Compute (Active CPU billing) is on by default for new functions since 2025; do not opt back into legacy \"wall-clock GB-Hours\" billing unless a specific workload needs the old always-on concurrency model.\n- Set function `maxDuration` explicitly and as low as the workload allows (default 300s cap on Pro without extension) — never leave functions at the platform max in an LLM-streaming or webhook-processing route.\n- Serve all raster images through `next/image` with sane `deviceSizes`/`imageSizes` and long cache TTLs to bound Image Optimization transform counts; do not let user-uploaded-image galleries hit the default transform pipeline unbounded.\n- Keep the team's Billing/Owner role assignment small (1-2 people) and put everyone else on Member/Viewer so plan and spend-cap changes require a specific role, not general team membership.\n- Treat Vercel as the home for the Next.js frontend, edge middleware, and short (<60s) API routes only; route long-running Python jobs, queue consumers, and cron-heavy background work to a dedicated compute platform from day one rather than shoehorning them into Vercel Functions.",
+  "decision_gates": "- Use Vercel Hobby only for: pure prototypes, personal side projects, and internal experiments with zero external users and zero commercial intent — the plan's fair-use terms explicitly forbid commercial use.\n- Upgrade to Pro when: the project takes real traffic, has any commercial purpose, needs more than 1 developer seat, needs Spend Management, log drains, or RBAC, or needs function duration beyond Hobby's 300s hard cap (Pro can extend to 800s and, in beta, 1800s).\n- Move to Enterprise when: you need SSO/SAML as a hard requirement below the $300/mo Pro SSO add-on threshold, need a contractual SLA, need isolated build infrastructure, need >12 custom environments, or usage-based spend has grown large enough that a custom/committed-use contract beats on-demand Pro overage rates — get a quote once monthly Pro overage regularly exceeds low four figures.\n- Move a workload OFF Vercel Functions to AWS Fargate/Lambda, GCP Cloud Run, Fly.io, or Railway when: it runs longer than the practical Fluid Compute ceiling (batch jobs, ML inference, video/image processing measured in minutes+), it needs persistent in-memory state or long-lived WebSocket/worker processes beyond what Fluid Compute's per-request instance model supports well, it is a high-throughput queue consumer that would rack up Active CPU + Provisioned Memory charges continuously, or it needs raw high-bandwidth egress (media hosting, large file downloads, bulk exports) where Fast Data Transfer overage ($0.15/GB self-reported [uncertain]) is materially more expensive than a cloud provider's egress pricing or a CDN in front of object storage.\n- Keep Python services off Vercel Functions as the default for anything beyond thin API glue: Vercel's Python runtime is intended for short request/response handlers, not long-running workers, schedulers, or GPU/CPU-bound batch jobs — put those on Fly/Railway for simplicity or AWS/GCP for scale and put only the orchestration/webhook surface on Vercel.\n- Prefer Supabase Edge Functions or a dedicated worker service (not Vercel cron+function) for anything that needs guaranteed execution beyond a few minutes, since Vercel cron jobs invoke a normal Function subject to the same duration caps.",
+  "do_dont": [
+    "Do enable Spend Management with both a budget threshold and auto-pause before you have paying/production traffic on Pro.",
+    "Do restrict the Billing and Owner RBAC roles to a minimal set of people; do not let general Members change plan tier or spend caps.",
+    "Do set explicit `maxDuration` and memory per function in `vercel.json` rather than relying on platform defaults.",
+    "Do route large/unoptimized images through `next/image` with capped `deviceSizes` and long `minimumCacheTTL` to bound Image Optimization costs.",
+    "Do budget for the Spend Management enforcement delay (checks run every few minutes, not instantly) — set your cap meaningfully below your true pain threshold.",
+    "Don't assume Hobby quotas are safe for any project with real or commercial traffic — Hobby is non-commercial only and pauses hard on overage with no purchase path other than upgrading.",
+    "Don't run long-lived background workers, queue consumers, or multi-minute batch/ETL jobs as Vercel Functions — they will either hit duration limits or become the single largest Active CPU + Provisioned Memory line item on the invoice.",
+    "Don't leave webhook signature verification out of a Spend Management pause/notification webhook consumer — validate `x-vercel-signature` before acting on the payload.",
+    "Don't rely on increasing a Spend Management budget mid-cycle to un-pause projects — paused projects must be resumed individually; raising the cap does not auto-resume them.",
+    "Don't stream large media or serve high-bandwidth downloads directly from Vercel Functions/CDN without checking Fast Data Transfer economics against an object-storage + CDN alternative."
+  ],
+  "config_skeleton": "```jsonc\n// vercel.json — cap function region/memory/duration to control cost blast radius\n{\n  \"functions\": {\n    \"api/webhook.ts\": {\n      \"memory\": 512,\n      \"maxDuration\": 15,\n      \"regions\": [\"iad1\"]\n    },\n    \"api/llm-stream.ts\": {\n      \"memory\": 1024,\n      \"maxDuration\": 60,\n      \"regions\": [\"iad1\"]\n    }\n  }\n}\n```\n\n```ts\n// next.config.ts — bound Image Optimization transform volume/cost\nimport type { NextConfig } from 'next'\n\nconst nextConfig: NextConfig = {\n  images: {\n    // fewer breakpoints = fewer distinct transforms billed per source image\n    deviceSizes: [640, 828, 1200, 1920],\n    imageSizes: [64, 128, 256],\n    minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days, reduces re-transform churn\n    remotePatterns: [\n      { protocol: 'https', hostname: 'my-app.vercel.app' }\n    ]\n  }\n}\n\nexport default nextConfig\n```\n\n```text\n# Spend Management setup — dashboard steps (not expressible in vercel.json)\n# Team: team_example, Project(s): prj_example\n# 1. Dashboard -> team_example -> Settings -> Billing -> Spend Management -> Enable\n# 2. Set spend amount (USD) below the absolute max you're willing to accept,\n#    accounting for the several-minute check-interval enforcement lag.\n# 3. Enable \"Pause production deployment\" toggle; confirm by typing team name.\n# 4. Settings -> My Notifications -> Team -> Spend Management ->\n#    enable Web + Email at 50/75/100%, enable SMS at 100% (verify phone number).\n# 5. Configure webhook URL (must be public HTTPS) to receive 50/75/100% and\n#    endOfBillingCycle POST events; verify x-vercel-signature header before acting.\n```\n\n```yaml\n# GitHub Actions step — flag bundle-size growth and stale preview deployments\n# (cost-adjacent: large bundles increase build minutes/time; stale previews\n# accumulate against Projects/Deployments-per-day limits)\n- name: Check Next.js bundle size budget\n  run: |\n    pnpm build\n    npx next-bundle-analyzer-cli --budget 250kb --entry app/page.tsx || \\\n      (echo \"::warning::bundle exceeds size budget, review before merge\" )\n\n- name: Clean up stale preview deployments (weekly cron job, separate workflow)\n  run: |\n    vercel remove --safe --yes $(vercel list --meta git-branch!=main --scope team_example | awk '{print $1}')\n```",
+  "failure_modes": "- Image Optimization transform blowout: a gallery or CMS with many unique user-uploaded images, combined with wide `deviceSizes`/`imageSizes` arrays, multiplies distinct transforms far beyond the included quota — reported repeatedly as one of the top three unexpected Pro line items in practitioner threads (community reports, treat specifics as [uncertain] pending fresh 2026 confirmation since WebSearch quota was exhausted this session).\n- ISR/regeneration read amplification: pages with `revalidate` set aggressively low, combined with high-traffic bot/crawler hits, generate far more ISR reads than anticipated because every cache-miss request during regeneration counts.\n- Fast Data Transfer overage from unoptimized static assets or bot/scraper traffic: sites serving large JS bundles, video, or PDFs without a CDN/object-storage split see Fast Data Transfer climb quickly once past the Pro-included 1TB.\n- LLM/AI streaming function duration and Active CPU creep: an SSE/streaming chat route that holds a Function instance open for the full generation time bills Provisioned Memory for the whole duration even though Active CPU is mostly idle during model I/O — teams sizing only for Active CPU underestimate the Provisioned Memory component.\n- Spend Management enforcement lag: because checks run only every few minutes, a sudden traffic spike or DDoS-adjacent bot wave can generate meaningful additional spend before auto-pause kicks in, and pausing does not un-pause automatically when the cap is raised — manual per-project resume is required.\n- Hobby-to-paused-for-30-days trap: exceeding a Hobby quota (not just bandwidth — invocations, ISR writes, etc.) can lock a resource for up to 30 days with no way to pay to unlock short of upgrading the whole team to Pro.\n- Commercial-use Hobby violations: teams prototype on Hobby, start taking real customers, and get flagged/paused for violating the non-commercial fair-use terms — this is a policy risk, not just a technical limit.\n- Long-running Python/background job mis-fit: teams that lift-and-shift a Python worker or cron-style batch job onto Vercel Functions hit the duration ceiling (300s default, 800s configurable, 1800s beta-only) and/or pay far more per compute-hour than a dedicated VM or container platform would charge for the same sustained work.",
+  "anti_patterns": [
+    "Running a long-lived WebSocket server, job queue consumer, or multi-minute ETL/batch process as a Vercel Function instead of a dedicated compute platform.",
+    "Leaving Spend Management disabled (or notify-only, no auto-pause) on a Pro team with production traffic and no other spend cap.",
+    "Granting Owner or Billing RBAC role broadly to all team members instead of restricting who can change plan tier or spend limits.",
+    "Serving large media/downloads directly through Vercel's CDN/Functions instead of object storage + a CDN, driving unnecessary Fast Data Transfer spend.",
+    "Setting `maxDuration` to the platform maximum by default on every function instead of sizing it to the actual workload.",
+    "Assuming a raised Spend Management budget automatically resumes paused projects (it does not — each must be resumed manually).",
+    "Prototyping a project on Hobby with real customer traffic or monetization already live, in violation of the non-commercial fair-use terms."
+  ],
+  "tools": [
+    "Vercel Dashboard (Usage tab, Billing/Spend Management settings) — primary surface for cost visibility and budget config",
+    "Vercel CLI (`vercel`, `vercel list`, `vercel remove`) — deployment cleanup and inspection scripting",
+    "Vercel REST API (`/v9/projects/{id}/pause`, `/unpause`) — programmatic project pause/resume, useful from a Spend Management webhook handler",
+    "Vercel log drains / Observability Plus — usage and runtime log export for cost attribution",
+    "next/image + next.config.ts image config — primary lever for Image Optimization transform cost control",
+    "Alternative platforms for workloads moved off Vercel: AWS Fargate/Lambda, GCP Cloud Run, Fly.io, Railway"
+  ],
+  "versions_as_of": "- Next.js 16 on Vercel; Fluid Compute (Active CPU + Provisioned Memory billing) is the default execution model for functions deployed after April 23, 2025 — pre-2025-04-23 non-Fluid projects still see legacy wall-clock GB-Hours duration/memory defaults. as_of 2026-08-29, source: https://vercel.com/docs/functions/usage-and-pricing and https://vercel.com/docs/limits.\n- Vercel Passport (new account/plan management surface) reached general availability per the changelog referenced from /docs/plans, exact date [uncertain] — as_of 2026-08-29, source: https://vercel.com/changelog/vercel-passport-generally-available.\n- Vercel Sandbox maximum duration was extended to 5 hours per a linked changelog entry, exact date [uncertain] — this is a separate product from standard Vercel Functions and not part of standard Function duration limits. as_of 2026-08-29, source: https://vercel.com/changelog/vercel-sandbox-maximum-duration-extended-to-5-hours.\n- Function invocations moved to per-unit billing at some point pre-2026 per changelog title \"Function invocations now billed per unit\", exact date [uncertain]. as_of 2026-08-29, source: https://vercel.com/changelog/function-invocations-now-billed-per-unit.",
+  "limits_quotas_pricing": [
+    {
+      "item": "Hobby plan base price",
+      "value": "$0/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Pro plan base price",
+      "value": "$20/month per developer seat (Viewer seats free/unlimited)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Enterprise plan pricing",
+      "value": "Custom contract, sales-negotiated; no public price list",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/enterprise"
+    },
+    {
+      "item": "Hobby Fast Data Transfer included",
+      "value": "100 GB/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Pro Fast Data Transfer included / overage",
+      "value": "1 TB/month included, then approx. $0.15/GB on-demand (uncertain)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Hobby Edge Requests included",
+      "value": "1M/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Pro Edge Requests included / overage",
+      "value": "10M/month included, then approx. $2 per 1M on-demand (uncertain)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Hobby Function Invocations included",
+      "value": "1,000,000/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Pro Function Invocations overage rate",
+      "value": "$0.60 per 1M invocations on-demand, offset by monthly Pro usage credit",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Hobby Fluid Active CPU included",
+      "value": "4 CPU-hours/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Pro Fluid Active CPU rate (example region iad1/Washington DC)",
+      "value": "$0.128 per CPU-hour",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Hobby Provisioned Memory included",
+      "value": "360 GB-hours/month",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Pro Provisioned Memory rate (example region iad1)",
+      "value": "$0.0106 per GB-hour",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Vercel Function max duration, Hobby",
+      "value": "300 seconds (5 minutes) hard cap",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/hobby"
+    },
+    {
+      "item": "Vercel Function max duration, Pro",
+      "value": "300s default, configurable up to 800s, extended max duration up to 1800s (beta)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/hobby"
+    },
+    {
+      "item": "Pro Image Optimization transforms / ISR reads and writes",
+      "value": "Approx. $0.05 per 1K image transforms, $0.40 per 1M ISR reads, $4 per 1M ISR writes on-demand beyond included allowance [uncertain, verify current unit prices at checkout]",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "SSO availability",
+      "value": "Unavailable on Hobby; available on Pro as a paid add-on (~$300/month); included standard on Enterprise",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Deployments per day",
+      "value": "Hobby: 100/day; Pro: 6,000/day",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/hobby"
+    },
+    {
+      "item": "Projects per team",
+      "value": "Hobby: 200; Pro: unlimited",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/hobby"
+    },
+    {
+      "item": "Runtime log retention",
+      "value": "Hobby: 1 hour; Pro: 1 day; Enterprise: 3 days",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/hobby and https://vercel.com/docs/plans/enterprise"
+    },
+    {
+      "item": "Custom Environments",
+      "value": "Hobby: unavailable; Pro: 1; Enterprise: 12",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/pricing"
+    },
+    {
+      "item": "Spend Management alert thresholds",
+      "value": "Automatic web/email notifications at 50%, 75%, 100% of configured spend amount; optional SMS at 100% only",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/spend-management"
+    },
+    {
+      "item": "Spend Management enforcement check frequency",
+      "value": "Every few minutes (not real-time/instant) — pausing/notifications can lag several minutes past the actual spend crossing",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/spend-management"
+    },
+    {
+      "item": "Hobby commercial-use policy",
+      "value": "Restricted to non-commercial, personal use per Fair Use Guidelines; commercial projects require Pro or Enterprise",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/limits/fair-use-guidelines"
+    },
+    {
+      "item": "Enterprise concurrency scaling",
+      "value": "Automatic concurrency scaling up to 100,000 for Vercel Functions (vs. lower default on Pro) [uncertain exact Pro-tier ceiling]",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/plans/enterprise"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": "- Legacy non-Fluid Compute billing (fixed wall-clock GB-Hours regardless of I/O wait) only applies to projects deployed before April 23, 2025 that have not opted into Fluid Compute; do not build new greenfield projects against this old model — Fluid/Active CPU billing is the forward path and generally cheaper for I/O-bound workloads.\n- Vercel has changed its pricing/billing model multiple times in recent years (bandwidth to Fast Data Transfer rename plus mechanics change, GB-Hours to Active CPU/Provisioned Memory split, invocation billing moving to per-unit) — do not hardcode any per-unit price into infra code or docs without a review_by date; treat all unit prices in this file as needing quarterly re-verification.\n- Avoid architecting around Hobby plan quotas for anything expected to grow — the 30-day quota-exceeded lockout has no self-serve pay-to-unlock path short of a full team upgrade.",
+  "identity_model": "This item's identity concern is billing/spend role-based access control on Vercel, not cloud OIDC federation (that topic is covered by the AWS/GCP items). Vercel gates plan changes and Spend Management configuration behind the Owner and Billing RBAC roles specifically — Member and Viewer roles cannot alter spend caps, change plan tier, or manage payment details. Keep the Owner role limited to 1-2 accountable people per team; assign a distinct Billing role (rather than Owner) to whoever needs to manage invoices/spend caps without full account control, and audit team membership periodically via the Activity Log, which records spend-amount creation/updates and project pause/unpause events. Do not let CI/CD service tokens or shared team logins carry Owner/Billing privileges — scope automation tokens to the minimum project-level permission needed (e.g. deployment tokens), never account-billing scope.",
+  "threats": "- Uncontrolled team membership growth into Owner/Billing roles, letting any team member raise spend caps or disable Spend Management protections.\n- A compromised or overly-broad Vercel API token being used to disable Spend Management, remove pause protections, or exfiltrate billing/usage data.\n- Bot/scraper traffic driving Edge Requests, Fast Data Transfer, and Function Invocations far past budget before Spend Management's multi-minute check interval reacts.\n- A public webhook endpoint configured for Spend Management events being spoofed (fake 100%-threshold payloads) if `x-vercel-signature` verification is skipped, causing false pause/unpause actions or masking a real overage.\n- Hobby-tier commercial-use violations exposing a team to account suspension without warning, disrupting production traffic that should never have been on Hobby.",
+  "mitigations": "- Restrict Owner and Billing RBAC roles to a small, named set of accountable people; use Member/Viewer for everyone else.\n- Store any Vercel API tokens used by automation with least-privilege scopes and rotate them; never embed them in client-side code or public repos.\n- Enable Spend Management with both alert notifications and auto-pause from the start of any Pro-tier production usage; set the cap conservatively below the real pain threshold to absorb the multi-minute enforcement lag.\n- Verify `x-vercel-signature` on every Spend Management webhook payload before taking any pause/unpause or notification action downstream.\n- Put a WAF/bot-protection layer (Vercel Firewall managed rulesets on Enterprise, or a third-party bot-mitigation service on Pro) in front of high-traffic public endpoints to reduce Edge Request/Invocation abuse.\n- Move any project with real users off Hobby to Pro proactively rather than waiting for a fair-use violation flag.",
+  "agent_codegen_policy": "- Must generate `vercel.json` function configs with explicit, workload-appropriate `maxDuration` and `memory` rather than platform defaults, and must default new functions to short durations (<=60s) unless the task specifically requires longer.\n- Must not generate code that runs long-lived background loops, queue polling, or multi-minute batch processing inside a Vercel Function — must instead flag this as a candidate for a separate compute platform and scaffold accordingly.\n- Must not hardcode any Vercel per-unit price (Active CPU rate, Fast Data Transfer rate, etc.) into application code, comments implying guaranteed pricing, or cost-estimation logic without clearly labeling it as an estimate subject to change.\n- Must generate `next/image` config with bounded `deviceSizes`/`imageSizes` arrays for any new project rather than leaving unlimited/default transform surface area.\n- Must not grant Owner or Billing team roles to automation-generated invite flows or seed scripts; must use project-scoped tokens for any CI/CD Vercel API usage.\n- Should recommend (not silently skip) enabling Spend Management as part of any \"go live\" or \"deploy to production\" checklist it generates for a Vercel project.",
+  "ci_gates": "- Bundle-size budget check on every PR touching the Next.js app (fails the build or warns above a set threshold) since larger bundles slow builds and, at extremes, affect build-minute consumption.\n- Preview deployment cleanup job (scheduled, e.g. weekly) to remove stale branch preview deployments and keep Deployments-per-day and Projects limits from being consumed by dead branches.\n- A manual or automated gate before promoting a Hobby project to production traffic, confirming the team has upgraded to Pro (commercial-use compliance).\n- A pre-deploy check confirming Spend Management is enabled with auto-pause for any team about to receive a production domain/DNS cutover.\n- Lint/config check that no `vercel.json` function entry is missing an explicit `maxDuration`.",
+  "observability": "- Vercel Usage dashboard (per-project and per-team) as the primary source of truth for Fast Data Transfer, Edge Requests, Invocations, Active CPU, Provisioned Memory, ISR, and Image Optimization consumption trends.\n- Activity Log for Spend Management events (budget creation/update, project pause/unpause) as an audit trail.\n- Log drains / Observability Plus exported to an external sink (e.g. Datadog) for cross-referencing spend spikes with specific routes or deploys.\n- Alert on: Spend Management 50/75/100% thresholds (web/email/SMS), any unexpected project pause (503 DEPLOYMENT_PAUSED), and week-over-week Fast Data Transfer or Active CPU growth exceeding a set percentage, which usually signals an unoptimized asset, a bot-traffic event, or a regression in caching/ISR settings.\n- Correlate Image Optimization transform counts with deploys that touch `next/image` config or add new image sources — this is one of the most common silent-cost-creep vectors.",
+  "cost_guardrails": "- Enable Spend Management on every Pro team from day one; treat auto-pause as the primary hard stop, not just notifications, since notifications alone do not stop spend.\n- Set the spend cap meaningfully below your absolute pain threshold to absorb the several-minute enforcement check delay.\n- Restrict who can change the spend cap or disable Spend Management to Owner/Billing roles only.\n- Track the three most common first-bill surprises: (1) Image Optimization transform volume from unbounded `deviceSizes`/user-uploaded images, (2) ISR read amplification from low `revalidate` windows plus bot/crawler traffic, (3) Fast Data Transfer overage from serving large static/media assets directly instead of via object storage/CDN.\n- Watch Fluid Compute's split billing carefully for AI/LLM streaming routes: Provisioned Memory bills for the full instance lifetime (including I/O wait), so a slow-to-stream LLM response can cost more in memory-hours than its Active CPU time suggests.\n- Build a monthly reconciliation habit: compare the Usage dashboard's projected on-demand charges against the Spend Management cap and the Pro plan's included usage credit before the billing cycle closes, since Vercel does not auto-throttle Pro/Enterprise usage at 100% by design (only alerts, unless auto-pause is explicitly enabled).\n- Mirror the budget/alert pattern used for AWS/GCP items in this same research set (explicit numeric budget + multi-threshold alerting + an automated stop action) as a cross-reference — Vercel's Spend Management is the platform-native equivalent of an AWS Budgets action or a GCP budget alert plus Cloud Function auto-disable, so engineer's cost-guardrail conventions for those clouds should read consistently with this section.\n- For workloads that are inherently expensive on Vercel (long-running Python jobs, high-concurrency queue consumers, heavy egress), the cheapest guardrail is architectural: move them off-platform rather than trying to cap their Vercel spend after the fact.",
+  "skill_scan_signals": "- Positive: `vercel.json` present with explicit `functions.*.maxDuration` and `memory` fields set per-route rather than left to defaults.\n- Positive: `next.config.ts`/`next.config.js` with a bounded `images.deviceSizes`/`imageSizes` array and a non-trivial `minimumCacheTTL`.\n- Positive: presence of a documented Spend Management budget (e.g. referenced in README/runbook) with auto-pause noted as enabled.\n- Negative/flag: a `vercel.json` function config with `maxDuration` at or near the account's maximum (800s/1800s) without clear justification in comments — likely a long-running job that doesn't belong on Vercel Functions.\n- Negative/flag: cron-triggered Vercel Functions performing what looks like ETL/batch processing (large loops, external DB bulk writes, file processing) — candidate for migration to a dedicated worker.\n- Negative/flag: hardcoded Vercel per-unit prices embedded in application cost-calculation code (a sign the price will silently drift out of date).\n- Negative/flag: team invite/IaC scripts assigning Owner or Billing role broadly instead of Member/Viewer by default.\n- Negative/flag: Python service directories deployed as Vercel Functions containing worker/queue-consumer patterns (long polling loops, `while True`) rather than request/response handlers.",
+  "skill_module_bullets": "- Vercel bills on consumption (Fast Data Transfer, Edge Requests, Invocations, Fluid Active CPU + Provisioned Memory, ISR, Image Optimization) layered on Hobby ($0, non-commercial only) / Pro ($20/seat + usage) / Enterprise (custom) account tiers.\n- Hobby hard-caps function duration at 300s and forbids commercial use outright; Pro extends duration to 800s (1800s beta) and removes the commercial-use restriction.\n- Fluid Compute splits billing into Active CPU (only while code executes, pauses during I/O wait) and Provisioned Memory (bills for the full instance lifetime including I/O wait) — size cost expectations around the memory component for I/O-heavy or LLM-streaming routes, not just CPU time.\n- Spend Management (Pro/Enterprise, Owner/Billing role only) is the primary cost guardrail: set a budget, enable auto-pause of production deployments, and configure 50/75/100% alerts plus a signed webhook — but expect several minutes of enforcement lag and remember paused projects require manual resume.\n- The three most common Vercel bill surprises are Image Optimization transform volume, ISR read amplification, and Fast Data Transfer overage from unoptimized/large assets — guard each with explicit `next/image` config, sane `revalidate` windows, and CDN/object-storage offload.\n- Move long-running Python jobs, high-concurrency queue consumers, and heavy-egress services off Vercel Functions to AWS Fargate/Lambda, GCP Cloud Run, or Fly/Railway rather than fighting the platform's per-request compute model and consumption pricing.\n- SSO is a Pro paid add-on (~$300/mo [uncertain]) or bundled free on Enterprise — factor this into the Pro-vs-Enterprise crossover decision alongside custom SLAs and isolated build infrastructure.",
+  "checklist": [
+    "Confirm the project is on Pro (not Hobby) before any commercial use or real user traffic goes live.",
+    "Enable Spend Management with a defined budget, 50/75/100% alerts, and auto-pause on production deployments.",
+    "Verify Owner/Billing RBAC roles are restricted to the intended accountable team members only.",
+    "Set explicit `maxDuration`/`memory` in `vercel.json` for every function; flag any function near the account's max duration for review.",
+    "Confirm `next.config.ts` bounds `images.deviceSizes`/`imageSizes` and sets a meaningful `minimumCacheTTL`.",
+    "Identify any long-running, high-concurrency, or heavy-egress workloads in the codebase and confirm they are NOT deployed as Vercel Functions.",
+    "If a Spend Management webhook is configured, confirm `x-vercel-signature` verification is implemented before the payload is acted on.",
+    "Review the Usage dashboard against the Spend Management cap and Pro included-usage credit at least monthly."
+  ],
+  "source_tier": "official",
+  "confidence": "medium",
+  "conflicts_noted": "- No direct conflict with the existing deploy-ops.md module, which does not cover pricing/cost at all — this item is net-new ground for the skill.\n- Cross-reference (not conflict): engineer's AWS/GCP cost-guardrail conventions (explicit numeric budget + multi-threshold alerting + automated stop action) map cleanly onto Vercel's Spend Management pattern; keep phrasing consistent across cluster items so the skill reads as one system rather than three unrelated billing models.\n- Several fine-grained overage unit prices (Fast Data Transfer $/GB, Edge Requests $/1M, Image Optimization $/1K, ISR $/1M) were read from the public pricing page rather than a line-item API/contract, and Vercel has changed its pricing model multiple times in 2025-2026 (Fluid Compute Active CPU billing, Fast Data Transfer replacing bandwidth, per-unit invocation billing) — these are marked [uncertain] and listed below; re-verify against https://vercel.com/pricing before quoting to a client or embedding in cost-estimation code.\n- WebSearch quota was exhausted before practitioner \"surprise bill\" threads (Reddit/HN/dev.to) could be pulled for 2025-2026; failure_modes above reflect documented mechanics plus commonly-cited categories from general community knowledge, not a specific verified 2026 thread — treat the failure_modes framing as directionally right but not source-pinned to a specific post.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://vercel.com/pricing",
+    "https://vercel.com/docs/plans",
+    "https://vercel.com/docs/plans/hobby",
+    "https://vercel.com/docs/plans/enterprise",
+    "https://vercel.com/docs/spend-management",
+    "https://vercel.com/docs/functions/usage-and-pricing",
+    "https://vercel.com/docs/limits",
+    "https://vercel.com/docs/limits/fair-use-guidelines",
+    "https://vercel.com/docs/pricing/manage-and-optimize-usage",
+    "https://vercel.com/docs/pricing/understanding-my-invoice"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "decision_gates",
+    "failure_modes",
+    "limits_quotas_pricing",
+    "skill_module_bullets",
+    "versions_as_of"
+  ]
+}

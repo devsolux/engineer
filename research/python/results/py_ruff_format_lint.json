@@ -1,0 +1,72 @@
+{
+  "name": "Ruff as sole formatter and linter",
+  "item_id": "py-ruff-format-lint",
+  "cluster": "tooling",
+  "short_definition": "Use Astral Ruff as the only Python formatter and linter in greenfield projects, replacing Black, isort, Flake8 and most plugin stacks, configured via pyproject.toml and enforced in CI and editor format-on-save.",
+  "scope_in": "ruff check / ruff format; rule selection (E/F/I/UP/B/SIM/…); target-version alignment; per-file ignores; import sorting; CI --fix gates; editor integration; migration from Black/Flake8.",
+  "scope_out": "Type checking (basedpyright/ty — separate item); security audit of dependencies; pylint full feature parity debates; non-Python formatters; docstring style religion beyond choosing one convention if D rules enabled.",
+  "priority": "P0",
+  "defaults": "Ruff only for format + lint. Configure under [tool.ruff] in pyproject.toml (not a second black.toml). Align target-version / requires-python (e.g. py313). Enable a curated select set: E, F, I, UP, B, SIM, plus RUF; add S (bandit-ish) carefully for apps. Format with ruff format (Black-compatible). CI: ruff format --check && ruff check. Prefer fixable rules with ruff check --fix locally. Do not run Black or isort alongside Ruff in greenfield.",
+  "decision_gates": "Use Ruff alone: all greenfield Python. Keep Black only during transitional monorepo migration with dual-run short window. Enable flake8-bandit (S) rules for web/services; relax S in tests via per-file-ignores. Enable pydocstyle (D) only if the team commits to docstring coverage — otherwise skip to avoid noise. Custom plugins outside Ruff: rare; prefer Ruff ports. Never add pylint to greenfield if Ruff covers the need.",
+  "do_dont": "DO: single [tool.ruff] source of truth; match line-length project-wide (88 or 100 — pick one); per-file-ignores for tests (e.g. S101 assert); commit config; run format before lint in CI. DO NOT: enable every rule code at once on a legacy tree without baseline; ignore E501 while formatter uses a different length story carelessly; disable I (isort) then manually order imports; mix quote-style fights between format and lint; leave ruff unpinned in CI.",
+  "code_skeleton": "# pyproject.toml\n[tool.ruff]\ntarget-version = \"py313\"\nline-length = 88\nsrc = [\"src\"]\n\n[tool.ruff.lint]\nselect = [\n  \"E\",   # pycodestyle errors\n  \"F\",   # pyflakes\n  \"I\",   # isort\n  \"UP\",  # pyupgrade\n  \"B\",   # bugbear\n  \"SIM\", # simplify\n  \"RUF\", # ruff-specific\n]\nignore = []\n\n[tool.ruff.lint.per-file-ignores]\n\"tests/**/*.py\" = [\"S101\"]\n\n[tool.ruff.format]\nquote-style = \"double\"\nindent-style = \"space\"\ndocstring-code-format = true\n\n# CLI\n# uv run ruff format .\n# uv run ruff check --fix .\n# uv run ruff format --check .\n# uv run ruff check .",
+  "failure_modes": "CI format --check fails after local editor used Black. Rule set too aggressive → noisy PRs and silent noqa sprawl. target-version older than requires-python → missed pyupgrade opportunities. Import cycles hidden by wrong first-party package detection (src layout not declared). --fix auto-applies unsafe fixes if misconfigured. Bandit rules flag SQL/HTTP patterns that are actually safe ORM usage — teams blanket-ignore S instead of narrowing.",
+  "anti_patterns": "Agents must not: add black, isort, flake8, autopep8, or pylint to greenfield pyproject; generate setup.cfg flake8 sections; sprinkle # noqa without rule codes; reformat only partial files inconsistently; recommend ruff as linter but Black as formatter for new projects.",
+  "tools": "Primary: ruff (lint+format). Editor: official Ruff extension (VS Code/Cursor). CI: astral-sh/ruff-action or uv run ruff. Alternatives (legacy): Black, isort, Flake8+plugins — migrate to Ruff. Type rules ANN may overlap typechecker — prefer basedpyright for types, Ruff for style/bugs.",
+  "versions_as_of": "as_of 2026-07-13 — Ruff 0.15.x on PyPI (e.g. 0.15.21). Python 3.14 syntax support advertised on Ruff project. Pin ruff in dependency-groups dev and/or CI action version.",
+  "config_snippets": "[tool.ruff]\ntarget-version = \"py313\"\nline-length = 88\nsrc = [\"src\"]\n\n[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\", \"UP\", \"B\", \"SIM\", \"RUF\"]\n\n[tool.ruff.lint.isort]\nknown-first-party = [\"svc_api\"]\n\n[tool.ruff.format]\nquote-style = \"double\"\n\n# CI\n# - run: uv run ruff format --check .\n# - run: uv run ruff check .\n\n# Optional action:\n# - uses: astral-sh/ruff-action@v3",
+  "deprecation_watch": "Greenfield avoid: Black+isort+Flake8 toolchains; pre-commit running both black and ruff format; pylint dual stacks; setup.cfg [flake8]; autopep8; pyupgrade CLI separate from Ruff UP rules.",
+  "ts_boundary": "Ruff is Python-only. TS stays on eslint/oxlint/biome per frontend skill — no shared config. Monorepo pre-commit may run both, but configs remain separate. Do not apply Ruff to generated OpenAPI TS clients.",
+  "rust_boundary": "Ruff is analogous to rustfmt+clippy speed profile, not a substitute for Rust quality gates. No handoff — Python packages still use Ruff even if they wrap PyO3 extensions (format only .py).",
+  "supabase_boundary": "Lint does not replace SQL migration review. Ruff S rules may flag string-built SQL — prefer parameterized SQLAlchemy/asyncpg and noqa only with justification. Keep supabase generated types out of lint paths if vendored.",
+  "boundary_contracts": "Formatting/lint is an internal quality contract, not a cross-service API. CI must fail on ruff format/check. Generated code paths (if any) listed in extend-exclude. No OpenAPI impact.",
+  "decision_matrix_row": "Python format/lint → Ruff only. TS → project JS linter. Rust → rustfmt+clippy. Never Black+Flake8 for new Python modules in this stack.",
+  "threats": "Malicious Ruff plugin configs are uncommon (rules are built-in); risk is more social: disabling security rules (S) globally; shipping secrets that secret scanners (not Ruff) should catch — do not treat Ruff as secret detection.",
+  "mitigations": "Keep S rules on for app code with test per-file ignores; pin ruff version; require CI format --check; review noqa introductions; use separate gitleaks/trufflehog for secrets.",
+  "agent_codegen_policy": "MUST generate: [tool.ruff] with format+lint; target-version matching project; I/UP/B enabled; src layout awareness. MUST NOT generate: black/isort/flake8 deps; conflicting formatters; mass # noqa: E501; pylint config for greenfield.",
+  "tests_required": "CI ruff format --check; ruff check; optional pre-commit/prek hook. No unit tests for formatter itself — gate is mechanical.",
+  "ci_gates": "ruff format --check . ; ruff check . ; both zero exit required on default branch PRs; pin ruff version via uv.lock.",
+  "skill_scan_signals": "Positive: [tool.ruff] present; ruff format --check in CI; no black dependency. Negative: black+ruff both deps; flake8 in requirements; missing I/UP; target-version mismatch with requires-python.",
+  "skill_module_bullets": [
+    "Ruff is the only greenfield formatter and linter — drop Black, isort, Flake8.",
+    "Configure in pyproject.toml: target-version aligned to pin (py313), select E/F/I/UP/B/SIM/RUF.",
+    "CI: ruff format --check && ruff check; local: ruff check --fix.",
+    "Use per-file-ignores for tests (e.g. S101); do not globally disable security rules.",
+    "Declare src and known-first-party so isort/first-party detection works.",
+    "Pin ruff via uv dependency-groups and lockfile."
+  ],
+  "action_items": [
+    "Paste canonical [tool.ruff] block into references/python.md.",
+    "Scan for black/isort/flake8 in Python services.",
+    "Wire prek/pre-commit ruff hooks in monorepo template.",
+    "Document line-length default (88) to match Black heritage."
+  ],
+  "checklist": [
+    "[tool.ruff] lint+format configured",
+    "target-version matches Python pin",
+    "No Black/isort/flake8 in greenfield deps",
+    "CI format --check and check both run",
+    "tests/ per-file-ignores reviewed",
+    "Editor format-on-save uses Ruff"
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Ruff formatter is >99.9% Black-identical on Black-formatted code but can differ on non-Black code — migrations should one-shot format. E501 vs formatter responsibility: Ruff docs note line-length enforcement differs slightly from Black; many teams ignore E501 and trust the formatter. Whether to enable ANN in Ruff vs leave types to basedpyright is team preference — this research prefers typechecker for annotations.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://docs.astral.sh/ruff/",
+    "https://docs.astral.sh/ruff/configuration/",
+    "https://docs.astral.sh/ruff/settings/",
+    "https://docs.astral.sh/ruff/linter/",
+    "https://docs.astral.sh/ruff/faq/",
+    "https://github.com/astral-sh/ruff"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/stack-rules.md",
+    "./references/coding-principles.md"
+  ],
+  "uncertain": []
+}

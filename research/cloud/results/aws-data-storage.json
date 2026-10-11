@@ -1,0 +1,243 @@
+{
+  "name": "AWS data layer — S3 (buckets, presigned, lifecycle), RDS/Aurora Postgres vs Supabase, DynamoDB fit, Secrets Manager/Parameter Store, SQS/EventBridge",
+  "item_id": "aws-data-storage",
+  "cluster": "aws",
+  "short_definition": "The AWS data layer covers object storage (S3), relational databases (RDS/Aurora PostgreSQL), NoSQL (DynamoDB), secrets/config storage (Secrets Manager, SSM Parameter Store), and async messaging (SQS, EventBridge). In a TS/Next + Python-services + Supabase stack, Supabase Postgres is the default relational store and its own Storage covers most object-storage needs for user-facing assets — AWS's data layer is brought in deliberately: S3 for large/AWS-native object storage (backups, data-lake inputs, ML artifacts), DynamoDB for high-throughput key-value workloads Postgres isn't suited for, Secrets Manager/Parameter Store when AWS compute needs credentials Supabase's own env-var model doesn't cover, and SQS/EventBridge for decoupling AWS-hosted services.",
+  "scope_in": "S3 bucket configuration (block-public-access, versioning, lifecycle, presigned URLs), RDS/Aurora PostgreSQL provisioning and Serverless v2 vs Supabase decision, DynamoDB fit and on-demand vs provisioned capacity, Secrets Manager vs SSM Parameter Store choice and rotation, SQS (standard/FIFO) and EventBridge (event bus, rules, scheduler) for async/event-driven glue.",
+  "scope_out": "IAM roles/OIDC granting access to these resources are in aws-identity-iam-oidc; compute reading/writing this data (Lambda/Fargate/App Runner) is in aws-compute-serverless; CloudFront in front of S3, VPC networking for RDS/Aurora, and NAT egress costs are in aws-edge-network-cost; Supabase's own Postgres/Storage/Auth internals are out of scope for this AWS-cluster item.",
+  "priority": "P0",
+  "defaults": [
+    "Default to Supabase Postgres (with its built-in Storage) as the primary datastore for a greenfield app; only stand up RDS/Aurora when a specific AWS-native workload (e.g. a Python service that must live in the same VPC as other AWS resources, or a compliance/data-residency requirement) justifies a second database.",
+    "When RDS/Aurora is justified, default to Aurora PostgreSQL-Compatible with Serverless v2 for variable workloads, or provisioned Graviton (`db.r7g`/`db.t4g` families) instances for steady, predictable load — never the legacy Aurora MySQL-compatible or non-Graviton instance families for a new build.",
+    "Default every S3 bucket to Block Public Access enabled account-wide and per-bucket, versioning on for anything holding user data or backups, and a lifecycle rule transitioning to Infrequent Access/Glacier for objects older than a defined window.",
+    "Use presigned URLs (short expiry, scoped to one object/action) for any client-direct upload/download to S3 — never expose long-lived credentials or a public bucket to achieve the same result.",
+    "Default to Secrets Manager for anything that needs automatic rotation (DB credentials, API keys with a rotation Lambda) and SSM Parameter Store (SecureString, Standard tier) for static configuration/secrets that don't need rotation — Parameter Store Standard tier is free and sufficient for most greenfield config needs.",
+    "Reach for DynamoDB only for access patterns that are genuinely key-value/single-table at high throughput (e.g. session state, feature flags at scale, event deduplication) — don't use it as a general relational substitute for Postgres.",
+    "Default to EventBridge for AWS-service-to-AWS-service event routing (S3 events, scheduled jobs via EventBridge Scheduler) and SQS for point-to-point work-queue decoupling (task queues consumed by Fargate workers or Lambda) — use both together rather than picking one for everything.",
+    "Enable S3 Server-Side Encryption (SSE-S3 or SSE-KMS) by default on every bucket; use SSE-KMS with a customer-managed key only when you need audit-level control over key usage."
+  ],
+  "decision_gates": [
+    "Choose Supabase Postgres over RDS/Aurora whenever the workload doesn't have a hard AWS-native requirement — Supabase bundles Postgres + Auth + Storage + Realtime + connection pooling (PgBouncer) with less operational surface than self-managing RDS/Aurora, and avoids running two separate Postgres instances for one app.",
+    "Choose RDS/Aurora over Supabase when: the workload must run inside a private VPC alongside other AWS compute with no public internet hop, when you need Aurora-specific features (Aurora Serverless v2's instant scaling, cross-region read replicas, Aurora I/O-Optimized for very high I/O workloads), or when contractual/compliance requirements mandate AWS as the data residency boundary.",
+    "Choose DynamoDB over Postgres/Supabase only for access patterns with single-digit-millisecond latency at very high request volume on simple key lookups — if you find yourself needing joins, ad-hoc queries, or complex filtering, that's a signal to stay on Postgres.",
+    "Choose Secrets Manager over Parameter Store when the secret needs automatic rotation (RDS credentials, third-party API keys with a rotation Lambda) or cross-account/cross-region replication; choose Parameter Store when the value is static config or a secret that's rotated manually/infrequently, since Parameter Store Standard tier is free versus Secrets Manager's per-secret monthly charge.",
+    "Choose EventBridge over SQS when you need content-based routing, multiple independent consumers of the same event, or a scheduled/cron trigger (EventBridge Scheduler); choose SQS when you need a simple durable work queue with one logical consumer group, visibility timeouts, and dead-letter-queue semantics.",
+    "Use S3 directly (not through Supabase Storage) when files are large (multi-GB), need S3-specific features (Transfer Acceleration, Requester Pays, Glacier archival), or are consumed by AWS-native services (Athena, data pipelines, ML training)."
+  ],
+  "do_dont": [
+    "Do enable S3 Block Public Access at the account level (`aws s3control put-public-access-block`) as a first step in any new account, then only relax it per-bucket with explicit justification (e.g. a CloudFront-fronted static site using OAC, not direct bucket public access).",
+    "Do set presigned URL expiry as short as the use case allows (minutes, not days) and scope to a single object key and single HTTP method.",
+    "Do enable automatic rotation on Secrets Manager secrets that back RDS/Aurora credentials using AWS's provided rotation Lambda templates.",
+    "Do use RDS Proxy in front of Aurora/RDS for any Lambda-based access pattern to avoid connection exhaustion.",
+    "Do set a DynamoDB table to On-Demand capacity mode by default for unpredictable/new workloads; switch to Provisioned + auto-scaling only once traffic is well understood and steady enough to make the switch worthwhile.",
+    "Do configure SQS dead-letter queues on every queue that has a consumer, with a maxReceiveCount tuned to the workload's expected transient-failure rate.",
+    "Don't create an S3 bucket without versioning for anything holding data you can't regenerate (user uploads, backups, generated reports).",
+    "Don't grant `s3:*` on `*` to a Lambda/ECS task role 'to make uploads work' — scope to specific bucket ARNs and specific actions (`s3:GetObject`, `s3:PutObject`).",
+    "Don't store secrets as plaintext SSM Standard-type parameters — always use `SecureString` type even in Parameter Store.",
+    "Don't run both Supabase Postgres and RDS/Aurora for the same logical data without a clear reason — this doubles operational and cost surface for no benefit in most greenfield apps.",
+    "Don't use SQS FIFO queues by default 'to be safe' — they cost more and cap throughput; use Standard queues unless strict ordering/exactly-once semantics are a genuine requirement.",
+    "Don't leave DynamoDB tables on Provisioned capacity with a manually-set high RCU/WCU 'just in case' — this bills continuously regardless of actual usage; use auto-scaling or On-Demand instead."
+  ],
+  "config_skeleton": "# --- S3 bucket (Terraform, placeholders only) ---\nresource \"aws_s3_bucket\" \"artifacts\" {\n  bucket = \"my-app-artifacts-123456789012\"\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"artifacts\" {\n  bucket                  = aws_s3_bucket.artifacts.id\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n\nresource \"aws_s3_bucket_versioning\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n  versioning_configuration { status = \"Enabled\" }\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n  rule {\n    apply_server_side_encryption_by_default { sse_algorithm = \"AES256\" }\n  }\n}\n\nresource \"aws_s3_bucket_lifecycle_configuration\" \"artifacts\" {\n  bucket = aws_s3_bucket.artifacts.id\n  rule {\n    id     = \"transition-old-artifacts\"\n    status = \"Enabled\"\n    transition {\n      days          = 90\n      storage_class = \"STANDARD_IA\"\n    }\n  }\n}\n\n# --- Presigned URL generation (Python, boto3) ---\n# url = s3_client.generate_presigned_url(\n#     ClientMethod=\"put_object\",\n#     Params={\"Bucket\": \"my-app-artifacts-123456789012\", \"Key\": \"uploads/example-key\"},\n#     ExpiresIn=300,  # 5 minutes\n# )\n\n# --- Secrets Manager secret + rotation reference (Terraform, placeholders only) ---\nresource \"aws_secretsmanager_secret\" \"db\" {\n  name = \"my-app/db\"\n}\n\nresource \"aws_secretsmanager_secret_rotation\" \"db\" {\n  secret_id           = aws_secretsmanager_secret.db.id\n  rotation_lambda_arn = \"arn:aws:lambda:us-east-1:123456789012:function:my-app-rotate-db-secret\"\n  rotation_rules { automatically_after_days = 30 }\n}\n\n# --- SQS queue with DLQ (Terraform, placeholders only) ---\nresource \"aws_sqs_queue\" \"dlq\" {\n  name = \"my-app-jobs-dlq\"\n}\n\nresource \"aws_sqs_queue\" \"jobs\" {\n  name                       = \"my-app-jobs\"\n  visibility_timeout_seconds = 60\n  redrive_policy = jsonencode({\n    deadLetterTargetArn = aws_sqs_queue.dlq.arn\n    maxReceiveCount     = 5\n  })\n}\n\n# --- EventBridge rule -> SQS target (Terraform, placeholders only) ---\nresource \"aws_cloudwatch_event_rule\" \"nightly\" {\n  name                = \"my-app-nightly-job\"\n  schedule_expression = \"cron(0 3 * * ? *)\"\n}\n\nresource \"aws_cloudwatch_event_target\" \"nightly_to_sqs\" {\n  rule = aws_cloudwatch_event_rule.nightly.name\n  arn  = aws_sqs_queue.jobs.arn\n}\n",
+  "failure_modes": [
+    "S3 bucket accidentally made public via a bucket policy or ACL change, discovered only after data exfiltration — mitigated by account-level Block Public Access as a backstop.",
+    "Presigned URLs generated with excessive expiry (hours/days) or overly broad scope (whole-bucket instead of one key), effectively acting as long-lived public access.",
+    "Aurora/RDS running out of max_connections under Lambda burst concurrency because RDS Proxy wasn't put in front of it.",
+    "DynamoDB hot partition (a single high-traffic partition key) throttling requests even though aggregate table throughput looks fine on paper — requires partition key design review, not just capacity increases.",
+    "Secrets Manager secret rotation Lambda failing silently, leaving credentials stale until the next manual check or an application outage surfaces it.",
+    "SQS queue with no dead-letter queue configured, causing poison messages to retry indefinitely and starve the consumer of capacity for good messages.",
+    "EventBridge rule pattern too broad, triggering downstream consumers on unrelated events and causing unexpected invocation volume/cost.",
+    "Running Supabase Postgres and RDS/Aurora side by side without a clear data-ownership boundary, leading to data drift or duplicated migration/backup effort."
+  ],
+  "anti_patterns": [
+    "Generating an S3 bucket policy with `\"Principal\": \"*\"` and no condition, or leaving Block Public Access disabled without an explicit, documented reason (e.g. CloudFront OAC pattern that still doesn't need bucket-level public access anyway).",
+    "Hardcoding database credentials or API keys as plaintext values instead of Secrets Manager/Parameter Store SecureString references.",
+    "Provisioning a new RDS/Aurora instance as the default choice before checking whether Supabase already covers the need.",
+    "Setting DynamoDB Provisioned capacity to a large fixed RCU/WCU value without auto-scaling or without first validating the access pattern actually needs DynamoDB over Postgres.",
+    "Creating SQS FIFO queues by default for workloads with no ordering/exactly-once requirement.",
+    "Skipping S3 bucket versioning on buckets holding irreplaceable data 'to save cost' before evaluating the lifecycle-based cost tradeoff."
+  ],
+  "tools": [
+    "AWS CLI / boto3 (Python) / AWS SDK for JavaScript v3 (Node/TS) — direct S3, DynamoDB, Secrets Manager, SQS, EventBridge access.",
+    "Terraform/CDK — declarative provisioning for all data-layer resources.",
+    "AWS Database Migration Service (DMS) — if migrating data between Postgres instances (e.g. RDS to Supabase or vice versa).",
+    "RDS Proxy — connection pooling in front of RDS/Aurora for Lambda-heavy access patterns.",
+    "Supabase CLI / Supabase Studio — primary tooling for the default Postgres+Storage path, used alongside (not instead of) the AWS CLI when AWS resources are also in play.",
+    "AWS Secrets Manager rotation Lambda templates (AWS-provided, per-engine) — starting point for RDS/Aurora secret rotation."
+  ],
+  "versions_as_of": [
+    "Aurora PostgreSQL-Compatible current major version tracks upstream PostgreSQL releases; verify the latest supported major/minor at provisioning time rather than pinning to a specific version here. [uncertain: exact latest Aurora PostgreSQL version as of 2026-08-29 — not confirmed via fetch]",
+    "DynamoDB Standard and Standard-IA table classes are current; no major API-shape changes noted as of this research pass.",
+    "boto3/AWS SDK v3 (JS) are the current-generation SDKs; avoid the legacy AWS SDK for JavaScript v2 in new Node/TS code."
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Aurora Standard storage",
+      "value": "$0.10/GB-month + $0.20 per million I/Os",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/rds/aurora/pricing/"
+    },
+    {
+      "item": "Aurora I/O-Optimized storage",
+      "value": "$0.225/GB-month, zero separate I/O charges",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/rds/aurora/pricing/"
+    },
+    {
+      "item": "Aurora Serverless v2 ACU sizing",
+      "value": "~2 GiB memory per ACU, scalable in increments as small as 0.5 ACU with instant scaling [uncertain: exact per-ACU-hour price not confirmed via fetch in this pass]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/rds/aurora/pricing/"
+    },
+    {
+      "item": "DynamoDB on-demand pricing",
+      "value": "$0.125 per million read request units, $0.625 per million write request units [uncertain: figures extracted from a summarized fetch, cross-check against the live pricing page table before quoting to a customer]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/dynamodb/pricing/"
+    },
+    {
+      "item": "DynamoDB provisioned capacity",
+      "value": "$0.00013/RCU-hour, $0.00065/WCU-hour",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/dynamodb/pricing/"
+    },
+    {
+      "item": "DynamoDB storage",
+      "value": "$0.25/GB-month Standard, $0.10/GB-month Standard-IA",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/dynamodb/pricing/"
+    },
+    {
+      "item": "DynamoDB free tier",
+      "value": "25 RCU + 25 WCU + 25 GB storage + 2.5M stream reads + 1 GB data transfer out per month [uncertain: whether unchanged post the 2025-07-15 Free Tier credit-model shift for new accounts]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/dynamodb/pricing/"
+    },
+    {
+      "item": "Secrets Manager pricing",
+      "value": "$0.40 per secret per month + $0.05 per 10,000 API calls",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/secrets-manager/pricing/"
+    },
+    {
+      "item": "SSM Parameter Store Standard tier",
+      "value": "Free (up to 10,000 parameters, 4KB each) — Advanced tier adds per-parameter monthly charge for larger/more parameters [uncertain: exact Advanced tier price not confirmed via fetch]",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html"
+    },
+    {
+      "item": "SQS free tier",
+      "value": "1 million requests/month free across all customers",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/sqs/pricing/"
+    },
+    {
+      "item": "SQS per-million-request pricing",
+      "value": "[uncertain: exact standard vs FIFO per-million rate not confirmed via fetch in this pass — historically ~$0.40/million standard, ~$0.50/million FIFO; verify against live pricing page]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/sqs/pricing/"
+    },
+    {
+      "item": "EventBridge custom events",
+      "value": "$1.00 per million events published (events ≤64KB); same-account delivery free; EventBridge Pipes $0.40/million; Scheduler free tier 14M invocations/month",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/eventbridge/pricing/"
+    }
+  ],
+  "deprecation_watch": [
+    "Aurora MySQL-compatible and older non-Graviton (`db.r5`/`db.m5`) instance families remain supported but are not the greenfield default — prefer Graviton (`db.r7g`/`db.r6g`) for new provisioned Aurora PostgreSQL instances.",
+    "AWS SDK for JavaScript v2 — superseded by v3 (modular, tree-shakeable); do not start new Node/TS projects on v2.",
+    "DynamoDB Reserved Capacity purchasing model exists alongside On-Demand/Provisioned — evaluate only after traffic is well understood; not a greenfield default."
+  ],
+  "identity_model": "Every data-layer resource is accessed via IAM role/policy, never embedded credentials for the AWS-native services: S3, DynamoDB, Secrets Manager, SQS, and EventBridge are all reached through the calling compute's execution/task role (see aws-compute-serverless) with resource-scoped policies (e.g. `s3:GetObject` on a specific bucket ARN, `secretsmanager:GetSecretValue` on a specific secret ARN). RDS/Aurora supports IAM database authentication (short-lived auth tokens instead of static DB passwords) as the preferred connection method where the driver/pooler supports it; where IAM auth isn't practical, the DB password itself is stored in Secrets Manager and rotated automatically, never hardcoded. Supabase Postgres, by contrast, uses its own service-role/anon-key and connection-string model — those keys are Supabase secrets, not AWS IAM, and should be stored in the same secrets-management discipline (Secrets Manager or the CI platform's own secret store) rather than committed to source.",
+  "threats": [
+    "Publicly accessible S3 bucket or object due to a misconfigured bucket policy, ACL, or disabled Block Public Access.",
+    "Overly broad IAM policy on a compute role granting `s3:*`/`dynamodb:*`/`secretsmanager:*` on `*` instead of specific resource ARNs.",
+    "Secrets Manager/Parameter Store secrets readable by more principals than necessary due to an overly permissive resource policy or IAM policy.",
+    "RDS/Aurora publicly accessible (`PubliclyAccessible: true`) when it should only be reachable from within the VPC.",
+    "SQS queue policy allowing cross-account or public `sqs:SendMessage`/`sqs:ReceiveMessage` without a condition, enabling message injection or exfiltration.",
+    "DynamoDB table without point-in-time recovery (PITR) enabled, risking unrecoverable data loss from an application bug or accidental delete.",
+    "Data residency/compliance drift from running duplicate copies of the same data in both Supabase and RDS/Aurora with unclear source-of-truth ownership."
+  ],
+  "mitigations": [
+    "Account-level S3 Block Public Access plus per-bucket policy review in CI (policy-as-code linting) before any bucket policy change ships.",
+    "Least-privilege IAM policies scoped to specific resource ARNs for every compute-to-data-layer access path, generated from actual usage rather than copied broad templates.",
+    "RDS/Aurora provisioned with `PubliclyAccessible: false` and placed in private subnets, reachable only from application security groups within the VPC.",
+    "Enable DynamoDB point-in-time recovery and S3 versioning on every table/bucket holding data that can't be regenerated.",
+    "Automatic Secrets Manager rotation for all RDS/Aurora credentials; IAM database authentication where the client stack supports it, to eliminate long-lived DB passwords entirely.",
+    "Explicit SQS queue policies scoping `sqs:SendMessage`/`sqs:ReceiveMessage` to specific principals (the known producer/consumer roles), not open to the account or public.",
+    "A documented single source of truth per data domain (Supabase vs RDS/Aurora) to prevent silent duplication and drift."
+  ],
+  "agent_codegen_policy": [
+    "Must never generate an S3 bucket policy or ACL granting public read/write without an explicit, stated CloudFront-OAC-style justification and confirmation Block Public Access is still enabled at the bucket/account level for anything not intentionally public.",
+    "Must generate presigned URLs with a short, explicit `ExpiresIn`/expiry and scoped to one object key and one action.",
+    "Must resolve database credentials and API keys via Secrets Manager/Parameter Store SDK calls, never plaintext literals in code or IaC.",
+    "Must default new relational-storage requests to Supabase Postgres unless the task explicitly states an AWS-native/VPC-only requirement; must not silently provision RDS/Aurora as a default.",
+    "Must configure a dead-letter queue whenever generating a new SQS queue with a consumer.",
+    "Must enable DynamoDB point-in-time recovery and S3 versioning by default when generating new tables/buckets for durable data.",
+    "Should flag (not silently resolve) any request to run parallel Postgres instances (Supabase + RDS/Aurora) for the same logical dataset."
+  ],
+  "ci_gates": [
+    "IaC policy scanning (checkov/tfsec-style) blocking merges that disable S3 Block Public Access, make an RDS instance publicly accessible, or open an SQS/SNS resource policy to `Principal: *`.",
+    "Migration review gate for any schema change touching the primary Postgres store (Supabase or RDS/Aurora), separate from the general deploy pipeline.",
+    "Secrets-scanning step blocking commits containing connection-string-shaped or API-key-shaped literals.",
+    "A drift-detection job (`terraform plan` on a schedule) flagging any manual console change to data-layer resources."
+  ],
+  "observability": [
+    "CloudWatch metrics for RDS/Aurora (CPU, connections, replica lag, storage), DynamoDB (throttled requests, consumed capacity), SQS (queue depth, age of oldest message, DLQ message count), and S3 (request metrics, replication lag if cross-region replication is used).",
+    "Alert on: SQS DLQ message count > 0, DynamoDB throttled request rate above a small threshold, RDS/Aurora connection count approaching max_connections, S3 4xx/5xx error rate spikes.",
+    "Secrets Manager rotation success/failure events surfaced as alerts, not just left in CloudTrail.",
+    "Central log/metrics pipeline (OTel where possible) unifying AWS data-layer metrics with Supabase's own dashboard/logs for one operational view."
+  ],
+  "cost_guardrails": [
+    "First surprise: Aurora provisioned instances billed 24/7 regardless of load when Serverless v2 or right-sizing would have been cheaper for variable workloads — review instance utilization against Serverless v2 monthly.",
+    "Second surprise: DynamoDB left on Provisioned capacity with auto-scaling misconfigured (min capacity set too high), billing for unused reserved throughput continuously — prefer On-Demand until traffic is well characterized.",
+    "Third surprise: S3 storage class left entirely on Standard for old/rarely-accessed objects (backups, logs, historical exports) with no lifecycle rule, when Infrequent Access/Glacier would cut storage cost substantially.",
+    "Fourth surprise: running both Supabase (with its own compute/storage billing) and RDS/Aurora in parallel 'just in case,' doubling database spend for a single logical dataset.",
+    "Set AWS Budgets per data-layer service (RDS/Aurora, DynamoDB, S3, Secrets Manager) and a Cost Anomaly Detection monitor on the account, given the shortened ~6-month credit runway on new accounts post the 2025-07-15 Free Tier change."
+  ],
+  "skill_scan_signals": [
+    "Positive: S3 bucket IaC including `block_public_acls/block_public_policy/ignore_public_acls/restrict_public_buckets = true` and a versioning + lifecycle block.",
+    "Positive: SQS queue IaC including a `redrive_policy` referencing a DLQ.",
+    "Negative (flag): S3 bucket policy with `\"Principal\": \"*\"` and no `Condition` block.",
+    "Negative (flag): connection-string-shaped literals (`postgres://`, `mysql://`) or `sk_live_`/`AKIA`-shaped tokens appearing directly in source, env files, or IaC variable defaults instead of a Secrets Manager/Parameter Store reference.",
+    "Negative (flag): `aws_db_instance`/`aws_rds_cluster` resources with `publicly_accessible = true` outside a documented, deliberate exception.",
+    "Negative (flag): DynamoDB table resource with a large fixed `read_capacity`/`write_capacity` and no `aws_appautoscaling_target` attached."
+  ],
+  "skill_module_bullets": [
+    "Default to Supabase Postgres; bring in RDS/Aurora only for a stated AWS-native/VPC/compliance requirement.",
+    "S3: Block Public Access + versioning + lifecycle + short-scoped presigned URLs as the default bucket posture.",
+    "RDS Proxy in front of any Lambda-to-Postgres access path at real concurrency.",
+    "DynamoDB only for genuine high-throughput key-value patterns, On-Demand by default until traffic is understood.",
+    "Secrets Manager for anything needing rotation; Parameter Store SecureString (free Standard tier) for static config/secrets.",
+    "SQS for point-to-point work queues (always with a DLQ); EventBridge for routed/scheduled events across AWS services.",
+    "Never run Supabase and RDS/Aurora in parallel for the same logical dataset without a documented reason.",
+    "Watch Aurora Serverless v2 as the default for variable-load AWS-native Postgres instead of always-on provisioned instances."
+  ],
+  "checklist": [
+    "Data-layer choice (Supabase vs RDS/Aurora vs DynamoDB) documented with rationale for each new datastore.",
+    "Every S3 bucket has Block Public Access, versioning, encryption, and a lifecycle rule.",
+    "Every SQS queue with a consumer has a dead-letter queue configured.",
+    "RDS/Aurora instances are not publicly accessible; IAM DB auth or Secrets-Manager-rotated credentials in use.",
+    "No plaintext secrets/connection strings in code, env files, or IaC defaults.",
+    "DynamoDB tables have point-in-time recovery enabled and capacity mode matches actual traffic maturity.",
+    "Budgets/alerts configured per data-layer service before production traffic begins.",
+    "No duplicate/parallel Postgres instances for the same logical dataset without documented justification."
+  ],
+  "source_tier": "official",
+  "confidence": "medium",
+  "conflicts_noted": "Several exact pricing figures (Aurora Serverless v2 per-ACU-hour rate, precise SQS per-million-request pricing, SSM Parameter Store Advanced tier pricing) could not be fully confirmed via the fetches performed in this pass — the pricing pages' summarized content omitted the underlying rate tables. These are marked [uncertain] and should be re-verified against AWS's live pricing calculator before quoting exact figures to a stakeholder. The 2025-07-15 AWS Free Tier shift to a credit-based model for new accounts also creates ambiguity about whether legacy service-specific free tiers (DynamoDB 25 RCU/WCU, S3 5GB, RDS 750 hours) still apply unchanged to new accounts versus being folded into the ~$200 credit pool.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://aws.amazon.com/rds/aurora/pricing/",
+    "https://aws.amazon.com/dynamodb/pricing/",
+    "https://aws.amazon.com/secrets-manager/pricing/",
+    "https://aws.amazon.com/sqs/pricing/",
+    "https://aws.amazon.com/eventbridge/pricing/",
+    "https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html"
+  ],
+  "uncertain": [
+    "conflicts_noted"
+  ]
+}

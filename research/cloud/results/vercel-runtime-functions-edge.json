@@ -1,0 +1,316 @@
+{
+  "name": "Vercel runtime — Fluid compute, serverless vs edge runtime, regions, ISR/cache, cron, queues/workflows, streaming, Next.js 16 specifics, limits",
+  "item_id": "vercel-runtime-functions-edge",
+  "cluster": "vercel",
+  "short_definition": "Vercel Functions is the compute layer under a Next.js 16 + Python + Supabase stack: request-scoped handlers that run on Node.js, Python, Bun, Rust, or (legacy) Edge runtimes, fronted by Vercel's CDN and priced/scaled under the 'Fluid compute' execution model. Fluid compute (default for all new projects since 2025-04-23) replaces one-microVM-per-invocation serverless with in-function concurrency, active-CPU billing, and automatic prewarming; it is the substrate for ISR/data caching, cron jobs, streaming AI responses, and the newer Vercel Workflows/Queues durable-execution products. In this stack Next.js Server Components/Route Handlers and Python FastAPI/Flask/Django backends both compile down to Vercel Functions on Fluid compute, sharing region, memory, and OIDC identity configuration.",
+  "scope_in": "Vercel Functions runtimes (Node.js, Python, Bun, Rust, Edge, community runtimes), Fluid compute execution/pricing model, function configuration (memory, maxDuration, regions, concurrency), region selection and multi-region failover, ISR and the Vercel Data/Runtime Cache, cron jobs, Vercel Queues and Vercel Workflows (durable execution), streaming responses, Next.js 16 caching model changes that affect deployment (Cache Components, 'use cache', proxy.ts), and OIDC federation from a function to AWS/GCP.",
+  "scope_out": "Vercel project/org setup, DNS/domains, Vercel Blob/KV/Postgres storage products (see storage item), Vercel Sandbox and AI Gateway (see AI/agent infra item), Supabase-side RLS/migrations (see Supabase item), general Next.js App Router architecture unrelated to deployment runtime, CI/CD and Git-based deploy flow (see deploy-ops.md), Vercel WAF/security headers (see edge-network/security item if present).",
+  "priority": "P0",
+  "defaults": [
+    "Leave Fluid compute enabled (it is on by default for every new project since 2025-04-23) — do not disable it; it is strictly better than legacy per-invocation serverless for cost and cold starts.",
+    "Default to the Node.js runtime for all Next.js Route Handlers, Server Actions, and Python for data/ML services — do not reach for the standalone Edge runtime for new code.",
+    "Pin Node.js to 24.x explicitly via package.json `engines.node: \"24.x\"` even though it is already the dashboard default, so CI/local and prod agree; this matches the existing deploy-ops.md guidance of Node 24 LTS as the greenfield default.",
+    "Default Python version is 3.12; pin explicitly to 3.13 or 3.14 only if a dependency requires it — do not leave version unset if the team cares about reproducibility.",
+    "Set an explicit function region (`regions` in vercel.json or per-function `functions` block) close to the Supabase project's region rather than relying on the iad1 default, unless the DB is also in iad1/us-east.",
+    "Use `maxDuration` conservatively (keep default 300s unless a workload is known to need more) rather than reaching for the 800s/1800s extended-duration tiers by default — those exist for genuine long-running jobs, not as a substitute for fixing slow code.",
+    "Use Vercel Workflows (the `workflow` SDK, 'use workflow'/'use step') for anything that needs to pause/resume across minutes-to-months or survive deploys — do not hand-rolled a cron-polling state machine for durable execution.",
+    "Use the AI SDK's `streamText`/`toTextStreamResponse` for LLM streaming rather than hand-rolling ReadableStream plumbing.",
+    "Authenticate Vercel Functions to AWS/GCP via OIDC federation (`@vercel/oidc-aws-credentials-provider` or the GCP equivalent) — never store long-lived AWS/GCP keys as Vercel environment variables.",
+    "For scheduled jobs, default to Vercel Cron Jobs on Pro (per-minute precision) rather than Hobby (once-per-day only, ±59 min precision) once the project needs real scheduling reliability."
+  ],
+  "decision_gates": [
+    "Use Vercel Functions (Node.js/Python) when the workload is a normal request/response API, SSR, or short background task under ~13 minutes (800s) — this is the default for nearly everything in this stack.",
+    "Use Vercel Workflows instead of a Function when logic must pause for human approval, wait on an external webhook, or run for minutes to months (e.g., multi-step agent pipelines, drip campaigns, long ETL) — Functions cannot exceed 1800s even in the extended-duration beta.",
+    "Use the standalone Edge runtime only for legacy code you have not migrated yet, or for `middleware`/`proxy.ts` logic that truly needs V8-isolate startup latency at the CDN edge and cannot tolerate Node.js cold start — Vercel's own docs now recommend migrating edge to Node.js, and Next.js 16.3 removed `runtime = 'edge'` support for routes/pages entirely (they always run on Node.js now).",
+    "Use Supabase Edge Functions (Deno) instead of Vercel Functions when the workload must live next to Supabase Postgres/Auth with its own deploy lifecycle independent of the Vercel frontend deploy — this is a separate item, not a Vercel Functions responsibility.",
+    "Use a VPS/long-running container (e.g., for a persistent WebSocket server, stateful queue consumer, or GPU inference process) instead of Vercel Functions when the process must run continuously rather than scale-to-zero — Vercel Functions, even under Fluid compute, are still invocation-triggered.",
+    "Choose Python runtime over Node.js for a given service when the code depends on the Python ML/data ecosystem (pandas, numpy, torch, LangChain-py) — otherwise default to Node.js/TypeScript for consistency with the Next.js codebase.",
+    "Choose multi-region function deployment (Pro: up to 5, Enterprise: all) only when you have genuinely regional data sources (e.g., EU-resident data under GDPR) — otherwise single-region iad1 (or a region near your Supabase project) keeps cost and complexity lower.",
+    "Choose Vercel Queues/Workflows over a self-hosted queue (SQS, Cloud Tasks, BullMQ+Redis) when you want zero infra to manage and are comfortable with Vercel's usage-based pricing and current beta/GA maturity; choose SQS/Cloud Tasks when you need cross-cloud portability or already run infra there via OIDC."
+  ],
+  "do_dont": [
+    "Do pin Node.js version via `engines.node` in package.json; don't rely purely on dashboard settings that can drift between environments.",
+    "Do use OIDC federation (`awsCredentialsProvider`, GCP Workload Identity Federation) to reach AWS/GCP from a function; don't paste AWS access keys into Vercel environment variables.",
+    "Do set `AWS_REGION` explicitly as a Vercel env var when using OIDC to AWS; don't rely on Vercel's auto-set `AWS_REGION` (it tracks the function's execution region and can silently change under multi-region/failover).",
+    "Do use `waitUntil()` for background work (logging, analytics, cache warms) after responding to the user; don't block the response path on non-critical async work.",
+    "Do configure `excludeFiles`/`includeFiles` (or Next.js `outputFileTracingIncludes`) to keep Python/Node bundles under the 250MB/500MB limits; don't ship test fixtures, sample data, or dev-only assets into the function bundle.",
+    "Do use Vercel Workflows for durable, resumable multi-step logic; don't build a custom polling-based state machine on top of cron jobs to fake durability.",
+    "Do validate cron requests using the `vercel-cron/1.0` user agent and/or a shared secret header if the endpoint is also reachable publicly; don't leave cron endpoints unauthenticated and assume the URL is secret.",
+    "Do keep `maxDuration` as low as the workload allows; don't set every function to the 800s/1800s ceiling 'just in case' — it inflates worst-case provisioned-memory billing and hides slow-code regressions.",
+    "Do treat the 4.5MB request/response body limit as a hard constraint on API design (use signed upload URLs / streaming for large payloads); don't try to raise it — it is enforced by the underlying AWS Lambda-based limit for non-streaming responses.",
+    "Do re-run `revalidateTag(tag, cacheLifeProfile)` with an explicit profile under Next.js 16 (the single-argument form is deprecated); don't leave the second argument off and assume old SWR semantics still apply."
+  ],
+  "config_skeleton": "```json filename=\"vercel.json\"\n{\n  \"$schema\": \"https://openapi.vercel.sh/vercel.json\",\n  \"fluid\": true,\n  \"regions\": [\"iad1\"],\n  \"functions\": {\n    \"api/heavy-job.ts\": {\n      \"memory\": 3009,\n      \"maxDuration\": 60,\n      \"regions\": [\"iad1\"]\n    },\n    \"api/eu-data.ts\": {\n      \"regions\": [\"cdg1\"],\n      \"functionFailoverRegions\": [\"lhr1\"]\n    },\n    \"api/py-service.py\": {\n      \"runtime\": \"python3.12\",\n      \"maxDuration\": 30,\n      \"excludeFiles\": \"{tests/**,**/*.test.py,fixtures/**}\"\n    }\n  },\n  \"crons\": [\n    { \"path\": \"/api/cron/daily-report\", \"schedule\": \"0 5 * * *\" },\n    { \"path\": \"/api/cron/minutely-sync\", \"schedule\": \"*/5 * * * *\" }\n  ]\n}\n```\n\n```ts filename=\"next.config.ts\"\nimport type { NextConfig } from 'next';\n\nconst nextConfig: NextConfig = {\n  // Cache Components (formerly experimental.dynamicIO) — Next.js 16\n  cacheComponents: true,\n  experimental: {\n    turbopackFileSystemCacheForDev: true,\n  },\n};\n\nexport default nextConfig;\n```\n\n```ts filename=\"package.json (excerpt)\"\n{\n  \"engines\": {\n    \"node\": \"24.x\"\n  }\n}\n```\n\n```ts filename=\"app/api/report/route.ts\"  // Node.js runtime (default) with explicit maxDuration\nexport const maxDuration = 60; // seconds; overrides project/dashboard default\n\nexport async function GET(request: Request) {\n  const data = await fetchFromSupabase();\n  return Response.json(data);\n}\n```\n\n```python filename=\"api/report.py\"  # Python runtime example (pyproject.toml sets version)\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get(\"/api/report\")\ndef report():\n    return {\"status\": \"ok\"}\n```\n\n```toml filename=\"pyproject.toml\"\n[project]\nname = \"my-python-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.12\"\ndependencies = [\"fastapi>=0.117.1\"]\n\n[tool.vercel]\nentrypoint = \"api.report:app\"\n```\n\n```ts filename=\"app/api/aws-s3/route.ts\"  // OIDC federation to AWS from a Vercel Function — no long-lived keys\nimport * as S3 from '@aws-sdk/client-s3';\nimport { awsCredentialsProvider } from '@vercel/oidc-aws-credentials-provider';\n\nconst AWS_REGION = process.env.AWS_REGION!; // pin explicitly, do not trust auto-set value\nconst AWS_ROLE_ARN = process.env.AWS_ROLE_ARN!; // e.g. arn:aws:iam::123456789012:role/example-role\n\nconst s3client = new S3.S3Client({\n  region: AWS_REGION,\n  credentials: awsCredentialsProvider({\n    audience: 'sts.amazonaws.com',\n    roleArn: AWS_ROLE_ARN,\n  }),\n});\n\nexport async function GET() {\n  const result = await s3client.send(\n    new S3.ListObjectsV2Command({ Bucket: process.env.S3_BUCKET_NAME! }),\n  );\n  return Response.json(result.Contents?.map((o) => o.Key) ?? []);\n}\n```\n\n```json filename=\"trust-policy.json (AWS side, placeholder ids only)\"\n{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [{\n    \"Effect\": \"Allow\",\n    \"Principal\": { \"Federated\": \"arn:aws:iam::123456789012:oidc-provider/oidc.vercel.com/my-team-slug\" },\n    \"Action\": \"sts:AssumeRoleWithWebIdentity\",\n    \"Condition\": {\n      \"StringEquals\": { \"oidc.vercel.com/my-team-slug:aud\": \"https://vercel.com/my-team-slug\" },\n      \"StringLike\": { \"oidc.vercel.com/my-team-slug:sub\": [\n        \"owner:my-team-slug:project:my-app:environment:production\"\n      ] }\n    }\n  }]\n}\n```\n\n```ts filename=\"app/workflows/report-workflow.ts\"  // Vercel Workflows — durable execution\nexport async function reportWorkflow(reportId: string) {\n  'use workflow';\n  const draft = await generateReport(reportId); // 'use step' function elsewhere\n  await sleep('1h');\n  const approved = await waitForApprovalHook(reportId);\n  return { draft, approved };\n}\n```",
+  "failure_modes": [
+    "Function timeout (`FUNCTION_INVOCATION_TIMEOUT`, HTTP 504) because `maxDuration` was left at the 300s default while a workload (e.g., an unbounded LLM chain or DB migration) legitimately needs longer — should have used Workflows or an explicit higher `maxDuration`.",
+    "413 `FUNCTION_PAYLOAD_TOO_LARGE` from exceeding the hard 4.5MB request/response body limit, commonly hit with base64 file uploads or large JSON exports — fix with signed upload URLs, streaming, or chunking, not by trying to raise the limit.",
+    "Cross-region latency blowups when a function's region doesn't match its Supabase/Postgres region — every query pays a transcontinental round trip.",
+    "AWS calls silently routing to the wrong region after a multi-region failover event because `AWS_REGION` was left to Vercel's auto-set value instead of being pinned as an explicit env var.",
+    "Stale ISR content served indefinitely because a revalidation kept failing (network error, non-2xx/3xx/404/410 status) — Vercel serves stale content with a 30s retry TTL, which can mask a broken data source for a long time if not monitored.",
+    "Cron jobs silently capped at once-per-day with ±59min slop on Hobby, surprising teams who assumed per-minute precision — only Pro/Enterprise get per-minute scheduling.",
+    "Bundle-size deploy failures (250MB Node / 500MB Python uncompressed) from accidentally including dev dependencies, test fixtures, or ML model weights — mitigate with `excludeFiles`/`outputFileTracingIncludes` or the large-functions (5GB) beta.",
+    "Edge-runtime code silently breaking after a Next.js upgrade to 16.3+, since `runtime = 'edge'` route-segment config is no longer honored and routes/pages now always execute on Node.js — code relying on Edge-only behavior (subset Web APIs, no Node APIs) needs re-validation.",
+    "File-descriptor exhaustion (`too many open files`) under Fluid compute's shared-instance concurrency model, because the 1,024 file-descriptor ceiling is shared across all concurrently handled requests on one instance, unlike classic one-VM-per-invocation isolation.",
+    "Unexpected Active-CPU cost spikes from CPU-bound work (image/video processing, heavy JSON transforms) that were assumed 'free while idle' under Fluid — Active CPU billing pauses only during I/O wait, not during actual computation."
+  ],
+  "anti_patterns": [
+    "Storing static AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY as Vercel environment variables instead of OIDC federation.",
+    "Hand-rolling a durable state machine with cron-job polling instead of using Vercel Workflows for pause/resume logic.",
+    "Setting `maxDuration` to the maximum (800s/1800s) on every function by default instead of profiling actual workload duration.",
+    "Using the standalone Edge runtime for new Next.js 16 routes/pages (unsupported since 16.3) or for code with heavy Node.js dependencies.",
+    "Ignoring the ISR on-demand-revalidation scoping (deployment + domain only) and assuming a revalidation call also refreshes subdomains or other deployments.",
+    "Skipping the `cacheLife` profile argument on `revalidateTag()` in Next.js 16 and assuming legacy semantics still hold.",
+    "Deploying multi-region functions 'for resilience' on Hobby/Pro without actually needing regional data locality, inflating cost with no latency benefit.",
+    "Leaving cron endpoints unauthenticated and reachable via a guessable public URL.",
+    "Bundling entire node_modules or Python virtualenvs (tests, docs, static assets) into a function instead of scoping with excludeFiles.",
+    "Treating Vercel Queues/Workflows as fully mature/stable for mission-critical production paths without checking current beta/GA status per changelog before committing architecture."
+  ],
+  "tools": [
+    "Vercel CLI (`vercel`, `vercel deploy`, `vercel env pull`, `vercel --regions`) — primary deploy/config tool",
+    "Vercel dashboard (Project Settings → Functions) — region, memory, Fluid compute toggles",
+    "`@vercel/functions` package — `waitUntil`, geolocation, and other in-function APIs",
+    "`@vercel/oidc-aws-credentials-provider` — AWS SDK credential provider using Vercel OIDC tokens",
+    "Vercel Workflow SDK (`workflow` npm package / `vercel` Python SDK) — durable execution primitives ('use workflow', 'use step')",
+    "Vercel AI SDK (`ai` package) — `streamText`/`toTextStreamResponse` for LLM streaming",
+    "`next.config.ts` `cacheComponents` flag — Next.js 16 Cache Components / 'use cache' opt-in",
+    "Vercel Observability dashboard — Active CPU, Provisioned Memory, Invocations, Workflow run traces",
+    "crontab.guru / Vercel's built-in validator — cron expression sanity checking"
+  ],
+  "versions_as_of": [
+    "Node.js runtime: 24.x is the default for new projects as of 2026-08-29; 22.x and 20.x also available; only major versions selectable, minors/patches auto-rolled.",
+    "Python runtime: 3.12 is default; 3.13 and 3.14 also available as of 2026-08-29.",
+    "Next.js: v16 (GA October 21, 2025) is current; Next.js 16.3 removed support for `runtime = 'edge'` on routes/pages (they now always run on Node.js).",
+    "Fluid compute has been the default execution model for all new Vercel projects since 2025-04-23.",
+    "Vercel Workflows / Workflow SDK: multi-region support requires `workflow` v5.0.0-beta.33+; runs created on the 4.x line are pinned to iad1.",
+    "Vercel Queues: reached public beta per Vercel changelog ('Vercel Queues now in public beta') — treat as beta-maturity, not GA, as of 2026-08-29 [uncertain].",
+    "OIDC Federation: generally available per Vercel changelog ('OpenID Connect (OIDC) Federation now generally available')."
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Function max duration (Hobby)",
+      "value": "300s default and maximum",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Function max duration (Pro/Enterprise)",
+      "value": "300s default, 800s GA maximum, 1800s extended-maximum (beta, specific runtime versions only)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Function memory (Hobby)",
+      "value": "2 GB / 1 vCPU default and maximum",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Function memory (Pro/Enterprise)",
+      "value": "2 GB default, up to 4 GB / 2 vCPU maximum",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Request/response body size",
+      "value": "4.5 MB hard limit (413 FUNCTION_PAYLOAD_TOO_LARGE beyond this)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Bundle size (uncompressed)",
+      "value": "250 MB Node.js/Bun, 500 MB Python; Large Functions beta up to 5 GB (requires Fluid + Active CPU)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "Function regions per deployment",
+      "value": "Hobby: 1 region; Pro: up to 5 regions; Enterprise: all regions",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/configuring-functions/region"
+    },
+    {
+      "item": "Cron jobs per project",
+      "value": "100 cron jobs on every plan (Hobby/Pro/Enterprise)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/cron-jobs/usage-and-pricing"
+    },
+    {
+      "item": "Cron minimum interval / precision",
+      "value": "Hobby: once per day, ±59 min precision; Pro/Enterprise: once per minute, per-minute precision",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/cron-jobs/usage-and-pricing"
+    },
+    {
+      "item": "Fluid compute Active CPU (Hobby included)",
+      "value": "4 hours/month included, then not billable further on Hobby (no on-demand Hobby tier)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Fluid compute Active CPU (Pro, example region iad1)",
+      "value": "$0.128 per CPU-hour in Washington D.C. (iad1); varies by region ($0.128–$0.221/hr across regions)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Fluid compute Provisioned Memory (Pro, example region iad1)",
+      "value": "$0.0106 per GB-hour in iad1; varies by region ($0.0106–$0.0183/GB-hr)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/usage-and-pricing"
+    },
+    {
+      "item": "Concurrency auto-scaling",
+      "value": "Up to 30,000 concurrent (Hobby/Pro) or 100,000+ (Enterprise)",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/limitations"
+    },
+    {
+      "item": "ISR cache durability",
+      "value": "Persists 31 days or until revalidated; global purge propagation within ~300ms",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/incremental-static-regeneration"
+    },
+    {
+      "item": "Edge runtime max duration",
+      "value": "Must begin responding within 25s; can stream up to 300s total",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/functions/runtimes/edge"
+    },
+    {
+      "item": "OIDC token lifetime",
+      "value": "Function tokens reused up to 90 min, TTL 2 hours total",
+      "as_of": "2026-08-29",
+      "source": "https://vercel.com/docs/oidc"
+    }
+  ],
+  "deprecation_watch": [
+    "Standalone Edge runtime: Vercel docs now explicitly recommend migrating from Edge to Node.js ('both runtimes run on Fluid compute with Active CPU pricing' — no performance reason left to prefer Edge); Next.js 16.3 removed `runtime = 'edge'` support for routes/pages outright (they always run on Node.js now). `middleware.ts` is renamed to `proxy.ts` and always runs on Node.js in Next.js 16; the old edge-runtime `middleware.ts` path still works but is deprecated and slated for future removal.",
+    "Node.js 20.x: Vercel changelog states 'Node.js 20 is being deprecated on October 1, 2026' — do not select 20.x for any new greenfield project; this deadline falls inside this doc's review window.",
+    "Legacy (non-Fluid) serverless pricing: still documented at `/docs/functions/usage-and-pricing/legacy-pricing` for projects that have not migrated, but Fluid compute is default for all new projects and is the only path covered here.",
+    "`experimental.dynamicIO` / `experimental.ppr` Next.js flags: removed in Next.js 16 in favor of the unified `cacheComponents` config and Cache Components model — do not use old flag names from pre-16 tutorials.",
+    "`revalidateTag(tag)` single-argument form: deprecated in Next.js 16 in favor of `revalidateTag(tag, cacheLifeProfile)` or the new `updateTag()`/`refresh()` APIs."
+  ],
+  "identity_model": "No long-lived cloud keys are ever stored as Vercel environment variables for AWS/GCP access. Vercel issues short-lived OIDC ID tokens signed by its own IdP (`https://oidc.vercel.com/<team-slug>` in Team issuer mode, recommended over the generic Global mode): during builds the token is exposed as `VERCEL_OIDC_TOKEN`; inside a running Function it arrives as the `x-vercel-oidc-token` request header and is reused for up to 90 minutes (2h absolute TTL) to cover the function's max execution window. AWS trust is established by registering Vercel's OIDC provider as an IAM Identity Provider and writing an IAM role trust policy that matches on the token's `sub` claim (`owner:<team>:project:<project>:environment:<env>`) and `aud` claim, then calling `sts:AssumeRoleWithWebIdentity` via `@vercel/oidc-aws-credentials-provider`; GCP uses an equivalent Workload Identity Federation pool/provider. Vercel-side authorization for dashboard/CLI actions uses standard Vercel team RBAC (owner/member/viewer roles) and is out of scope here. `AWS_REGION` must be pinned as an explicit project env var rather than trusted from Vercel's auto-set value, since that value tracks the function's actual execution region and can shift under multi-region routing or failover, silently redirecting AWS calls to a region with no matching resources.",
+  "threats": [
+    "Long-lived AWS/GCP credentials leaking from Vercel environment variables (dashboard access, build log exposure, dependency supply-chain compromise reading `process.env`).",
+    "Overly broad OIDC trust-policy `sub` conditions (e.g., wildcarding `environment:*` or `project:*`) letting a compromised preview deployment assume a production-scoped IAM role.",
+    "Unauthenticated cron endpoints being triggered by any external caller who guesses the path, since the only built-in signal is the `vercel-cron/1.0` user agent (which can be spoofed by direct HTTP calls if the route has no additional verification).",
+    "Data exfiltration or cost-abuse via oversized/uncontrolled streaming responses or unbounded `waitUntil` background work that keeps billing memory/CPU without a clear owner.",
+    "Edge-runtime code paths (middleware/proxy) silently exposing broader attack surface than intended because the Edge sandbox's restricted Node API surface is assumed to be a security boundary — it is a performance/compatibility boundary, not a security sandbox against application-level bugs.",
+    "Stale ISR content masking a compromised or defaced upstream data source if revalidation silently keeps failing and no alert is wired to the 30s-retry failure state.",
+    "Cross-region AWS_REGION drift under multi-region failover routing calls to a region without the expected IAM role/resources, causing either failures or (worse) accidental creation of resources in an unintended region.",
+    "Vercel Queues/Workflows persisted state (event logs, workflow inputs/outputs) potentially retaining sensitive PII longer than intended if data-retention settings aren't reviewed given the product's usage-based 'Data Retained' pricing model."
+  ],
+  "mitigations": [
+    "Enforce OIDC federation for all cloud-resource access from functions; block PRs that introduce `AWS_SECRET_ACCESS_KEY`/`AWS_ACCESS_KEY_ID`/GCP service-account JSON as env vars via scan_signals below.",
+    "Scope IAM/GCP trust-policy conditions tightly to exact `project`/`environment` combinations (avoid `*` wildcards) and use separate roles per environment (production vs preview vs development).",
+    "Add a shared-secret or signature check (e.g., a `CRON_SECRET` header compared server-side) on cron endpoints in addition to relying on the `vercel-cron/1.0` user agent.",
+    "Set explicit `maxDuration` per function scoped to actual need, and alert on functions approaching their configured ceiling (a signal of runaway work, not a reason to raise the ceiling).",
+    "Pin `AWS_REGION` (and any other cloud region assumption) as an explicit Vercel environment variable rather than relying on auto-injected, execution-region-dependent values.",
+    "Wire an observability alert on ISR revalidation failures (repeated 30s-retry state) so stale-content masking of a broken origin is caught quickly.",
+    "Review Vercel Workflows/Queues data-retention configuration and avoid persisting raw PII in workflow step inputs/outputs when not required; prefer references (IDs) to Supabase rows over inlining sensitive payloads into workflow state.",
+    "Treat Edge middleware/proxy.ts as a routing/redirect layer only, not an auth boundary — perform real authorization checks in the Node.js function/Route Handler, not solely in edge middleware."
+  ],
+  "agent_codegen_policy": [
+    "MUST default new API routes/Server Actions to the Node.js runtime; MUST NOT emit `export const config = { runtime: 'edge' }` for new Next.js 16 code (unsupported for routes/pages as of 16.3) or for new standalone Vercel Functions unless the user explicitly asks for Edge and acknowledges the tradeoff.",
+    "MUST use `@vercel/oidc-aws-credentials-provider` (or GCP Workload Identity Federation equivalent) for any AWS/GCP SDK client instantiated inside a Vercel Function; MUST NOT hardcode or accept pasted AWS/GCP static credentials into code or `.env` files.",
+    "MUST pin Node.js version via `package.json` `engines.node` and Python version via `pyproject.toml`/`.python-version`; MUST NOT leave runtime version implicit when the user asks for a reproducible/greenfield setup.",
+    "MUST set an explicit, justified `maxDuration` rather than always defaulting to the maximum allowed; MUST flag to the user when a workload appears to need Vercel Workflows instead of a single long-running Function (e.g., anything involving `sleep`, human approval, or multi-day spans).",
+    "MUST use `revalidateTag(tag, cacheLifeProfile)` (two-argument form) or `updateTag()`/`refresh()` for any new Next.js 16 caching code; MUST NOT emit the deprecated single-argument `revalidateTag(tag)`.",
+    "MUST NOT bundle test fixtures, sample data, or entire `node_modules`/venv trees into a function without an `excludeFiles`/`outputFileTracingIncludes` configuration when file counts or sizes are large.",
+    "MUST add a secret/signature check to any generated cron-triggered endpoint, not rely solely on the `vercel-cron/1.0` user agent for authorization.",
+    "SHOULD prefer `waitUntil()` for non-critical background work over blocking the response, but MUST NOT use it as a substitute for Workflows when the work needs durability across a crash or deploy."
+  ],
+  "ci_gates": [
+    "Fail CI/PR review if a diff introduces a static AWS/GCP credential (access key, service-account JSON) in code or environment-variable definitions instead of an OIDC role ARN / Workload Identity Pool reference.",
+    "Fail CI if `vercel.json` sets `maxDuration` above 300s on a function without an accompanying justification comment or linked issue (guards against reflexive use of extended durations).",
+    "Warn/fail if a new API route sets `runtime: 'edge'` given the documented migration guidance and Next.js 16.3 route/page restriction.",
+    "Warn if a cron-triggered route has no secret/signature verification logic.",
+    "Verify Node.js/Python `engines`/version pins exist and match the intended LTS (24.x Node / 3.12+ Python) before merge.",
+    "Smoke-test that a sample cron path returns 200 and that `x-vercel-cron-schedule` handling (if used to disambiguate multiple schedules on one path) is present when more than one cron entry shares a path."
+  ],
+  "observability": [
+    "Vercel Observability → Functions tab: track Active CPU, Provisioned Memory, and Invocations per function; alert on Active CPU trending toward the plan's included/expected budget.",
+    "Alert on `FUNCTION_INVOCATION_TIMEOUT` (504) rate per route — a leading indicator of undersized `maxDuration` or a workload that should move to Workflows.",
+    "Alert on 413 `FUNCTION_PAYLOAD_TOO_LARGE` occurrences — signals a client/API contract exceeding the 4.5MB body limit.",
+    "Monitor ISR revalidation failure rate (repeated stale-serving with 30s retry) as a proxy for origin/data-source health.",
+    "Use Vercel Workflows' built-in trace viewer/Observability → Workflows to track run duration, step failures, and sleep/hook wait times for durable executions.",
+    "Export OpenTelemetry traces from functions (Vercel Tracing) to your APM of choice to correlate function cold starts, Active CPU spikes, and downstream Supabase/AWS latency.",
+    "Track Fast Origin Transfer and ISR read/write counts (billing-relevant) alongside functional metrics to catch cost regressions early."
+  ],
+  "cost_guardrails": [
+    "First surprise: Active CPU billing does not pause during CPU-bound work — teams that assume 'idle = free' under Fluid compute get surprised when image/video processing or heavy compute-bound loops rack up Active CPU minutes just like classic serverless; only I/O wait is free.",
+    "Second surprise: Provisioned Memory bills for the entire instance lifetime (until the last in-flight request finishes), not just active compute — a large memory allocation (e.g., 4GB for one heavy endpoint) shared via in-function concurrency with many small concurrent requests can cost more than expected if the instance stays alive continuously under sustained load.",
+    "Third surprise: multi-region function deployment (Pro: up to 5 regions) multiplies regional Active CPU/Memory pricing which varies notably by region (e.g., São Paulo ~1.7x the cost of iad1/Cleveland/Portland) — picking convenience regions without checking the regional pricing table can silently raise the bill.",
+    "Set a monthly Vercel spend cap / budget alert at the team level; review the Functions usage dashboard weekly during initial ramp.",
+    "Right-size `memory`/CPU config per function rather than leaving every function at the default — Provisioned Memory is billed by allocated size, not actual usage.",
+    "Batch or debounce ISR on-demand revalidation calls; every revalidation triggers a function invocation plus ISR write/read costs.",
+    "Watch Vercel Workflows' usage-based pricing dimensions (Events, Data Written, Data Retained) separately from Functions pricing — a chatty workflow with large step payloads can accumulate cost independent of Function invocations."
+  ],
+  "skill_scan_signals": [
+    "Flag: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or a raw GCP service-account JSON blob defined as a Vercel environment variable — should be OIDC-based `AWS_ROLE_ARN` / Workload Identity Pool provider reference instead.",
+    "Flag: `runtime: 'edge'` in new Vercel Function or Next.js route-segment config — verify migration intent, warn per current de-emphasis and Next.js 16.3 restriction.",
+    "Flag: `maxDuration` set to 800 or 1800 without a comment/justification, or set project-wide rather than per-function.",
+    "Flag: `revalidateTag(` calls with only one argument (deprecated single-arg form under Next.js 16).",
+    "Flag: cron-configured route handlers with no secret/header verification logic.",
+    "Positive signal: use of `@vercel/oidc-aws-credentials-provider` or equivalent GCP Workload Identity Federation code.",
+    "Positive signal: explicit `engines.node` pin in package.json and `requires-python`/`.python-version` pin for Python functions.",
+    "Positive signal: 'use workflow' / 'use step' directives present for logic that involves `sleep`, hooks, or multi-step durable orchestration instead of ad hoc cron polling."
+  ],
+  "skill_module_bullets": [
+    "Fluid compute has been the default execution model for all new Vercel projects since 2025-04-23 — in-function concurrency, active-CPU billing (I/O wait is free, compute is billed), automatic prewarming, and cross-AZ/region failover; there is no reason to disable it for a greenfield project.",
+    "The standalone Edge runtime is de-emphasized: Vercel's own docs recommend migrating Edge → Node.js, and Next.js 16.3 removed `runtime = 'edge'` support for routes/pages entirely (they always run on Node.js). `middleware.ts` is renamed `proxy.ts` in Next.js 16 and runs on Node.js; the edge-runtime `middleware.ts` path still works but is deprecated.",
+    "Node.js 24.x is Vercel's current default runtime version (22.x and 20.x also selectable) — matches the existing deploy-ops.md guidance; Node 20.x is scheduled for deprecation October 1, 2026, so avoid pinning to it in new work.",
+    "Python runtime supports FastAPI/Flask/Django (ASGI/WSGI) with versions 3.12 (default), 3.13, 3.14; bundle limit is 500MB uncompressed (5GB under the Large Functions beta with Fluid + Active CPU).",
+    "Hard limits to design around: 4.5MB request/response body size, 300s default/800s GA max/1800s beta-extended max duration, 250MB (Node)/500MB (Python) bundle size, 2GB default/4GB max memory, 1,024 shared file descriptors per instance.",
+    "Function regions: default `iad1`; Hobby is single-region only, Pro allows up to 5 regions, Enterprise allows all regions plus configurable `functionFailoverRegions`. Always co-locate the function region with the Supabase/Postgres region to avoid cross-region latency.",
+    "Cron jobs: 100 per project on every plan; Hobby is capped at once-per-day with ±59min precision, Pro/Enterprise get per-minute scheduling — use Pro+ for anything time-sensitive.",
+    "ISR: durable CDN-backed cache persisting 31 days, global purge in ~300ms, request collapsing on cache miss, and automatic stale-serving with 30s retry on revalidation failure; on-demand revalidation is scoped to the triggering domain+deployment only.",
+    "Next.js 16 replaces the old `experimental.ppr`/`experimental.dynamicIO` flags with a single `cacheComponents` config plus the `'use cache'` directive (Cache Components); `revalidateTag()` now requires a `cacheLife` profile argument, and new `updateTag()`/`refresh()` APIs cover read-your-writes and uncached-data refresh respectively.",
+    "Vercel Workflows (built on Vercel Queues) is the durable-execution product for anything needing pause/resume across minutes-to-months, deterministic replay across deploys/crashes, and built-in observability — write it with `'use workflow'`/`'use step'` directives in JS/TS or the Python `vercel` SDK; do not fake durability with cron polling.",
+    "OIDC federation is GA and is the mandated identity path from a Vercel Function to AWS/GCP: `VERCEL_OIDC_TOKEN` during builds, `x-vercel-oidc-token` header at runtime (reused up to 90 min, 2h TTL), exchanged via `@vercel/oidc-aws-credentials-provider` for AWS or Workload Identity Federation for GCP — never store long-lived cloud keys as Vercel env vars.",
+    "Fluid compute pricing has three billed dimensions — Active CPU (per CPU-hour, execution-only), Provisioned Memory (per GB-hour, full instance lifetime), and Invocations (per request) — all region-priced, with Hobby including 4 CPU-hours / 360 GB-hrs memory / 1M invocations per month."
+  ],
+  "checklist": [
+    "Confirm Fluid compute is enabled (default) and not accidentally disabled at the project level.",
+    "Confirm no function uses `runtime: 'edge'` unless explicitly justified and reviewed.",
+    "Confirm Node.js version pinned to 24.x (or the currently intended LTS) in package.json `engines`, and Python version pinned in pyproject.toml/.python-version.",
+    "Confirm every function's `maxDuration` and `memory` are set deliberately, not left at defaults 'to be safe'.",
+    "Confirm function region(s) are co-located with the Supabase/Postgres region and match plan-tier region limits.",
+    "Confirm no AWS/GCP static credentials exist in Vercel env vars; OIDC role ARN / Workload Identity Pool provider is configured and `AWS_REGION` is explicitly pinned.",
+    "Confirm cron endpoints verify a shared secret or signature, not just the `vercel-cron/1.0` user agent.",
+    "Confirm any durable/multi-step logic uses Vercel Workflows rather than a hand-rolled cron-based state machine.",
+    "Confirm Next.js 16 caching code uses `cacheComponents`/`'use cache'` and the two-argument `revalidateTag()` (or `updateTag()`/`refresh()`), not deprecated pre-16 caching flags/APIs.",
+    "Confirm bundle sizes are under limits via `excludeFiles`/`outputFileTracingIncludes`, and that Large Functions beta is only enabled if genuinely needed.",
+    "Confirm observability alerts exist for function timeouts, payload-too-large errors, and ISR revalidation failures.",
+    "Confirm cost guardrails (budget alerts, regional pricing awareness, memory right-sizing) are in place before scaling traffic."
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "No conflict found with the existing deploy-ops.md guidance of 'Node 24 LTS' as the greenfield default — Vercel's own docs confirm 24.x is the current default Node.js runtime version as of 2026-08-29. The one area of genuine ambiguity is Vercel Queues' exact maturity level: the changelog title 'Vercel Queues now in public beta' and the Workflows docs describing Queues as the system 'powering Workflow' were the only maturity signals found; no explicit GA date was located, so beta status is marked [uncertain]. Similarly, exact current status/version of the Workflow SDK beyond the beta version number cited in the region-pinning docs was not independently cross-verified against a dedicated changelog GA announcement, so treat Workflows as beta-to-early-GA maturity pending a dedicated status check nearer ship time.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://vercel.com/docs/fluid-compute",
+    "https://vercel.com/docs/functions",
+    "https://vercel.com/docs/functions/runtimes",
+    "https://vercel.com/docs/functions/runtimes/edge",
+    "https://vercel.com/docs/functions/runtimes/node-js/node-js-versions",
+    "https://vercel.com/docs/functions/runtimes/python",
+    "https://vercel.com/docs/functions/limitations",
+    "https://vercel.com/docs/functions/usage-and-pricing",
+    "https://vercel.com/docs/functions/configuring-functions/region",
+    "https://vercel.com/docs/functions/streaming-functions",
+    "https://vercel.com/docs/incremental-static-regeneration",
+    "https://vercel.com/docs/cron-jobs",
+    "https://vercel.com/docs/cron-jobs/usage-and-pricing",
+    "https://vercel.com/docs/workflows",
+    "https://vercel.com/docs/oidc",
+    "https://vercel.com/docs/oidc/aws",
+    "https://nextjs.org/blog/next-16"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "versions_as_of"
+  ]
+}

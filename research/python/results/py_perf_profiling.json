@@ -1,0 +1,81 @@
+{
+  "name": "py-spy, scalene, and stay-vs-Rust performance gate",
+  "item_id": "py-perf-profiling",
+  "cluster": "quality",
+  "priority": "P1",
+  "short_definition": "How to measure Python service performance before optimizing or rewriting: py-spy for low-overhead production sampling (attach to PID, flame graphs); scalene for high-resolution CPU/GPU/memory profiling in staging/dev; cProfile/pyinstrument for simple call graphs; memray for allocation-heavy leaks. The stay-vs-Rust gate is evidence-based — only hand off to Axum/Rust after profiles show CPU-bound Python that resists algorithmic and I/O fixes, not because microbenchmarks or resume-driven rewrite. As of 2026-07-13: py-spy 0.4.2, scalene 2.3.0, memray 1.19.3.",
+  "scope_in": "Profiler selection matrix; production-safe sampling; staging deep profiles; interpreting flame graphs vs line profiles; distinguishing DB/network wait from Python CPU; memory leak tools; load-test + profile loop; criteria to stay in Python vs extract Rust; agent rules against premature rewrite; linking to observability (OTel latency).",
+  "scope_out": "Language decision catalog in full (py-vs-ts-vs-rust); ASGI server swap vanity benches (py-asgi-servers); msgspec vs Pydantic micro-opts (py-msgspec-hotpath); full Rust Axum design (rust.md); free-threading production claims.",
+
+  "defaults": "Production incident or p99 spike: attach py-spy (record/top/dump) for 30–120s during load — no code change, low overhead, safe enough for careful prod use. Local/staging optimization: scalene for CPU+memory line-level (and GPU if used); optional pyinstrument for readable call trees; cProfile+snakeviz for stdlib-only environments. Memory growth: memray. Always pair profile with metrics (OTel, /metrics) and a reproducible load (k6/locust/vegeta). Optimization order: measure → fix queries/N+1/pools/timeouts → algorithmic/data structure → batching/cache → native/Rust extract. Do not switch languages on hello-world RPS.",
+  "decision_gates": "USE py-spy when process is running (prod/staging) and you need CPU stacks now. USE scalene when you can restart under profiler and need Python-vs-native and memory attribution. USE memray for RSS climb / allocation hotspots. STAY in Python when profile is wait-dominated (DB, HTTP, Redis, LLM APIs) or when caching/query fix yields enough. MOVE to Rust (or Cython/native only with strong reason) when: measured CPU-bound pure-Python hot loop after algorithm fix; latency SLA requires sub-ms/microbatch throughput Python cannot hit; isolation of untrusted/CPU-heavy workload. DO NOT rewrite for aesthetic preference. DO NOT use cProfile alone in multi-threaded/async production as truth without sampling confirmation.",
+  "do_dont": "DO: capture baseline p50/p99 first; profile under realistic load; label profiles with git sha; fix I/O before CPU; document stay-vs-Rust decision with flame graph evidence; keep py-spy in ops toolbox (sidecar or ephemeral debug). DON'T: optimize without profile; trust microbench of JSON alone; rewrite whole service to Rust for one endpoint without extract option; leave continuous high-overhead profilers on prod 24/7; ship debug symbols secrets; confuse GIL wait with useful work without care.",
+  "code_skeleton": "# --- py-spy (production attach; needs ptrace/sys_ptrace or --pid permissions) ---\n# uv tool install py-spy  # or system package\n# py-spy top --pid $PID\n# py-spy record -o profile.svg --pid $PID --duration 60\n# py-spy record -o profile.svg --subprocesses -- python -m mypkg\n\n# --- scalene (dev/staging) ---\n# uv add --dev scalene\n# uv run scalene --cpu --memory --html mypkg/benchmark_entry.py\n# uv run scalene --outfile profile.html -- mypkg/cli.py serve\n\n# --- cProfile quick ---\n# uv run python -m cProfile -o out.prof -m mypkg.worker\n# uv run snakeviz out.prof\n\n# --- memray ---\n# uv add --dev memray\n# uv run memray run -o out.bin python -m mypkg\n# uv run memray flamegraph out.bin\n\n# --- stay-vs-Rust gate checklist (record in ADR) ---\n# 1) OTel shows endpoint X p99 = T\n# 2) py-spy: % time in module Y (CPU) vs greenlet/await wait\n# 3) Optimized query/cache/algorithm → still fail SLA?\n# 4) Extract boundary: OpenAPI endpoint or queue consumer → Rust\n# 5) One owner for data path; contract tests\n",
+  "failure_modes": "1) Optimizing the wrong 5% visible in microbench. 2) Treating DB wait as Python CPU. 3) py-spy denied (no ptrace) → empty conclusions. 4) Profiler overhead skews timings (heavy instrumentation in prod). 5) Async stack collapsed poorly → misread. 6) Premature Rust rewrite doubles ops surface without SLA win. 7) Memory leak misdiagnosed as traffic growth. 8) No load generator → profile of idle process. 9) Free-threaded Python assumptions without verification.",
+  "anti_patterns": "Agents must not: recommend Rust rewrite without profile evidence; default to Cython for all hot paths; use time.sleep benchmarks as capacity planning; leave scalene on prod web workers permanently; claim Uvicorn→Granian replaces algorithm work; paste synthetic RPS as architecture ADR alone.",
+
+  "tools": "Primary: py-spy (prod sampling), scalene (dev CPU/mem/GPU), memray (allocations), cProfile/pyinstrument (dev call graphs), OTel metrics/traces (always-on). Load: k6, locust, vegeta. Optional: yappi, Austin, perf+flamegraph for native. Not default: custom print-timing spaghetti as only method.",
+  "versions_as_of": "as_of 2026-07-13 — py-spy 0.4.2 (PyPI); scalene 2.3.0; memray 1.19.3; yappi 1.7.6; line_profiler 5.0.2. Install profilers as dev/ops tools — not runtime service dependencies unless deliberate.",
+  "config_snippets": "# pyproject optional dev group\n[dependency-groups]\ndev = [\n  \"scalene>=2.3\",\n  \"memray>=1.19\",\n  \"pyinstrument>=5\",\n]\n# py-spy often installed via uv tool install py-spy (native binary)\n\n# k8s ephemeral debug (conceptual)\n# kubectl debug -it pod/api --image=... --target=api -- py-spy record ...\n\n# Document required capabilities for py-spy attach on restricted runtimes\n# (SYS_PTRACE or equivalent — often disabled on managed PaaS)",
+  "deprecation_watch": "Resume-driven full rewrites; continuous cProfile in prod; ignoring async I/O wait; free-threaded magic as free speedup without measure; only optimizing JSON library when DB is 90% of time.",
+
+  "ts_boundary": "Next/TS profiling is different (React/Chrome perf, Node clinic). For BFF→Python latency, measure both sides (fetch timeout, TTFB). Do not rewrite Python service because Next LCP is bad — separate concerns. Shared: OpenAPI latency SLOs.",
+  "rust_boundary": "This item is the gate into rust.md 'When to use Rust'. After evidence, extract hot path as Axum service or worker; keep Python for AI/orchestration. Contract-first OpenAPI/proto; one table owner. Don't dual-write during migration without ADR.",
+  "supabase_boundary": "Most 'Python is slow' SaaS profiles are Postgres/RLS/query plans. EXPLAIN ANALYZE and pool sizing (py-db-pool-lifecycle) before language change. Service role vs user JWT changes plans — profile the real auth path.",
+  "boundary_contracts": "SLO document (p99 targets); ADR for language extract; OpenAPI for extracted endpoints; profile artifacts retained with release notes when deciding rewrite; env flags for optional debug (never leave on).",
+  "decision_matrix_row": "Problem: unknown latency → py-spy + OTel first. Problem: CPU+memory line detail → scalene. Problem: RSS leak → memray. Problem: wait-bound I/O → stay Python, fix pools/queries. Problem: measured CPU-bound pure Python failing SLA after optimize → Rust extract. Problem: UI jank → TS/frontend tools not Python rewrite.",
+
+  "threats": "Granting SYS_PTRACE broadly increases escape risk; profile files may contain PII/query params; debug endpoints exposing profilers publicly; resource exhaustion via always-on heavy profilers.",
+  "mitigations": "Time-boxed attach; least privilege debug; scrub profile args; no public /debug/pprof without auth; prefer sampling over instrumenting every request in prod; store profiles in private bucket.",
+  "agent_codegen_policy": "MUST: recommend measure-before-optimize; name py-spy for live, scalene for deep; check I/O/DB first; require evidence before Rust. MUST NOT: rewrite service to Rust as first response to 'slow'; invent Cython by default; enable permanent high-overhead profiling in prod templates.",
+
+  "tests_required": "Optional performance regression tests only for critical hot paths with stable fixtures (careful flakiness). Unit tests for algorithmic fixes. Contract tests after Rust extract. Load test script versioned for replay.",
+  "ci_gates": "Not a blocking PR gate by default. Optional nightly bench. Require ADR link for language extract PRs. Ban agents auto-adding always-on profilers to prod Docker CMD.",
+  "skill_scan_signals": "POSITIVE: py-spy/scalene docs in runbooks; OTel latency; ADR for Rust extract; load test scripts. NEGATIVE: rewrite-to-Rust without metrics; cProfile-only production claims; optimize without baseline; hello-world RPS architecture decisions.",
+
+  "skill_module_bullets": [
+    "Profile before optimize: py-spy (prod sample), scalene (CPU/mem dev), memray (allocations).",
+    "Most SaaS slowness is DB/network/LLM wait — fix pools and queries first.",
+    "Stay-vs-Rust gate: measured CPU-bound Python failing SLA after algorithm/I/O fixes → extract Axum service.",
+    "Do not rewrite languages for vanity RPS or without flame graph evidence.",
+    "Pair profilers with OTel p99 and reproducible load generators.",
+    "Never leave high-overhead profilers on permanent prod web paths."
+  ],
+  "action_items": [
+    "Add stay-vs-Rust checklist to references/python.md and link rust.md.",
+    "Runbook: py-spy attach steps per host (Fly/K8s).",
+    "Scan agent prompts for premature Rust rewrite.",
+    "Optional nightly bench job for critical workers only."
+  ],
+  "checklist": [
+    "Baseline p50/p99 recorded",
+    "Profile under realistic load",
+    "I/O vs CPU classified",
+    "DB/query plan checked if wait-bound",
+    "Algorithmic fix attempted",
+    "Only then consider Rust extract + ADR",
+    "Contract + one table owner for extract",
+    "Profile artifacts retained",
+    "No permanent heavy profiler in prod CMD"
+  ],
+
+  "source_tier": "primary OSS",
+  "confidence": "high",
+  "conflicts_noted": "py-spy needs elevated/ptrace rights — some PaaS block attach entirely (use staging twin). Scalene AI suggestions are optional UX not source of truth. Community debates continuous profiling products (Pyroscope etc.) vs ad-hoc py-spy — either fine; always-on commercial continuous profiling out of default greenfield scope. GIL vs free-threading: do not assume free-threading solves multi-core without re-measure.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://github.com/benfred/py-spy",
+    "https://pypi.org/project/py-spy/",
+    "https://pypi.org/project/scalene/",
+    "https://github.com/plasma-umass/scalene",
+    "https://bloomberg.github.io/memray/"
+  ],
+  "local_sources": [
+    "./references/rust.md",
+    "./references/system-architecture.md",
+    "./references/api-data-flows.md",
+    "./research/python/results/py_asgi_servers.json",
+    "./research/python/results/py_observability.json"
+  ]
+}

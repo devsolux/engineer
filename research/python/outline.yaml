@@ -1,0 +1,216 @@
+# Python knowledge research for engineer
+# Generated: 2026-07-13 · /research + web supplement
+# Scope: peer language module (TS/Rust + Python)
+# Window: 2025-07 → 2026-07
+
+meta:
+  project: engineer-python-knowledge
+  skill: engineer
+  mode: research-deep
+  generated: 2026-07-13
+  scope_window: 2025-07 → 2026-07
+  batch_size: 4
+  items_per_agent: 4
+  output_dir: ./results
+  deep_md_dir: ./deep
+  report_path: ./report.md
+  skill_target: ./references/python.md
+  constraints:
+    - no notebooks-as-product architecture
+    - prefer uv + ruff + basedpyright/ty over poetry/black/mypy greenfield
+    - label version pins as_of 2026-07-13
+    - Python is peer for services/workers/AI boundary — not UI shell
+    - feed machine-checkable scan signals into skill module
+
+items:
+  # ── tooling ──
+  - id: py-versions-and-runtime
+    cluster: tooling
+    priority: P0
+    title: Python versions 3.12–3.14 pin policy + free-threading
+  - id: py-uv-packaging
+    cluster: tooling
+    priority: P0
+    title: uv projects, workspaces, PEP 735 dependency groups, lock CI
+  - id: py-ruff-format-lint
+    cluster: tooling
+    priority: P0
+    title: ruff as sole formatter+linter
+  - id: py-typecheck
+    cluster: tooling
+    priority: P0
+    title: basedpyright CI ± ty editor; mypy not greenfield default
+  - id: py-project-layout
+    cluster: tooling
+    priority: P0
+    title: src layout + monorepo paths next to Next/Axum
+  - id: py-prek-hooks
+    cluster: tooling
+    priority: P1
+    title: prek monorepo hooks with uv+ruff
+  - id: py-uv-audit-supply-chain
+    cluster: tooling
+    priority: P0
+    title: uv audit + malware check + lock discipline
+
+  # ── language ──
+  - id: py-typing-modern
+    cluster: language
+    priority: P0
+    title: Modern typing Protocols TypedDict PEP 695
+  - id: py-pydantic-v2
+    cluster: language
+    priority: P0
+    title: Pydantic v2 models validation serialization
+  - id: py-settings-config
+    cluster: language
+    priority: P0
+    title: pydantic-settings 12-factor secrets
+  - id: py-async-model
+    cluster: language
+    priority: P0
+    title: asyncio anyio task groups cancellation
+  - id: py-error-handling
+    cluster: language
+    priority: P0
+    title: Exceptions Result patterns at boundaries
+  - id: py-msgspec-hotpath
+    cluster: language
+    priority: P2
+    title: msgspec when Pydantic too heavy
+
+  # ── web ──
+  - id: py-fastapi
+    cluster: web
+    priority: P0
+    title: FastAPI routers deps lifespan OpenAPI
+  - id: py-asgi-servers
+    cluster: web
+    priority: P0
+    title: Uvicorn Granian Gunicorn worker model
+  - id: py-middleware-stack
+    cluster: web
+    priority: P0
+    title: Canonical middleware order + headers
+  - id: py-http-clients
+    cluster: web
+    priority: P0
+    title: httpx timeouts retries
+  - id: py-auth-security
+    cluster: web
+    priority: P0
+    title: JWT OAuth secrets SSRF
+  - id: py-rate-limit-cache
+    cluster: web
+    priority: P1
+    title: Redis rate limit + response cache
+  - id: py-streaming-sse
+    cluster: web
+    priority: P0
+    title: SSE streaming for LLM tokens
+  - id: py-observability
+    cluster: web
+    priority: P0
+    title: structlog OTel health checks
+
+  # ── data ──
+  - id: py-sqlalchemy-async
+    cluster: data
+    priority: P0
+    title: SQLAlchemy 2 async + asyncpg patterns
+  - id: py-db-pool-lifecycle
+    cluster: data
+    priority: P0
+    title: Pool sizing PgBouncer session lifecycle
+  - id: py-supabase-python
+    cluster: data
+    priority: P0
+    title: supabase-py vs direct Postgres
+  - id: py-migrations
+    cluster: data
+    priority: P0
+    title: Alembic vs Supabase migrations discipline
+  - id: py-sql-first-boundaries
+    cluster: data
+    priority: P1
+    title: SQL-first repository N+1 discipline
+
+  # ── workers ──
+  - id: py-background-jobs
+    cluster: workers
+    priority: P0
+    title: Job tiering BackgroundTasks arq Taskiq Celery Temporal
+  - id: py-idempotency-retries
+    cluster: workers
+    priority: P0
+    title: Idempotency keys DLQ poison queues
+  - id: py-cli-scripts
+    cluster: workers
+    priority: P1
+    title: typer/click ops CLIs
+
+  # ── quality ──
+  - id: py-testing
+    cluster: quality
+    priority: P0
+    title: pytest asyncio fixtures testcontainers
+  - id: py-contract-testing
+    cluster: quality
+    priority: P1
+    title: Schemathesis OpenAPI contracts
+  - id: py-ci-gates
+    cluster: quality
+    priority: P0
+    title: CI ruff typecheck pytest uv audit
+  - id: py-docker-deploy
+    cluster: quality
+    priority: P0
+    title: Slim multi-stage non-root health
+  - id: py-perf-profiling
+    cluster: quality
+    priority: P1
+    title: py-spy scalene stay-vs-Rust gate
+
+  # ── interop ──
+  - id: py-vs-ts-vs-rust
+    cluster: interop
+    priority: P0
+    title: Language choice decision matrix
+  - id: py-ts-boundary
+    cluster: interop
+    priority: P0
+    title: OpenAPI shared schemas codegen to TS
+  - id: py-ai-service-boundary
+    cluster: interop
+    priority: P0
+    title: LLM RAG service patterns no notebook sprawl
+  - id: py-llm-gateway
+    cluster: interop
+    priority: P1
+    title: LiteLLM multi-provider gateway
+  - id: py-mcp-tool-boundary
+    cluster: interop
+    priority: P1
+    title: MCP tools auth timeouts isolation
+  - id: py-durable-workflows
+    cluster: interop
+    priority: P1
+    title: Temporal durable multi-step agents
+
+  # ── synthesis ──
+  - id: py-agent-codegen-rules
+    cluster: synthesis
+    priority: P0
+    title: Agent must/must-not generate + scan IDs
+  - id: py-anti-patterns
+    cluster: synthesis
+    priority: P0
+    title: Banned Python patterns
+  - id: py-engineer-module-design
+    cluster: synthesis
+    priority: P0
+    title: references/python.md structure + SKILL wiring
+  - id: py-default-stack-snapshot
+    cluster: synthesis
+    priority: P0
+    title: Blessed pin set as of 2026-07-13

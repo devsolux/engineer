@@ -1,0 +1,236 @@
+{
+  "name": "ASGI servers: Uvicorn, Granian, Gunicorn worker model",
+  "item_id": "py-asgi-servers",
+  "cluster": "web",
+  "short_definition": "How to run FastAPI/Starlette apps in production: Uvicorn (default ASGI server, uvloop/httptools) as the safe 2026 baseline; Granian (Rust HTTP core, ASGI/RSGI/WSGI) as a measured performance alternative with built-in workers; Gunicorn primarily as process manager for sync WSGI or historical Gunicorn+UvicornWorker hybrid. As of 2026-07-13: uvicorn 0.51.0, granian 2.7.9, gunicorn 26.0.0. Real APIs are usually DB-bound — server choice is rarely the first optimization.",
+  "scope_in": [
+    "Uvicorn single/multi worker and reload for dev",
+    "Granian CLI: --interface asgi, workers, loops, HTTP/2, metrics, proxy wrappers",
+    "Gunicorn role: sync WSGI default; UvicornWorker hybrid pattern",
+    "Worker sizing for async I/O-bound services vs sync",
+    "Docker/K8s: one worker per container vs multi-worker process",
+    "Graceful shutdown, max-requests recycling, health probes",
+    "Forwarded headers / trusted proxies"
+  ],
+  "scope_out": [
+    "Application route logic (py-fastapi)",
+    "Middleware order details (py-middleware-stack)",
+    "Nginx/Caddy full reverse-proxy cookbook beyond app-server touchpoints",
+    "uWSGI greenfield (legacy only)",
+    "Trio-only Hypercorn deep dive except as niche alternative"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "dev": "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "prod_baseline": "uvicorn with workers=cores (or 1 worker per k8s pod) + proxy for TLS",
+    "prod_alt_measured": "granian --interface asgi --workers N after profiling shows server/I/O headroom gains",
+    "containers": "Prefer 1 process worker per container and horizontal scale; simpler memory/cgroup accounting",
+    "tls": "Terminate TLS at load balancer/ingress; app speaks HTTP on private port",
+    "worker_math_async": "≈ CPU cores (or cores+1) total across deployment unit; async workers multiplex many connections",
+    "worker_math_sync_wsgi": "gunicorn (2×cores)+1 only for sync WSGI",
+    "recycle": "max-requests + jitter (uvicorn) or workers-lifetime / workers-max-rss (granian) to contain leaks"
+  },
+  "decision_gates": {
+    "use_uvicorn_when": [
+      "Default FastAPI/Starlette service",
+      "Need maximum community docs and debugging familiarity",
+      "No measured need for Granian's RPS/memory edge"
+    ],
+    "use_granian_when": [
+      "Synthetic or connection-heavy load shows clear win after app profiling",
+      "Want single binary ASGI+HTTP/2 without Gunicorn composition",
+      "Production users already on Granian (paperless, reflex, searxng; cited Microsoft/Mozilla/Sentry usage in project status)",
+      "Need RSGI or built-in static offload carefully scoped"
+    ],
+    "use_gunicorn_when": [
+      "Sync Django/Flask WSGI",
+      "Existing ops standards mandate Gunicorn process model",
+      "Legacy hybrid: gunicorn -k uvicorn.workers.UvicornWorker (still valid; not required if uvicorn multi-worker suffices)"
+    ],
+    "do_not": [
+      "Switch servers for hello-world benchmark vanity",
+      "Run many multi-worker processes inside tiny memory pods without math",
+      "Use Hypercorn unless HTTP/3/QUIC or Trio is a hard requirement"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Match concurrency model: async app → async server workers",
+      "Set timeouts at proxy and app for slow clients",
+      "Configure trusted proxy / forwarded headers correctly (uvicorn proxy headers; granian wrap_asgi_with_proxy_headers)",
+      "preStop sleep / graceful SIGTERM drain in k8s",
+      "Expose /healthz for readiness independent of heavy deps when possible",
+      "Pin server versions in uv.lock"
+    ],
+    "dont": [
+      "Don't use reload in production",
+      "Don't size async workers with sync Gunicorn (2c+1) cargo-cult",
+      "Don't ignore keep-alive + backpressure interactions (Granian docs warn)",
+      "Don't put secrets in process command lines that land in ps/logs",
+      "Don't enable free-threaded Python Granian mode in production (project marks experimental/discouraged)"
+    ]
+  },
+  "code_skeleton": "# Dev\n# uv run uvicorn mypkg.main:app --reload --port 8000\n\n# Prod uvicorn multi-worker (VM/systemd)\n# uv run uvicorn mypkg.main:app --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips='*'\n# tighten forwarded-allow-ips to real proxy CIDRs in production\n\n# Optional hybrid still seen in 2026\n# gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 mypkg.main:app\n\n# Granian ASGI\n# uv run granian --interface asgi --host 0.0.0.0 --port 8000 --workers 4 mypkg.main:app\n# optional: --loop uvloop  (via granian[uvloop])\n# optional metrics: --metrics --metrics-port 9090\n\n# Dockerfile CMD example (1 worker/pod)\n# CMD [\"uvicorn\", \"mypkg.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n\n# Granian proxy headers (app wrap) when behind reverse proxy:\n# from granian.utils.proxies import wrap_asgi_with_proxy_headers\n# app = wrap_asgi_with_proxy_headers(app, trusted_hosts=\"10.0.0.0/8\")\n",
+  "failure_modes": [
+    "Too many workers × pool size → Postgres max_connections exhaustion",
+    "Wrong forwarded headers → broken HTTPS redirects, wrong client IP rate limits",
+    "No graceful shutdown → 502 spikes on deploy",
+    "Memory leak without worker recycle → OOMKill",
+    "reload or debug flags left on in prod",
+    "Assuming Granian synthetic 2× RPS appears on DB-bound CRUD (often <10% real difference)",
+    "Granian ASGI extension gaps vs Uvicorn for niche Starlette features (check issue tracker)"
+  ],
+  "anti_patterns": [
+    "Hello-world RPS as architecture decision",
+    "uWSGI for new greenfield ASGI apps",
+    "Multiple async frameworks' servers stacked (gunicorn+uvicorn+hypercorn)",
+    "workers=32 on a 2-vCPU pod",
+    "Binding 0.0.0.0 without network policy in shared hosts",
+    "Agent defaulting every project to Granian without measurement"
+  ],
+
+  "tools": {
+    "primary": ["uvicorn[standard]", "granian"],
+    "process_mgmt": ["gunicorn (WSGI / hybrid)", "systemd", "k8s Deployment"],
+    "niche": ["hypercorn (HTTP/3, Trio)"],
+    "observe": ["py-spy", "Prometheus (granian --metrics)", "OTel"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "uvicorn": "0.51.0 (homepage uvicorn.dev; package maintained under Kludex/uvicorn)",
+    "granian": "2.7.9 (released Jul 3 2026 per GitHub releases)",
+    "gunicorn": "26.0.0",
+    "note": "Secondary articles still calling Granian 'pre-1.0' are outdated — major version is 2.x in 2026"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"uvicorn[standard]>=0.51,<0.52\",\n  # \"granian[uvloop]>=2.7,<3\",  # opt-in\n]\n",
+    "systemd_uvicorn": "[Service]\nExecStart=/app/.venv/bin/uvicorn mypkg.main:app --host 127.0.0.1 --port 8000 --workers 2\nKillSignal=SIGTERM\nTimeoutStopSec=30\nRestart=always\n",
+    "k8s_probe": "readinessProbe:\n  httpGet: { path: /healthz, port: 8000 }\nlifecycle:\n  preStop:\n    exec: { command: [\"sleep\", \"10\"] }\n"
+  },
+  "deprecation_watch": [
+    "uWSGI as greenfield default",
+    "Pure waitresse/twisted stacks for new FastAPI",
+    "Assuming Gunicorn is required for all FastAPI prod (uvicorn multi-worker is fine for many)",
+    "Granian free-threaded production claims"
+  ],
+
+  "ts_boundary": "Next.js on Vercel/Node is a different runtime — Python ASGI servers only apply to Python services. BFF calls Python over HTTP/SSE; keep timeouts aligned (Next fetch timeout vs uvicorn/granian/proxy). Do not run Python ASGI inside Next serverless without a dedicated service host.",
+  "rust_boundary": "Granian already uses Rust for HTTP I/O; further gains usually need app logic in Rust (Axum), not another ASGI server swap. If the bottleneck is Python business logic/CPU, changing Uvicorn→Granian won't save you.",
+  "supabase_boundary": "Pool math: workers × SQLAlchemy pool × replicas < Postgres max_connections (and Supabase pooler limits). Prefer transaction pooler for serverless-like churn; session pooler only when required. ASGI worker count is a first-class input to pool sizing (see py-db-pool-lifecycle).",
+  "boundary_contracts": [
+    "PORT/HOST env conventions",
+    "Health path contract for orchestrators",
+    "Trusted proxy CIDR list as config",
+    "Structured access logs optional; app structlog separate"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Serve Python ASGI app in production",
+    "python": "Uvicorn default; Granian after measure; Gunicorn for sync WSGI",
+    "ts": "Node/Next runtime — N/A",
+    "rust": "Skip ASGI; native Axum service if Python runtime is the problem"
+  },
+
+  "threats": [
+    "Proxy header spoofing (client IP, proto) if trust all hosts",
+    "Exposed metrics port without auth/network policy",
+    "Debug reload file watcher DoS",
+    "Request smuggling at misconfigured proxy chains (mitigate with standard proxy config)",
+    "Overly large backlog/backpressure settings enabling resource exhaustion"
+  ],
+  "mitigations": [
+    "forwarded-allow-ips / trusted_hosts strict CIDRs — never * in multi-tenant edge without reason",
+    "Bind metrics to localhost or scrape via private network",
+    "Disable reload in prod images",
+    "Resource limits on pods; workers-max-rss on Granian",
+    "Rate limit at edge for public APIs"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Production CMD without --reload",
+      "Health endpoint path documented",
+      "Worker count rationale comment or 1-worker container default",
+      "Pinned uvicorn (and granian if used) in pyproject"
+    ],
+    "must_not_generate": [
+      "--reload in Dockerfile CMD",
+      "workers=(2*cores)+1 for async without comment",
+      "Default every scaffold to Granian",
+      "uWSGI ini for new FastAPI"
+    ]
+  },
+
+  "tests_required": [
+    "Smoke boot under chosen server in CI (uvicorn)",
+    "Graceful shutdown smoke optional",
+    "Load test only when changing server class",
+    "Proxy header unit tests if custom trust logic"
+  ],
+  "ci_gates": [
+    "Image builds with production server command",
+    "No --reload in prod compose/Dockerfile (grep gate)",
+    "uv lock contains declared server deps"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "uvicorn without reload in prod manifests",
+      "1 worker per container or documented multi-worker",
+      "healthz + readiness probes",
+      "forwarded-allow-ips or granian proxy wrap with CIDR"
+    ],
+    "negative": [
+      "--reload in Dockerfile/k8s",
+      "uwsgi.ini in greenfield FastAPI",
+      "workers > 2*cpu without comment",
+      "trusted_hosts=\"*\" / forwarded-allow-ips=* on public edge without justification"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default ASGI server: uvicorn[standard] 0.51.x; Granian 2.7.x opt-in after profiling",
+    "Async workers ≈ cores; don't cargo-cult Gunicorn 2c+1 for FastAPI",
+    "Containers: prefer 1 worker/pod + HPA; watch DB pool multiplication",
+    "Gunicorn remains correct for sync WSGI; hybrid UvicornWorker optional not mandatory",
+    "Granian is 2.x (not pre-1.0); free-threaded mode experimental — avoid prod",
+    "Always configure trusted proxy headers correctly"
+  ],
+  "action_items": [
+    "Document server decision tree in references/python.md",
+    "Scan rule: --reload in prod paths",
+    "Cross-link py-db-pool-lifecycle for workers×pool formula",
+    "Note Granian production adopters for confidence, still measure"
+  ],
+  "checklist": [
+    "Server pinned; no reload in prod",
+    "Worker/pod strategy documented",
+    "Proxy headers trusted set correctly",
+    "Graceful SIGTERM / preStop",
+    "Health probes green",
+    "DB pools sized for worker count",
+    "Load test only if changing server class"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "DeployHQ 2026 guide still frames Granian as pre-1.0 and slightly lower maturity; GitHub shows Granian 2.7.9 (Jul 2026) with named production users — maturity improved but community still smaller than Uvicorn",
+    "Medium 2026 benchmarks claim large Granian wins; DeployHQ notes real DB-bound APIs often within 5–10% — trust measurement on your app",
+    "Whether Gunicorn+UvicornWorker is 'required' for prod: not required; process management can be k8s/systemd + uvicorn workers"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://uvicorn.dev/",
+    "https://github.com/Kludex/uvicorn",
+    "https://github.com/emmett-framework/granian",
+    "https://pypi.org/project/uvicorn/",
+    "https://pypi.org/project/granian/",
+    "https://pypi.org/project/gunicorn/",
+    "https://www.deployhq.com/blog/python-application-servers-wsgi-vs-asgi-guide"
+  ],
+  "local_sources": [
+    "./references/rust.md",
+    "./references/deploy-ops.md",
+    "./research/python/outline.yaml"
+  ]
+}

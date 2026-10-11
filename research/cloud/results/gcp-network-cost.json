@@ -1,0 +1,318 @@
+{
+  "name": "GCP edge, network, and cost — Cloud Load Balancing/CDN, Cloud Armor, VPC connectors, egress traps, budgets/alerts, free tier",
+  "item_id": "gcp-network-cost",
+  "cluster": "gcp",
+  "short_definition": "Google Cloud's public edge and network layer — global external Application Load Balancer, Cloud CDN, Cloud Armor (WAF/DDoS), Serverless VPC Access connectors and Direct VPC egress for private connectivity from Cloud Run, Cloud NAT for outbound-only internet access, and the network-egress pricing model — plus the Billing Budgets/Pub/Sub tooling used to guardrail spend. In a greenfield TS/Next + Python-services + Supabase stack, Vercel's edge network and Supabase's managed Postgress/pooler already cover most public HTTP delivery and DB access; this item exists for the narrower case where a Python service runs on Cloud Run (or GKE/Compute Engine) and needs private VPC reachability to Cloud SQL/AlloyDB/Memorystore/internal services, or where a team deliberately fronts Cloud Run with its own HTTPS LB for custom WAF, multi-region anycast, or CDN caching Google does not get from Vercel.",
+  "scope_in": "Global external HTTPS Load Balancing (GFE-based) and its integration with serverless NEGs pointing at Cloud Run; Cloud CDN cache behavior and pricing; Cloud Armor security policies (WAF rules, rate limiting, edge vs backend policies, Standard vs Enterprise tiers); Serverless VPC Access connectors and Direct VPC egress for Cloud Run/Cloud Run functions; Cloud NAT for outbound egress from private-only workloads; VPC network egress pricing tiers (intra-zone, inter-zone, inter-region, internet); Billing Budgets, budget alert thresholds, and Pub/Sub-driven programmatic spend response; GCP free-tier networking allowances.",
+  "scope_out": "IAM/Workload Identity Federation and service-account design (see gcp-identity-wif); Cloud Run service configuration itself (concurrency, scaling, cold starts) beyond its VPC egress settings (see gcp-cloud-run item if present); Cloud SQL/AlloyDB provisioning and private-service-connect internals (see gcp-database item); Vercel's own edge network, Vercel Firewall, and Vercel's bandwidth pricing (see vercel cluster); Supabase's connection pooling and its own egress pricing (see supabase cluster); on-prem/hybrid interconnect (Cloud Interconnect/VPN) sizing.",
+  "priority": "P1",
+  "defaults": [
+    "Default to Vercel for public HTTP(S) ingress and CDN; do not stand up a GCP HTTPS LB unless a specific requirement (custom WAF ruleset, GCP-only compliance boundary, or fronting a GCP-only backend) forces it.",
+    "For Python services on Cloud Run that need to reach Cloud SQL/AlloyDB/Memorystore/internal VPC resources, default to Direct VPC egress, not a Serverless VPC Access connector — Google's own docs now recommend Direct VPC egress as the default path.",
+    "Use a Serverless VPC Access connector only as a fallback when Direct VPC egress is unavailable in the region/product combination, or when startup-latency-sensitive workloads need the lower cold-start penalty a warm connector gives over Direct VPC's per-instance NIC attach delay.",
+    "Size Serverless VPC Access connectors at min-instances=2, max-instances=3 unless load-tested higher; connectors auto-scale out but never scale in, so oversized max-instances is a permanent idle-cost trap.",
+    "Put a Cloud Armor security policy in front of any Cloud Run service exposed via a GCP HTTPS LB, with a default-deny (or default-allow plus explicit deny-list) top rule and the OWASP preconfigured WAF rules enabled for the relevant risk categories (SQLi, XSS, RCE).",
+    "Reserve Cloud NAT for private-only Cloud Run/GCE/GKE workloads that must reach the public internet without a public IP; do not use Cloud NAT as a substitute for Direct VPC egress when the destination is inside the VPC.",
+    "Set a Billing Budget scoped to each GCP project with alert thresholds at 50/90/100% (email) plus a Pub/Sub-notified action at 100% for non-production projects, before deploying any networked resource (LB, NAT, connector) that bills continuously.",
+    "Prefer regional resources (LB backends, Cloud Run, Cloud NAT, connectors) co-located with Supabase/Cloud SQL regions to avoid unnecessary inter-region egress.",
+    "Treat Cloud CDN as an optional accelerant for a small set of static/cacheable GCP-origin responses, not the primary CDN — Vercel's edge network already serves the Next.js app and its static assets."
+  ],
+  "decision_gates": [
+    "Public HTTP(S) traffic to the Next.js app and its API routes: use Vercel's edge network and Vercel Firewall. Do NOT provision a GCP HTTPS LB/Cloud Armor for this path — it duplicates Vercel's job and adds an unnecessary DNS/cert hop.",
+    "A Python microservice on Cloud Run needs to call Cloud SQL/AlloyDB/Memorystore by private IP: use Direct VPC egress on the Cloud Run service. This is the primary reason this item's networking layer gets touched in this stack.",
+    "A Python microservice on Cloud Run needs outbound internet access from a VPC where all resources are otherwise private (no public IP): add Cloud NAT to the VPC/subnet the service's Direct VPC egress uses.",
+    "You need a public GCP-hosted HTTP(S) endpoint with a custom WAF ruleset, multi-CDN strategy, or Google Cloud Armor-specific bot/DDoS management that Vercel's firewall does not offer: stand up a global external HTTPS LB with a serverless NEG backend pointing at Cloud Run, and attach Cloud Armor.",
+    "Region/product combo does not yet support Direct VPC egress (check current product docs per release) or the workload is latency-sensitive to the ~1-minute-plus cold-start delay Direct VPC egress can add on scale-from-zero: fall back to a Serverless VPC Access connector.",
+    "High-throughput internal traffic (near or above 1 Gbps per Cloud Run instance): Direct VPC egress throttles per-instance at that ceiling — either use a Serverless VPC Access connector with a larger machine type, split the load across more instances, or move the workload to GKE/Compute Engine with direct NIC access.",
+    "Static asset or media delivery that is GCP-origin (e.g., Cloud Storage-backed): consider Cloud CDN in front of a backend bucket only if Vercel's own asset pipeline is not the origin; otherwise leave it to Vercel.",
+    "Cost or compliance requires guaranteed same-region data residency for egress: pin Cloud Run, Cloud NAT, and Cloud SQL/AlloyDB to the same region to keep egress in the free/near-free intra-region tier rather than crossing regions."
+  ],
+  "do_dont": [
+    "DO: enable Direct VPC egress on Cloud Run services that need private VPC reachability, using a dedicated /26-or-larger subnet reserved for that purpose.",
+    "DO: attach a Cloud Armor security policy with a default-deny final rule (or explicit deny-by-default posture) to every GCP HTTPS LB backend service exposed to the internet.",
+    "DO: set Billing Budgets with Pub/Sub notification wired to a Cloud Function (or equivalent) before any NAT gateway, LB, or connector goes live in a non-prod project.",
+    "DO: tag NAT gateways, connectors, and LB forwarding rules with cost-center/project labels so budget alerts and billing exports can attribute spend.",
+    "DO: keep Serverless VPC Access connector max-instances tight (2-3) and monitor connector utilization metrics before scaling it up.",
+    "DON'T: leave a 0.0.0.0/0 ingress firewall rule open on the VPC a Cloud Run Direct VPC egress or connector attaches to — Direct VPC egress traffic still traverses VPC firewall rules.",
+    "DON'T: provision a GCP HTTPS LB + Cloud Armor + Cloud CDN stack purely to \"be consistent\" with other GCP resources when Vercel already serves the same public traffic — that's duplicate infrastructure and duplicate bills.",
+    "DON'T: use a Serverless VPC Access connector when Direct VPC egress is available and sufficient — connectors bill for an always-on instance floor (min 2) even at zero traffic.",
+    "DON'T: rely on Cloud Armor's Standard tier defaults alone for a public-facing WAF; the OWASP preconfigured rules must be explicitly enabled per risk category, they are not on by default.",
+    "DON'T: disable billing programmatically as your only cost-cap mechanism without first testing it in a throwaway project — it terminates the project's live services immediately.",
+    "DON'T: assume same-region Cloud Run-to-Cloud SQL traffic is free; only same-zone internal traffic is free, cross-zone/cross-region within GCP still bills at VPC egress rates."
+  ],
+  "config_skeleton": "# ── Cloud Armor: default-deny + rate-limit security policy ──────────────────\nresource \"google_compute_security_policy\" \"my_lb_policy\" {\n  name        = \"my-lb-armor-policy\"\n  description = \"Default-deny edge policy with OWASP WAF and rate limiting\"\n\n  # Lowest-priority rule = default action if nothing else matches.\n  rule {\n    action   = \"deny(403)\"\n    priority = 2147483647\n    match {\n      versioned_expr = \"SRC_IPS_V1\"\n      config { src_ip_ranges = [\"*\"] }\n    }\n    description = \"Default deny — explicit allow rules must precede this\"\n  }\n\n  # Example allow for a known-good CIDR (placeholder) — omit or replace per app needs.\n  rule {\n    action   = \"allow\"\n    priority = 1000\n    match {\n      versioned_expr = \"SRC_IPS_V1\"\n      config { src_ip_ranges = [\"203.0.113.0/24\"] } # placeholder CIDR\n    }\n    description = \"Allow known partner/admin CIDR\"\n  }\n\n  # Preconfigured WAF rule (OWASP CRS) example — SQLi protection.\n  rule {\n    action   = \"deny(403)\"\n    priority = 2000\n    match {\n      expr {\n        expression = \"evaluatePreconfiguredExpr('sqli-v33-stable')\"\n      }\n    }\n    description = \"Block SQL injection signatures\"\n  }\n\n  # Rate limiting rule — throttle abusive clients per IP.\n  rule {\n    action   = \"rate_based_ban\"\n    priority = 3000\n    match {\n      versioned_expr = \"SRC_IPS_V1\"\n      config { src_ip_ranges = [\"*\"] }\n    }\n    rate_limit_options {\n      conform_action = \"allow\"\n      exceed_action  = \"deny(429)\"\n      enforce_on_key = \"IP\"\n      rate_limit_threshold {\n        count        = 100\n        interval_sec = 60\n      }\n      ban_duration_sec = 300\n    }\n    description = \"Rate limit: 100 req/60s per IP, 5 min ban on exceed\"\n  }\n}\n\n# ── Cloud Run service with Direct VPC egress (preferred over connector) ─────\nresource \"google_cloud_run_v2_service\" \"my_service\" {\n  name     = \"my-service\"\n  location = \"us-central1\"\n\n  template {\n    containers {\n      image = \"us-central1-docker.pkg.dev/my-project/my-repo/my-service:latest\"\n    }\n\n    vpc_access {\n      network_interfaces {\n        network    = \"my-vpc\"\n        subnetwork = \"my-vpc-subnet\" # must be /26 or larger, dedicated for Direct VPC egress\n      }\n      egress = \"PRIVATE_RANGES_ONLY\" # or ALL_TRAFFIC to route all egress through the VPC (needed with Cloud NAT)\n    }\n  }\n}\n\n# ── Fallback: Serverless VPC Access connector (only if Direct VPC egress unavailable) ─\nresource \"google_vpc_access_connector\" \"my_connector\" {\n  name          = \"my-vpc-connector\"\n  region        = \"us-central1\"\n  network       = \"my-vpc\"\n  ip_cidr_range = \"10.8.0.0/28\"\n\n  min_instances = 2   # do not raise without load evidence — bills even when idle\n  max_instances = 3   # connectors scale out automatically but never scale back in\n  machine_type  = \"e2-micro\"\n}\n\n# ── Cloud NAT for outbound-only internet access from private Cloud Run/GCE ──\nresource \"google_compute_router\" \"my_router\" {\n  name    = \"my-nat-router\"\n  network = \"my-vpc\"\n  region  = \"us-central1\"\n}\n\nresource \"google_compute_router_nat\" \"my_nat\" {\n  name                               = \"my-nat-gateway\"\n  router                             = google_compute_router.my_router.name\n  region                             = \"us-central1\"\n  nat_ip_allocate_option             = \"AUTO_ONLY\"\n  source_subnetwork_ip_ranges_to_nat = \"LIST_OF_SUBNETWORKS\"\n\n  subnetwork {\n    name                    = \"my-vpc-subnet\"\n    source_ip_ranges_to_nat = [\"ALL_IP_RANGES\"]\n  }\n\n  log_config {\n    enable = true\n    filter = \"ERRORS_ONLY\"\n  }\n}\n\n# ── Global HTTPS LB + Cloud CDN backend fronting Cloud Run ──────────────────\nresource \"google_compute_region_network_endpoint_group\" \"my_neg\" {\n  name                  = \"my-run-neg\"\n  region                = \"us-central1\"\n  network_endpoint_type = \"SERVERLESS\"\n  cloud_run {\n    service = google_cloud_run_v2_service.my_service.name\n  }\n}\n\nresource \"google_compute_backend_service\" \"my_backend\" {\n  name                  = \"my-lb-backend\"\n  protocol              = \"HTTPS\"\n  load_balancing_scheme = \"EXTERNAL_MANAGED\"\n  security_policy       = google_compute_security_policy.my_lb_policy.id\n\n  enable_cdn = true\n  cdn_policy {\n    cache_mode        = \"CACHE_ALL_STATIC\"\n    client_ttl        = 3600\n    default_ttl       = 3600\n    max_ttl           = 86400\n    negative_caching  = true\n  }\n\n  backend {\n    group = google_compute_region_network_endpoint_group.my_neg.id\n  }\n}\n\nresource \"google_compute_url_map\" \"my_url_map\" {\n  name            = \"my-lb\"\n  default_service = google_compute_backend_service.my_backend.id\n}\n\nresource \"google_compute_target_https_proxy\" \"my_https_proxy\" {\n  name             = \"my-lb-https-proxy\"\n  url_map          = google_compute_url_map.my_url_map.id\n  ssl_certificates = [\"projects/my-project/global/sslCertificates/my-lb-cert\"]\n}\n\nresource \"google_compute_global_forwarding_rule\" \"my_forwarding_rule\" {\n  name                  = \"my-lb-forwarding-rule\"\n  target                = google_compute_target_https_proxy.my_https_proxy.id\n  port_range            = \"443\"\n  load_balancing_scheme = \"EXTERNAL_MANAGED\"\n}\n\n# ── Billing Budget + Pub/Sub alert for programmatic spend caps ─────────────\nresource \"google_pubsub_topic\" \"budget_alerts\" {\n  name = \"my-budget-alerts-topic\"\n}\n\nresource \"google_billing_budget\" \"my_project_budget\" {\n  billing_account = \"000000-000000-000000\" # placeholder billing account id\n  display_name    = \"my-project-monthly-budget\"\n\n  budget_filter {\n    projects = [\"projects/my-project\"]\n  }\n\n  amount {\n    specified_amount {\n      currency_code = \"USD\"\n      units         = \"200\" # placeholder monthly cap\n    }\n  }\n\n  threshold_rules { threshold_percent = 0.5 }\n  threshold_rules { threshold_percent = 0.9 }\n  threshold_rules { threshold_percent = 1.0 }\n  threshold_rules { threshold_percent = 1.0, spend_basis = \"FORECASTED_SPEND\" }\n\n  all_updates_rule {\n    pubsub_topic                     = google_pubsub_topic.budget_alerts.id\n    schema_version                   = \"1.0\"\n    disable_default_iam_recipients   = false\n  }\n}\n\n# A Cloud Function (or Cloud Run job) subscribed to budget_alerts can:\n#  - post to Slack/PagerDuty at 50%/90%\n#  - at 100% forecasted, scale down non-prod Cloud Run max-instances or disable\n#    the NAT gateway/connector — avoid disabling billing outright except as a\n#    last-resort, explicitly-approved kill switch for disposable sandbox projects.",
+  "failure_modes": [
+    "Direct VPC egress cold start: a Cloud Run instance scaling from zero can take a minute or more to establish its first VPC connection, causing request timeouts on low-traffic services that scale to zero between requests.",
+    "Serverless VPC Access connector left at high max-instances after a load test: connector never scales back in, so idle instances keep billing indefinitely until manually reduced.",
+    "Cloud NAT port/IP exhaustion under high connection-per-destination fan-out, causing intermittent outbound connection failures that look like application bugs.",
+    "0.0.0.0/0 ingress firewall rule on the VPC that a Cloud Run Direct VPC egress or connector attaches to, exposing internal services (Cloud SQL private IP, internal APIs) that were assumed protected by \"no public IP.\"",
+    "Cloud Armor policy with only preconfigured WAF rules and no default-deny/rate-limit rule, allowing volumetric L7 abuse that Standard-tier DDoS protection does not catch (Standard tier only covers L3/L4).",
+    "Cross-region egress between Cloud Run and Cloud SQL/AlloyDB when the two are provisioned in different regions by accident (e.g., default region mismatch), silently adding per-GB inter-region charges to every request.",
+    "Billing Budget created but no Pub/Sub/notification action wired, so the team discovers a NAT/egress cost spike only when the monthly invoice arrives, weeks after the threshold was crossed.",
+    "Disabling billing as an automated 100%-threshold action in a project that also hosts production resources shared with other environments, causing an unplanned full outage.",
+    "Running a GCP HTTPS LB + Cloud CDN + Cloud Armor stack in parallel with Vercel for the same public traffic, doubling both cost and the attack surface that must be patched/monitored."
+  ],
+  "anti_patterns": [
+    "Generating Terraform that opens VPC firewall ingress to 0.0.0.0/0 for convenience during a Cloud Run Direct VPC egress or connector setup.",
+    "Generating a Cloud Armor security policy with only preconfigured WAF rules and no explicit default-deny or rate-limiting rule.",
+    "Provisioning a Serverless VPC Access connector as the default choice for new Cloud Run services without first checking whether Direct VPC egress is supported for the region/product.",
+    "Provisioning a NAT gateway without an attached Billing Budget/Pub/Sub alert in the same change.",
+    "Hardcoding a static long-lived service-account key for Terraform CI that manages network resources instead of Workload Identity Federation (see gcp-identity-wif) — no network-layer exception to the no-static-keys rule.",
+    "Standing up a full GCP edge stack (LB + CDN + Armor) as a default template for every Next.js app regardless of whether Vercel already serves that traffic.",
+    "Setting a Cloud Armor policy's default rule to allow(*) at the lowest priority instead of deny(*), inverting the intended default-deny posture."
+  ],
+  "tools": [
+    "gcloud (compute security-policies, compute networks vpc-access connectors, compute routers/nats, billing budgets)",
+    "Terraform google/google-beta provider (google_compute_security_policy, google_vpc_access_connector, google_compute_router_nat, google_billing_budget, google_cloud_run_v2_service)",
+    "Google Cloud Console: Network Services > Load Balancing, Network Security > Cloud Armor, VPC Network > Serverless VPC Access, VPC Network > Cloud NAT, Billing > Budgets & alerts",
+    "Cloud Pricing Calculator (cloud.google.com/products/calculator) for pre-deploy cost estimation",
+    "Cloud Monitoring + Cloud Billing budget alert channels (email, Pub/Sub, Slack via Pub/Sub bridge)",
+    "Cloud Functions (2nd gen) or Cloud Run jobs as the Pub/Sub-triggered budget-response executor",
+    "VPC Flow Logs and Cloud NAT logging for diagnosing egress/NAT failures",
+    "Terraform via Workload Identity Federation in CI (cross-reference gcp-identity-wif) — no static service-account keys for any network IaC pipeline"
+  ],
+  "versions_as_of": [
+    "Cloud Armor: OWASP Core Rule Set (CRS) 4.22 preconfigured WAF rule set, as of 2026-08-29",
+    "Cloud Run Direct VPC egress: generally available and the Google-recommended default over Serverless VPC Access connectors, as of 2026-08-29",
+    "Terraform google provider: google_cloud_run_v2_service, google_vpc_access_connector, google_compute_security_policy, google_billing_budget resources current as of provider versions available 2026-08-29 — pin an exact provider version in each project's required_providers block",
+    "Billing Budget notification schema_version 1.0"
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Cloud Run Direct VPC egress throughput",
+      "value": "up to 1 Gbps per Cloud Run instance; traffic beyond this is throttled",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc"
+    },
+    {
+      "item": "Direct VPC egress subnet size requirement",
+      "value": "minimum /26 IPv4 subnet, dedicated to Direct VPC egress use",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc"
+    },
+    {
+      "item": "Direct VPC egress IP reservation",
+      "value": "steady state reserves 2x the running instance count; during revision rollout reserves 2x combined instances across active revisions plus buffer",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc"
+    },
+    {
+      "item": "Serverless VPC Access connector instance bounds",
+      "value": "min-instances default 2 (minimum allowed), max-instances default 10 (configurable); connector auto-scales out but never scales in",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/vpc/docs/serverless-vpc-access"
+    },
+    {
+      "item": "Serverless VPC Access connector pricing model",
+      "value": "billed for the connector's instance(s) (VM-equivalent compute cost, e.g. e2-micro tier) plus standard network egress data-transfer cost for traffic through it",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/vpc/docs/serverless-vpc-access"
+    },
+    {
+      "item": "Cloud Armor policy fee",
+      "value": "(uncertain) ~$5/month per security policy (fetch of pricing page returned no renderable table; figure from prior published GCP pricing, not confirmed live)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/armor/pricing"
+    },
+    {
+      "item": "Cloud Armor per-rule fee (Standard tier)",
+      "value": "(uncertain) ~$1/month per rule in a security policy (unconfirmed live; page did not render)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/armor/pricing"
+    },
+    {
+      "item": "Cloud Armor per-request fee (Standard tier)",
+      "value": "(uncertain) ~$0.75 per million evaluated requests (unconfirmed live; page did not render)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/armor/pricing"
+    },
+    {
+      "item": "Cloud Armor Enterprise tier",
+      "value": "(uncertain) flat monthly subscription (commonly cited ~$200/month per project on an annual commitment) covering L7 DDoS mitigation, Threat Intelligence, Adaptive Protection, and network DDoS response support; exact current figure not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/armor/pricing"
+    },
+    {
+      "item": "Cloud CDN cache egress pricing",
+      "value": "(uncertain) tiered per-GB rate by destination continent and monthly volume (commonly cited lowest tier ~$0.02-0.08/GB for Americas/EMEA); page did not render a table on fetch",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/cdn/pricing"
+    },
+    {
+      "item": "Cloud CDN cache fill pricing",
+      "value": "(uncertain) separate per-GB charge for origin-fetch traffic that fills the cache, distinct from and generally lower than cache egress; exact current rate not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/cdn/pricing"
+    },
+    {
+      "item": "Internet egress pricing (premium tier)",
+      "value": "(uncertain) tiered per-GB by destination (Worldwide excl. China/Australia, China, Australia) and monthly volume band (0-1TB, 1-10TB, 10TB+), commonly cited lowest band ~$0.12/GB trending down at higher volume; page did not render a table on fetch",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/vpc/network-pricing"
+    },
+    {
+      "item": "Inter-region egress within the same continent",
+      "value": "(uncertain) commonly cited $0.01-0.05/GB depending on region pair; not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/vpc/network-pricing"
+    },
+    {
+      "item": "Intra-region, cross-zone egress",
+      "value": "(uncertain) commonly cited ~$0.01/GB (same-zone internal traffic is free; cross-zone within the same region is not); not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/vpc/network-pricing"
+    },
+    {
+      "item": "Cloud NAT gateway hourly charge",
+      "value": "(uncertain) commonly cited per-VM-using-NAT hourly rate around $0.044-0.045/hour; not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/vpc/pricing"
+    },
+    {
+      "item": "Cloud NAT data processing charge",
+      "value": "(uncertain) commonly cited ~$0.045/GB processed (both directions); not confirmed live",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/vpc/pricing"
+    },
+    {
+      "item": "Free tier: Cloud Run outbound data transfer",
+      "value": "1 GB/month outbound from North America, always-free",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/free/docs/free-cloud-features"
+    },
+    {
+      "item": "Free tier: Cloud Run functions outbound data transfer",
+      "value": "5 GB/month outbound, always-free",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/free/docs/free-cloud-features"
+    },
+    {
+      "item": "Free tier: Cloud Storage outbound data transfer",
+      "value": "100 GB/month outbound from North America to all destinations excl. China/Australia, always-free",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/free/docs/free-cloud-features"
+    },
+    {
+      "item": "Billing Budgets per billing account",
+      "value": "up to 50,000 budgets per Cloud Billing account",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/billing/docs/how-to/budgets"
+    },
+    {
+      "item": "Budget alert default thresholds",
+      "value": "50%, 90%, 100% of budget (actual spend); customizable by percent, dollar amount, or forecasted spend",
+      "as_of": "2026-08-29",
+      "source": "https://docs.cloud.google.com/billing/docs/how-to/budgets"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "Serverless VPC Access connectors are not deprecated but are now the fallback path: Google explicitly recommends Direct VPC egress for new Cloud Run services and jobs, so avoid defaulting new greenfield designs to connectors.",
+    "Legacy Network Tier selection (Standard vs Premium) still affects egress pricing and routing — verify which tier a project defaults to before estimating internet egress costs, since Standard Tier has different (generally lower but less performant) pricing than Premium Tier.",
+    "Classic (non-Envoy) Application Load Balancer configurations are being superseded by the newer global external Application Load Balancer (Envoy-based) — avoid provisioning new Classic ALBs for greenfield work."
+  ],
+  "identity_model": "All Terraform/CI automation that creates or modifies LB, Cloud Armor, VPC connector, Cloud NAT, or Billing Budget resources must authenticate via Workload Identity Federation (WIF) from the CI provider (e.g., GitHub Actions OIDC) to a scoped GCP service account, never via a downloaded service-account JSON key — this item inherits the identity model in full from gcp-identity-wif and adds no network-specific exception. The service account used for network IaC should hold least-privilege roles (roles/compute.loadBalancerAdmin, roles/compute.securityAdmin, roles/vpcaccess.admin, roles/billing.costsManager as narrowly scoped as each pipeline requires) rather than broad Editor/Owner. Budget-triggered Cloud Functions that call billing APIs to disable billing or scale down resources need their own tightly scoped runtime service account (roles/billing.projectManager at most, ideally a custom role limited to the specific disable-billing or resource-scaling call) — do not reuse a broad automation identity for this destructive capability.",
+  "threats": [
+    "Open VPC ingress firewall rules (0.0.0.0/0) exposing internally-routed services once a Cloud Run service gains Direct VPC egress or connector access to the VPC.",
+    "Public-facing Cloud Run/LB endpoints with no Cloud Armor policy, or a policy missing default-deny, exposed to L7 application attacks (SQLi, XSS, RCE) and credential-stuffing/bot traffic.",
+    "Volumetric or targeted DDoS against a public GCP HTTPS LB when only Standard-tier (L3/L4-only) DDoS protection is active and the workload actually needs Enterprise-tier L7 mitigation.",
+    "Runaway spend from a NAT gateway, connector, or LB left running without a Billing Budget alert, whether from a bug (retry storm, connection leak) or from a forgotten test/staging deployment.",
+    "Automated \"disable billing\" or \"scale down\" budget response scripts with over-broad IAM permissions being triggered incorrectly or exploited to cause denial-of-service against production.",
+    "Cross-project or cross-region traffic inadvertently routed through the more expensive internet-egress path instead of intra-VPC/intra-region paths, due to misconfigured routing or DNS.",
+    "Static, long-lived service-account keys used for network IaC pipelines, creating a persistent credential-theft target (see gcp-identity-wif)."
+  ],
+  "mitigations": [
+    "Default every VPC firewall policy to deny-all ingress, with explicit allow rules scoped to specific source ranges/service accounts for the ports actually needed by Direct VPC egress or connector traffic.",
+    "Require a Cloud Armor security policy with a default-deny rule and at least one rate-limiting rule on every publicly exposed GCP HTTPS LB backend, enforced via a CI policy check (e.g., OPA/Conftest against the Terraform plan) before apply.",
+    "Enable Cloud Armor Enterprise tier (or equivalent) for any workload with meaningful public exposure and real DDoS risk, rather than assuming Standard tier's L3/L4-only coverage is sufficient.",
+    "Wire every Billing Budget to a Pub/Sub topic with a subscriber (Cloud Function/Cloud Run job) that posts to a monitored channel (Slack/PagerDuty) at 50%/90%, and takes a pre-approved automated action (scale down, disable a specific non-prod resource) at 100% forecasted spend — never make \"disable billing\" the sole automated response.",
+    "Scope any budget-response automation's service account to the single API call it needs (e.g., a custom role limited to updating a specific Cloud Run service's max-instances), not project-wide billing or compute admin.",
+    "Enforce Workload Identity Federation for all Terraform/CI identities touching network resources; block static key creation for these service accounts via an org policy constraint.",
+    "Periodically scan live VPC firewall rules and Cloud Armor policies (skill_scan_signals below) for default-allow, 0.0.0.0/0, or missing-rate-limit drift introduced by manual console changes."
+  ],
+  "agent_codegen_policy": "Must generate: Direct VPC egress configuration (not a connector) as the default for new Cloud Run-to-VPC connectivity, unless the user has confirmed the region/product doesn't support it; Cloud Armor policies with an explicit default-deny final rule and at least one rate-limit rule whenever creating a public LB backend; a Billing Budget + Pub/Sub notification resource in the same change as any NAT gateway, connector, or LB; least-privilege IAM roles scoped per resource type rather than broad Editor/Owner; Workload Identity Federation wiring for any CI identity that will apply this Terraform, never a static service-account key. Must NOT generate: 0.0.0.0/0 ingress firewall rules; Cloud Armor policies with only a default-allow rule; NAT gateways or connectors with no attached Billing Budget in the same PR; a parallel GCP HTTPS LB/CDN/Armor stack duplicating traffic already served by Vercel unless the user has explicitly stated a requirement Vercel cannot meet; automated \"disable billing\" actions wired directly to a budget alert without a human-approved intermediate step, except in disposable sandbox projects the user has explicitly designated as such.",
+  "ci_gates": [
+    "Terraform plan review gate: any diff touching google_compute_firewall, google_compute_security_policy, google_vpc_access_connector, google_compute_router_nat, or google_cloud_run_v2_service vpc_access blocks requires human review before apply.",
+    "Policy-as-code check (OPA/Conftest or similar) that fails CI if a google_compute_security_policy plan lacks a default-deny final rule or a rate-limit rule.",
+    "Policy-as-code check that fails CI if any google_compute_firewall rule has source_ranges containing 0.0.0.0/0 on an ingress rule without an explicit, reviewed exception tag.",
+    "Drift-detection job (scheduled `terraform plan` against live state) for network resources, alerting on any manual console change to firewall rules or Cloud Armor policies.",
+    "Cost-estimation gate (e.g., Infracost or the Cloud Pricing Calculator API) on any PR adding a NAT gateway, LB forwarding rule, or Serverless VPC Access connector, posted as a PR comment before merge.",
+    "CI identity verification gate confirming the pipeline is authenticating via Workload Identity Federation, not a service-account key file, before allowing apply against network resources."
+  ],
+  "observability": [
+    "VPC Flow Logs enabled on subnets carrying Direct VPC egress or connector traffic, with alerts on unexpected destination IP ranges or ports.",
+    "Cloud NAT logging (ERRORS_ONLY at minimum, ALL for debugging) to catch port/IP exhaustion before it causes silent connection failures.",
+    "Cloud Armor policy-level metrics (allowed/denied/rate-limited request counts per rule) exported to Cloud Monitoring, with alerts on sudden spikes in denied or rate-limited traffic.",
+    "Cloud Monitoring dashboards tracking egress bytes by category (intra-zone, intra-region, inter-region, internet) to catch unexpected cross-region traffic early.",
+    "Serverless VPC Access connector utilization metrics (throughput, instance count) monitored to catch both under-provisioning (throttling) and over-provisioning (idle cost).",
+    "Billing export to BigQuery with a scheduled query/dashboard breaking down spend by network resource type (LB, CDN, Armor, NAT, connector, egress) at least weekly.",
+    "Budget Pub/Sub notification delivery monitored for gaps — Pub/Sub is at-least-once and can take hours for the first notification, so don't rely on it as the sole real-time signal for a fast-moving cost spike."
+  ],
+  "cost_guardrails": [
+    "First cost surprise: internet egress from a Cloud Run/GKE workload serving media, exports, or API responses to end users directly (bypassing Vercel/CDN) racks up premium-tier internet-egress charges per GB that dwarf compute cost at scale — route public traffic through Vercel or Cloud CDN instead of raw Cloud Run egress wherever possible.",
+    "Second cost surprise: a Serverless VPC Access connector's min-instances floor (2, non-zero) bills continuously even with zero traffic, and after any load test that raises max-instances, the connector does not scale back down — audit connector instance counts monthly.",
+    "Third cost surprise: Cloud NAT's dual charge (hourly per-VM-using-NAT plus per-GB data processing) turns a \"just for outbound API calls\" NAT gateway into a bigger line item than expected once several Cloud Run services and GKE nodes all route through the same NAT — one NAT gateway per project shared broadly needs its own budget line, not folded into general compute cost.",
+    "Set a Billing Budget per project at deploy time (not as an afterthought) with thresholds at 50/90/100% of a realistic monthly ceiling, and connect the 100% threshold to a Pub/Sub topic with a subscriber that pages a human and/or takes one pre-approved automated action.",
+    "For non-production/sandbox projects only, wire a hard automated cap (e.g., disable specific NAT/LB resources or, as an explicit last resort, disable billing) at a higher \"emergency\" threshold (e.g., 150-200% of budget) — never wire disable-billing on shared or production projects.",
+    "Free-tier cliff: Cloud Run's always-free egress allowance is only 1 GB/month from North America — any real production traffic blows past this immediately, so do not size cost expectations around the free tier for anything beyond a demo.",
+    "Free-tier cliff: Cloud Storage's 100 GB/month free egress allowance only applies to North America-origin traffic to non-China/Australia destinations — cross-continent or China/Australia-destined traffic is billed from the first byte.",
+    "Cache-hit ratio matters for Cloud CDN economics: a low cache-hit ratio means most requests fall through to cache-fill plus origin compute cost on top of the egress cost, erasing the savings CDN is meant to provide — monitor and alert on cache-hit ratio, not just total CDN spend.",
+    "Cloud Armor's per-rule and per-request pricing model means an over-engineered policy with dozens of narrow custom rules costs more per month in rule fees than a smaller set of well-designed rules plus the preconfigured WAF rule groups — review policies for rule sprawl during cost audits."
+  ],
+  "skill_scan_signals": [
+    "Flag any google_compute_firewall (or equivalent gcloud/console-created rule) with an ingress direction and source_ranges containing 0.0.0.0/0.",
+    "Flag any google_compute_security_policy whose rule list has no rule with action deny(*) at the lowest priority (i.e., missing default-deny) or whose only rules are preconfigured WAF expressions with no rate-limit rule.",
+    "Flag any google_compute_router_nat (Cloud NAT) resource in a Terraform plan or live state with no corresponding google_billing_budget scoped to the same project.",
+    "Flag any google_vpc_access_connector with max_instances significantly above min_instances (e.g., left at a load-test-time value of 10) with no recent traffic justifying it — idle-cost signal.",
+    "Flag Cloud Run services with vpc_access egress set to ALL_TRAFFIC when the service only needs PRIVATE_RANGES_ONLY — unnecessarily routes public internet traffic through the VPC/NAT path, adding cost and latency.",
+    "Flag any Terraform provider block or CI workflow authenticating to GCP with a service-account JSON key file (GOOGLE_APPLICATION_CREDENTIALS pointing at a key, or google_service_account_key resource) instead of Workload Identity Federation — cross-reference gcp-identity-wif.",
+    "Flag a google_billing_budget with no all_updates_rule (Pub/Sub) block — email-only budgets with no programmatic hook are a weak guardrail.",
+    "Flag a parallel GCP HTTPS LB + Cloud CDN + Cloud Armor stack coexisting with a Vercel deployment for the same hostname/app with no documented reason — likely duplicate infrastructure."
+  ],
+  "skill_module_bullets": [
+    "In this stack, Vercel serves public HTTP(S) traffic and Supabase serves Postgres — GCP's LB/CDN/Armor/VPC layer is only needed when a Python service on Cloud Run needs private VPC reachability, or when a team explicitly needs a GCP-hosted public endpoint Vercel can't provide.",
+    "Cloud Run's Direct VPC egress is now the Google-recommended default over Serverless VPC Access connectors — reach for a connector only as an explicit fallback.",
+    "Direct VPC egress caps at 1 Gbps per Cloud Run instance and needs a dedicated /26-or-larger subnet; expect a possible 1-minute-plus cold-start delay on scale-from-zero.",
+    "Serverless VPC Access connectors bill continuously at their min-instances floor and never scale back down automatically — audit them, don't just set-and-forget.",
+    "Every Cloud Armor policy needs an explicit default-deny rule plus at least one rate-limit rule; the OWASP preconfigured WAF rule groups are opt-in per category, not on by default.",
+    "Cloud NAT bills on two axes — an hourly per-VM charge and a per-GB data-processing charge — so a shared \"just for outbound\" NAT gateway can become a larger line item than expected.",
+    "Billing Budgets support up to 50,000 budgets per billing account with configurable thresholds (default 50/90/100%) and Pub/Sub-driven programmatic responses; wire this before any always-on network resource goes live.",
+    "GCP's always-free network egress allowances (1 GB/month for Cloud Run, 100 GB/month for Cloud Storage, North-America-origin only) are demo-scale, not production-scale — don't budget around them.",
+    "All network IaC automation inherits the WIF-only identity rule from gcp-identity-wif — no static service-account keys for Terraform pipelines touching LB/Armor/VPC/NAT/Budget resources."
+  ],
+  "checklist": [
+    "Confirm the public traffic path actually needs a GCP HTTPS LB/CDN/Armor stack rather than relying on Vercel's edge network — document the specific requirement if so.",
+    "For any Cloud Run service needing VPC access, confirm Direct VPC egress is used (not a connector) unless a documented region/product limitation forces the fallback.",
+    "Verify the Direct VPC egress subnet is dedicated, sized /26 or larger, and IP-reservation headroom (2x instance count) is accounted for during rollouts.",
+    "Verify every public-facing Cloud Armor policy has a default-deny rule, a rate-limit rule, and the relevant OWASP preconfigured rule groups enabled.",
+    "Verify no VPC firewall ingress rule allows 0.0.0.0/0 unless explicitly reviewed and tagged as an intentional exception.",
+    "Confirm a Billing Budget with Pub/Sub notification exists for the project before any NAT gateway, connector, or LB is deployed, with thresholds at 50/90/100%.",
+    "Confirm Cloud Run, Cloud SQL/AlloyDB, Cloud NAT, and any connector are all in the same region to avoid unnecessary inter-region egress.",
+    "Confirm the CI identity applying network Terraform uses Workload Identity Federation, not a static service-account key.",
+    "Review Serverless VPC Access connector instance counts and Cloud NAT logs monthly for idle-cost and error-rate drift.",
+    "Review Cloud CDN cache-hit ratio (if CDN is in use) to confirm it's actually reducing egress/origin cost rather than adding cache-fill cost on top."
+  ],
+  "source_tier": "official",
+  "confidence": "medium",
+  "conflicts_noted": "Several pricing pages (Cloud CDN pricing, Cloud Armor pricing, VPC network-pricing, VPC/NAT pricing) are client-side-rendered and returned only their page title on WebFetch, with no pricing table content retrievable during this research session; WebSearch was also unavailable (session search budget exhausted). All specific dollar figures for CDN cache egress/fill, Cloud Armor policy/rule/request fees, internet-egress tiered rates, and Cloud NAT hourly/data-processing rates are therefore carried from general prior knowledge of GCP's published pricing structure, not confirmed against a live fetch on 2026-08-29, and are marked [uncertain] inline in limits_quotas_pricing. Conceptual/behavioral facts (Direct VPC egress limits, connector instance bounds, Cloud Armor tiering and OWASP CRS version, Budgets thresholds/limits, free-tier allowances, LB architecture) were successfully fetched from live official docs and are high-confidence.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://docs.cloud.google.com/load-balancing/docs/load-balancing-overview",
+    "https://cloud.google.com/cdn/docs/overview",
+    "https://cloud.google.com/cdn/pricing",
+    "https://docs.cloud.google.com/armor/docs/cloud-armor-overview",
+    "https://cloud.google.com/armor/pricing",
+    "https://docs.cloud.google.com/vpc/docs/serverless-vpc-access",
+    "https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc",
+    "https://cloud.google.com/vpc/network-pricing",
+    "https://cloud.google.com/vpc/pricing",
+    "https://docs.cloud.google.com/billing/docs/how-to/budgets",
+    "https://docs.cloud.google.com/free/docs/free-cloud-features",
+    "https://docs.cloud.google.com/billing/docs/how-to/notify"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "limits_quotas_pricing"
+  ]
+}

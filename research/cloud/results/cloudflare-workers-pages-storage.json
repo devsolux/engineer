@@ -1,0 +1,310 @@
+{
+  "name": "Cloudflare — Workers, Pages, R2 (S3-compatible, zero egress), D1, KV, Durable Objects, Queues, Zero Trust; Wrangler; where it beats and loses to Vercel",
+  "item_id": "cloudflare-workers-pages-storage",
+  "cluster": "platforms",
+  "short_definition": "Cloudflare's edge compute and data platform: Workers (V8-isolate compute, near-zero cold start), Pages (being superseded by Workers static assets for new projects), R2 (S3-compatible object storage with zero egress fees), D1 (serverless SQLite), KV (eventually-consistent global key-value cache), Durable Objects (strongly-consistent single-threaded stateful actors, now SQLite-backed), Queues (managed message queue), and Cloudflare One/Zero Trust (Access, Gateway, Tunnel) for securing internal apps. Deployed and configured primarily via the Wrangler CLI and wrangler.toml.",
+  "scope_in": "Edge-deployed TypeScript/JS compute for APIs, middleware, and Next.js (via vinext or @opennextjs/cloudflare); R2 as an S3-compatible bucket for user uploads, build artifacts, or backups where egress cost matters; D1 for small-to-medium relational workloads that want SQLite semantics at the edge; KV for read-heavy, latency-insensitive-to-staleness config/cache data; Durable Objects for coordination primitives (rate limiters, websocket rooms, per-tenant single-writer state); Queues for async job fan-out between Workers; Cloudflare Access for zero-trust gating of internal/admin surfaces sitting behind Cloudflare's edge.",
+  "scope_out": "Long-running stateful compute, GPU/ML training, or anything needing >5 min wall time per invocation (use a VPS, Fly.io, or a container platform instead). Not a replacement for Supabase Postgres as the system of record — D1 is for edge-local or secondary data, not the primary relational database in this stack. Not covered here in depth: Cloudflare's DNS/CDN/WAF product line, Cloudflare Images, Stream, Browser Rendering, or Workers AI (separate KB items). Zero Trust/Access is covered only briefly as a secondary concern, not as a full SASE deployment guide.",
+  "priority": "P0",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "limits_quotas_pricing": [
+    {
+      "item": "Workers CPU time per request",
+      "value": "Free plan: 10 ms per invocation. Paid plan: default 30 s, configurable up to 5 min (300,000 ms) via limits.cpu_ms.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/limits/"
+    },
+    {
+      "item": "Workers requests",
+      "value": "Free plan: 100,000 requests/day (resets midnight UTC), no CPU-ms bank. Paid plan: no daily cap; 10M requests/month included then $0.30/additional million.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/pricing/"
+    },
+    {
+      "item": "Workers CPU time billing (paid)",
+      "value": "30M CPU-ms included per month, then $0.02 per additional million CPU-ms. $5/month base minimum.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/pricing/"
+    },
+    {
+      "item": "Workers subrequests per invocation",
+      "value": "Free: 50/request. Paid: 10,000 (expandable to 10M via limit-increase request).",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/limits/"
+    },
+    {
+      "item": "Workers script size / memory",
+      "value": "Compressed script size: 3 MB (free) / 10 MB (paid); 64 MB uncompressed both. Memory: 128 MB per isolate on both plans.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/limits/"
+    },
+    {
+      "item": "R2 storage pricing",
+      "value": "Standard: $0.015/GB-month. Infrequent Access: $0.01/GB-month. Free tier: 10 GB-month storage included.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/r2/pricing/"
+    },
+    {
+      "item": "R2 operations pricing",
+      "value": "Class A (writes/list): $4.50/million (Standard), $9.00/million (IA). Class B (reads): $0.36/million (Standard), $0.90/million (IA). Free tier: 1M Class A + 10M Class B/month.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/r2/pricing/"
+    },
+    {
+      "item": "R2 egress",
+      "value": "Egress to internet (including via Workers, S3 API, r2.dev) is free/$0 — no data-transfer-out charge. This is the core differentiator vs S3.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/r2/pricing/"
+    },
+    {
+      "item": "D1 database limits",
+      "value": "Max DB size: 500 MB (free) / 10 GB (paid, per database). Databases per account: 10 (free) / 50,000 (paid). Max row/BLOB size: 2 MB. Queries per Worker invocation: 50 (free) / 1,000 (paid).",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/d1/platform/limits/"
+    },
+    {
+      "item": "D1 pricing (rows read/written)",
+      "value": "(uncertain) Docs fetched did not surface exact per-row read/write $ pricing (this is normally $0.001/million rows read, $1.00/million rows written per Cloudflare's published model, matching the Durable Objects SQLite billing note found) — verify on the live D1 pricing page before quoting a number.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/d1/platform/limits/"
+    },
+    {
+      "item": "Workers KV limits",
+      "value": "Max key size 512 bytes; max value size 25 MiB; max metadata 1024 bytes; 1 write/sec to the same key; free tier 100k reads/day + 1,000 writes/day; paid tier unlimited reads/writes to distinct keys. Storage: 1 GB free, unlimited paid.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/kv/platform/limits/"
+    },
+    {
+      "item": "Durable Objects limits",
+      "value": "SQLite-backed storage: 10 GB/object, unlimited account total on paid (5 GB total on free). Soft throughput limit ~1,000 req/s per object (single-threaded). CPU: 30s default, configurable to 5 min.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/durable-objects/platform/limits/"
+    },
+    {
+      "item": "Durable Objects pricing",
+      "value": "Requests: 100k/day free, then 1M/month included + $0.15/million (paid). Duration: 13,000 GB-s/day free, then 400,000 GB-s/month included + $12.50/million GB-s. SQLite storage billed at D1-equivalent rates starting Jan 2026.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/pricing/"
+    },
+    {
+      "item": "Queues limits",
+      "value": "Max message size 128 KB; throughput 5,000 msg/s per queue; queue backlog cap 25 GB; retention up to 14 days (paid) / fixed 24h (free); sendBatch max 100 messages/256KB; consumer batch max 100 messages.",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/queues/platform/limits/"
+    },
+    {
+      "item": "Queues pricing",
+      "value": "Free: 10,000 operations/day. Paid: 1,000,000 operations/month included + $0.40/million operations (metered per 64 KB chunk; typical delivery = 3 ops: write, read, delete).",
+      "as_of": "2026-08-29",
+      "source": "https://developers.cloudflare.com/workers/platform/pricing/"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "ci_gates": [
+    "CI deploy job must fail closed if CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID secrets are missing, rather than falling back to an interactive wrangler login.",
+    "Lint/verify wrangler.toml contains no literal account_id/database_id/bucket_name values matching a real-looking Cloudflare ID pattern before allowing a merge to a public or semi-public repo.",
+    "Require `wrangler deploy --dry-run` (or equivalent build-only check) on PRs, with the real `wrangler deploy` gated to the merge-to-main job only.",
+    "Pin cloudflare/wrangler-action and actions/checkout to commit SHAs; a CI policy check (matching this repo's existing Action-pinning enforcement) should reject floating tags.",
+    "Gate production D1/R2/KV resource creation behind an explicit apply step (Terraform plan/apply or a reviewed wrangler command), never auto-applied on every push.",
+    "Run the vinext/@opennextjs/cloudflare compatibility checker as a CI step for Next.js-on-Workers projects, failing the build on new incompatibilities rather than discovering them at runtime."
+  ],
+  "defaults": [
+    "Default to Workers with the [assets] static-assets binding for new frontend deploys, not legacy Cloudflare Pages — Cloudflare's own docs say to start new projects with Workers.",
+    "Default to R2 for any object storage where egress volume is unpredictable or high (media, exports, backups); keep Supabase Storage only for objects tightly coupled to RLS-protected rows.",
+    "Default to wrangler.toml (not wrangler.json) with compatibility_date pinned to a specific date, reviewed and bumped deliberately, never left to drift.",
+    "Default to `wrangler secret put` for any runtime secret; never put secrets under [vars] in wrangler.toml, which is plaintext and often committed.",
+    "Default to per-environment Cloudflare API tokens (staging vs production) each scoped to only the resources (Workers, R2 bucket, D1 database) that environment's CI job touches.",
+    "Default to Durable Objects with SQLite backend (new_sqlite_classes) for new stateful actors, not the legacy KV-backed DO storage API, which Cloudflare is steering away from.",
+    "Default to keeping Postgres (Supabase) as the source of truth; treat D1/KV/DO as edge caches or edge-local satellites unless a workload is genuinely edge-native and low-consistency-risk.",
+    "Default to vinext for new Next.js-on-Workers projects per Cloudflare's current recommendation, but pin to @opennextjs/cloudflare instead if the app needs a feature vinext's beta doesn't yet cover — run the compatibility checker first either way.",
+    "Default to enabling Workers Logs/observability (`[observability] enabled = true`) from day one; it is off by default in scaffolded projects."
+  ],
+  "decision_gates": [
+    "Use Cloudflare Workers over Vercel when the workload is latency-sensitive at global edge, needs R2's zero-egress economics, or needs Durable Objects/Queues primitives Vercel doesn't offer; stay on Vercel when the team wants the most mature, battle-tested Next.js hosting (ISR, image optimization, server actions) with the least operational risk — Cloudflare's Next.js path (vinext) is explicitly in beta as of this writing.",
+    "Use R2 over Supabase Storage when objects are large, high-egress, or need S3-API compatibility with existing tooling (backup tools, CDN pipelines); use Supabase Storage when objects need to live inside RLS policies alongside the same Postgres rows that authorize access to them.",
+    "Use R2 over a plain VPS + self-hosted MinIO when you don't want to operate storage durability/backups yourself; a VPS wins only if data residency or air-gapped control requirements rule out any managed cloud object store.",
+    "Use D1 when you need edge-colocated SQLite for read-mostly, per-tenant-shardable data (e.g. feature flags, small per-region caches); do not use D1 as the primary application database when Supabase Postgres already holds that data — avoid dual-writing two databases without a clear sync boundary.",
+    "Use KV when staleness of seconds-to-a-minute is acceptable (config, feature flags, edge cache of computed values); never use KV where you need read-your-writes consistency — its 1-write/sec-per-key limit and eventual consistency will produce visible bugs under that assumption.",
+    "Use Durable Objects when you need a single global owner for a piece of state (websocket room, in-memory rate limiter, per-resource lock) that a horizontally-scaled Worker cannot provide; do not reach for DOs as a general database — 10 GB/object and ~1,000 req/s/object are real ceilings.",
+    "Use Queues for Worker-to-Worker async fan-out inside Cloudflare's network; prefer a hosted queue (SQS, or Supabase-adjacent tooling) or a VPS-run broker when you need cross-cloud delivery guarantees beyond Cloudflare's 100-retry/14-day-retention model.",
+    "Use Cloudflare Access/Zero Trust to gate admin dashboards and internal tools sitting on a Cloudflare-proxied domain; for a Vercel-hosted admin panel, use Vercel's own password/SSO protection or an app-layer auth gate instead — Access only intercepts traffic that flows through Cloudflare's edge.",
+    "Choose Vercel over Cloudflare Workers specifically for OIDC-clean CI/CD: Vercel supports scoped, short-lived deploy tokens and tighter GitHub integration; Cloudflare's CI story is a long-lived API token as a GitHub secret with no OIDC federation option — factor this into the identity-first policy decision explicitly, don't discover it during a security review.",
+    "Stay on a plain VPS only when the workload needs persistent local disk, GPU, non-HTTP protocols, or run times far beyond Workers' 5-minute CPU ceiling — otherwise Workers' zero-ops model wins on both cost and operational load for anything HTTP-shaped."
+  ],
+  "do_dont": [
+    "DO pin compatibility_date and compatibility_flags explicitly in wrangler.toml; DON'T let Wrangler infer them or leave a stale date that silently opts out of newer runtime behavior.",
+    "DO scope each Cloudflare API token to the minimum permission set (e.g. 'Workers Scripts:Edit' + 'Account Settings:Read' for one account) and rotate on a calendar; DON'T create a Global API Key or an all-account-resources token for CI convenience.",
+    "DO use `wrangler secret put <NAME> --env production` per environment; DON'T store secrets as GitHub Actions repo-wide secrets shared across preview and production Workers.",
+    "DO use R2's S3-compatible API with existing S3 SDKs/tools when migrating off AWS; DON'T assume every S3 feature (e.g. some lifecycle/replication features) is at full parity — check R2's feature list before porting complex bucket policies.",
+    "DO treat Durable Object storage transactionally (it's strongly consistent per-object); DON'T fan out writes to many DOs expecting cross-object transactions — there is no multi-object transaction primitive.",
+    "DO set explicit `max_batch_size`/`max_batch_timeout` on Queue consumers to bound cost and latency; DON'T leave queue consumers unbounded and then be surprised by per-64KB-chunk billing on many small messages.",
+    "DO run `npx cloudflare @opennextjs/cloudflare` or the vinext compatibility checker before migrating a Next.js app; DON'T deploy a production Next.js app cold onto vinext without checking the compatibility dashboard first — it's beta.",
+    "DO keep D1 database IDs and R2 bucket names as CI secrets/variables, not hardcoded in wrangler.toml when the file is public; DON'T commit real account_id/database_id values in a public template repo (use placeholders and env substitution).",
+    "DO pin `cloudflare/wrangler-action` and `actions/checkout` to a specific commit SHA in the GitHub Actions workflow; DON'T reference `@v3` or `@main` unpinned for a supply-chain-sensitive deploy job.",
+    "DO monitor Workers CPU-ms usage against the paid plan's 30M-included budget before it becomes a billing surprise; DON'T assume 'no request limit on paid' means no cost ceiling — CPU-ms overage is metered."
+  ],
+  "config_skeleton": "```toml\n# wrangler.toml — placeholders only, no real IDs\nname = \"my-app-worker\"\nmain = \"src/index.ts\"\ncompatibility_date = \"2026-08-01\"\ncompatibility_flags = [\"nodejs_compat\"]\naccount_id = \"<CLOUDFLARE_ACCOUNT_ID>\"\n\n[observability]\nenabled = true\n\n# Static assets (Workers-native static hosting, replaces Pages for new projects)\n[assets]\ndirectory = \"./dist/client\"\nbinding = \"ASSETS\"\n\n# R2 bucket binding (S3-compatible object storage, zero egress)\n[[r2_buckets]]\nbinding = \"UPLOADS_BUCKET\"\nbucket_name = \"<R2_BUCKET_NAME>\"\n\n# D1 database binding (serverless SQLite)\n[[d1_databases]]\nbinding = \"DB\"\ndatabase_name = \"<D1_DATABASE_NAME>\"\ndatabase_id = \"<D1_DATABASE_ID>\"\n\n# KV namespace binding (eventually-consistent global key-value)\n[[kv_namespaces]]\nbinding = \"CACHE_KV\"\nid = \"<KV_NAMESPACE_ID>\"\n\n# Durable Object binding (strongly-consistent single-threaded actor)\n[[durable_objects.bindings]]\nname = \"RATE_LIMITER\"\nclass_name = \"RateLimiter\"\n\n[[migrations]]\ntag = \"v1\"\nnew_sqlite_classes = [\"RateLimiter\"]\n\n# Queue producer/consumer bindings\n[[queues.producers]]\nbinding = \"JOB_QUEUE\"\nqueue = \"<QUEUE_NAME>\"\n\n[[queues.consumers]]\nqueue = \"<QUEUE_NAME>\"\nmax_batch_size = 25\nmax_batch_timeout = 30\n\n# Secrets: NEVER put real values here. Use `wrangler secret put <NAME>`\n# or set them per-environment in the dashboard / CI secret store.\n[vars]\nPUBLIC_APP_ENV = \"production\"\n```\n\n```yaml\n# .github/workflows/deploy-worker.yml\n# Auth model: Cloudflare has no GitHub OIDC federation (unlike AWS/GCP) as of\n# this writing — auth is a scoped API token stored as a GitHub Actions secret.\n# Mitigate the long-lived-secret risk with narrow scoping + calendar rotation,\n# never with \"OIDC everywhere\" — that option does not exist for Cloudflare.\nname: Deploy Worker\n\non:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    environment: production\n    steps:\n      - name: Checkout (pinned SHA)\n        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n\n      - name: Deploy via Wrangler\n        uses: cloudflare/wrangler-action@f84a562284fc78278ff9052435d9526f9c718361 # v3.14.0\n        with:\n          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}\n          command: deploy\n        env:\n          # Any app secret needed at build time only — never Cloudflare-side\n          # runtime secrets, which go through `wrangler secret put` instead.\n          NODE_ENV: production\n```\n",
+  "failure_modes": [
+    "KV write-then-immediate-read from a different edge location returns stale data because KV is eventually consistent globally — code that assumes read-your-writes breaks in production only, not locally.",
+    "Durable Object 'overloaded' errors under bursty traffic because a single object is capped near 1,000 req/s and the workload routed too much traffic to one object key instead of sharding.",
+    "D1 query timeout (30s) or the 50-query-per-invocation free-tier cap silently truncates a batch job that worked fine in dev on the paid tier's higher 1,000-query allowance.",
+    "R2 multipart upload or S3-API edge case fails because a client library assumes full AWS S3 feature parity that R2 doesn't implement, discovered only when a large/streamed upload runs.",
+    "Workers CPU time limit (30s soft default on paid, 5 min hard ceiling) truncates a long synchronous computation that would have completed fine on a traditional server — this reads as an inexplicable 'silent failure' if not explicitly caught.",
+    "A leaked long-lived Cloudflare API token (no OIDC short-lived alternative exists) sits valid until manually revoked, unlike an AWS/GCP OIDC-minted credential that expires in minutes — the blast-radius window is structurally larger.",
+    "vinext beta gaps cause a Next.js feature (build-time image optimization, some middleware edge cases) to behave differently than on Vercel, discovered late in a migration rather than caught by the compatibility checker upfront.",
+    "Queue message redelivery beyond the 100-retry ceiling or 14-day retention silently drops a message the consumer never successfully processed, with no automatic dead-letter unless one was explicitly configured.",
+    "Mixing Pages and Workers static-assets deployment models on the same project mid-migration causes confusing routing/caching behavior because Cloudflare is actively converging the two products.",
+    "wrangler.toml with an unpinned or missing compatibility_date silently picks up new runtime defaults after a Wrangler upgrade, changing Worker behavior without an explicit code change."
+  ],
+  "anti_patterns": [
+    "Treating D1 as the single source of truth alongside Supabase Postgres without a defined sync/ownership boundary — two 'primary' databases for the same entity is a recipe for drift.",
+    "Using KV as a session store requiring strong consistency (e.g. auth token revocation) when the 1-write/sec/key and eventual-consistency model can't guarantee timely propagation.",
+    "Granting a CI Cloudflare API token full account-level Edit scope 'to avoid future friction' instead of enumerating the specific resources it touches.",
+    "Running a long CPU-bound job (image processing, heavy computation) synchronously inside a Worker instead of offloading to a Queue consumer or a dedicated VPS/service.",
+    "Copy-pasting an S3 SDK integration onto R2 without checking which S3 API surface R2 actually implements, then debugging silent failures in edge-case operations.",
+    "Deploying to Cloudflare Pages for a brand-new project in 2026 out of habit/old tutorials, when Cloudflare's own guidance now points new projects at Workers + static assets.",
+    "Leaving `[vars]` in wrangler.toml holding what is actually a secret (API key, DB password) because it 'was easier' than wiring `wrangler secret put`.",
+    "Sharing one Cloudflare API token across preview and production GitHub Actions environments instead of two independently-scoped, independently-revocable tokens.",
+    "Assuming Cloudflare Access alone secures an admin panel without also enforcing app-level authorization — Access gates the edge request, not necessarily every internal API call."
+  ],
+  "tools": [
+    "wrangler CLI (v4.x) — build, dev, deploy, secret management, tail logs",
+    "Cloudflare dashboard — token creation, bindings inspection, R2/D1/KV browsing, Access policy config",
+    "cloudflare/wrangler-action (GitHub Action) — CI deploy wrapper around wrangler",
+    "@opennextjs/cloudflare — OpenNext adapter for running existing Next.js apps on Workers",
+    "vinext — Cloudflare's newer, officially-recommended Next.js runtime adapter (beta)",
+    "Terraform Cloudflare provider (cloudflare/cloudflare) — IaC for zones, Workers, R2 buckets, D1/KV/DO resources, Access policies",
+    "AWS S3 SDKs (boto3, aws-sdk) pointed at R2's S3-compatible endpoint — for migration/tooling reuse",
+    "Miniflare / `wrangler dev` — local Workers runtime emulation for KV/D1/DO/R2 during development"
+  ],
+  "versions_as_of": [
+    "wrangler: 4.127.1 (npm registry, checked 2026-08-29)",
+    "@opennextjs/cloudflare: 1.20.4 (npm registry, checked 2026-08-29)",
+    "vinext: beta status as stated in Cloudflare's Next.js framework guide, no pinned version number confirmed — [uncertain]",
+    "Wrangler config file format: wrangler.toml remains fully supported; wrangler.jsonc/wrangler.json also accepted as alternatives — exact current preference not independently confirmed beyond the docs index page — [uncertain]"
+  ],
+  "deprecation_watch": [
+    "Cloudflare Pages is not formally deprecated but Cloudflare's own docs now say 'Start new projects with Workers' — treat Pages as legacy/maintenance-mode for this KB's purposes and steer new work to Workers + [assets].",
+    "Durable Objects are migrating toward SQLite-backed storage as the default/recommended backend (new_sqlite_classes); the older key-value-backed DO storage API is the legacy path — prefer SQLite-backed for new classes.",
+    "Durable Objects SQLite storage billing begins January 2026 at D1-equivalent rates ($0.001/million rows read, $1.00/million rows written per the pricing fetch) — cost model for existing DO-heavy workloads changes at that date; re-check actual invoices after rollout.",
+    "vinext is positioned as Cloudflare's forward-looking Next.js runtime, with @opennextjs/cloudflare explicitly relegated to a fallback for apps with a compatibility gap — expect vinext to become the sole recommended path as it exits beta; re-verify status at each review cycle.",
+    "No evidence found of Cloudflare adding GitHub Actions OIDC federation as of this writing — re-check this specifically at each review, since it would materially change the identity_model recommendation if introduced."
+  ],
+  "identity_model": "Cloudflare's CI/CD authentication model is a scoped API token (created via the dashboard or API, with permission groups, resource restrictions, and an optional TTL) stored as a GitHub Actions secret (CLOUDFLARE_API_TOKEN plus CLOUDFLARE_ACCOUNT_ID) and passed to cloudflare/wrangler-action. No documentation found (across the Workers CI/CD, GitHub Actions integration, or API token creation pages) describes GitHub Actions OIDC federation to Cloudflare of the kind AWS (sts:AssumeRoleWithWebIdentity) or GCP (Workload Identity Federation) support. As of 2026-08-29 Cloudflare API tokens are the norm and are inherently longer-lived than an OIDC-minted credential — the practical mitigation is narrow scoping (per-resource, per-environment tokens), an optional TTL/expiration on the token, and calendar-based rotation, not elimination of the long-lived-secret pattern. Treat this as a structural gap relative to the identity-first/no-long-lived-keys policy, not an oversight to code around.",
+  "threats": [
+    "A leaked Cloudflare API token grants standing access (until manually revoked or its TTL expires) to whatever it was scoped to — R2 buckets, Workers deploy, D1/KV data — with no automatic expiry unless one was explicitly set.",
+    "Overly broad token scope (account-level Edit instead of resource-specific) turns a single leaked CI secret into full-account compromise.",
+    "wrangler.toml committed with real account_id/database_id/bucket names in a public or semi-public repo leaks account topology (not a secret by itself, but reconnaissance value).",
+    "Secrets placed under [vars] instead of via `wrangler secret put` end up readable in the dashboard, in build logs, or in the repo if wrangler.toml is checked in with real values.",
+    "R2/D1/KV data exposed via an overly permissive public binding or an r2.dev public bucket left in 'public access' mode.",
+    "Durable Object or Worker code with an injected/unsanitized input reaching D1 SQL execution (SQL injection risk is the same as any SQLite usage) if queries are string-concatenated instead of parameterized.",
+    "Cloudflare Access misconfiguration (overly broad email-domain or IP-range policy) exposing an internal admin app that was assumed protected.",
+    "Unpinned GitHub Action versions (`wrangler-action@v3` instead of a pinned SHA) introduce supply-chain risk if the action's tag is ever repointed."
+  ],
+  "mitigations": [
+    "Scope every Cloudflare API token to the minimum permission set and specific resource (one token per environment: staging vs production), and set a TTL/expiration where the workflow tolerates scheduled re-issuance.",
+    "Record token owner, issue date, and scope in the same credential inventory `infra-security.md` already requires for other providers; put Cloudflare tokens on the same rotation calendar as Vercel/Supabase/GitHub credentials — this is the compensating control for the missing-OIDC gap, not a workaround to skip.",
+    "Never commit real account_id/database_id/bucket_name values; use placeholders in the repo's wrangler.toml and inject real values via CI variables or a per-environment generated config step.",
+    "Always use `wrangler secret put` for runtime secrets; keep [vars] limited to genuinely non-secret configuration.",
+    "Pin cloudflare/wrangler-action and actions/checkout to immutable commit SHAs, matching this repo's existing GitHub Actions pinning policy.",
+    "Parameterize all D1 SQL (prepared statements via the D1 client API) rather than string-concatenating user input.",
+    "Keep R2 buckets private by default; only enable public access (r2.dev or custom domain) deliberately and document why.",
+    "Layer Cloudflare Access in front of admin/internal tools AND keep app-level authorization checks — do not rely on Access as the sole gate.",
+    "On any suspected token leak, revoke immediately in the dashboard and reissue with the same scoping discipline — treat it identically to the 'committed then force-pushed' leak rule already in `infra-security.md`."
+  ],
+  "agent_codegen_policy": [
+    "MUST NOT hardcode account_id, database_id, bucket names, or namespace IDs as literal values in wrangler.toml committed to a shared/public repo — use placeholders and CI-injected or per-developer local values.",
+    "MUST use `wrangler secret put <NAME>` for any credential/secret the Worker needs at runtime; MUST NOT write secrets under [vars] or inline in code.",
+    "MUST pin GitHub Action versions to commit SHAs in any generated deploy workflow, not floating tags.",
+    "MUST generate D1 queries as parameterized/prepared statements, never string-concatenated SQL.",
+    "MUST set an explicit compatibility_date in any generated wrangler.toml, never omit it or leave a placeholder like 'latest'.",
+    "SHOULD default new Next.js-on-Workers scaffolds to running the vinext (or @opennextjs/cloudflare) compatibility checker before assuming a feature works, and flag beta-status caveats to the human rather than silently picking the newest adapter.",
+    "SHOULD default new static-site/frontend Worker projects to the [assets] binding pattern, not to Cloudflare Pages, unless the user's existing project is already on Pages.",
+    "MUST NOT claim Cloudflare supports GitHub Actions OIDC federation — if asked to set up 'OIDC to Cloudflare like we do for AWS,' the agent must state this isn't available and propose scoped-token + rotation instead.",
+    "SHOULD recommend per-environment (staging/production) API tokens and D1/R2/KV resources rather than a single shared set across environments."
+  ],
+  "observability": [
+    "Workers Logs / observability: enable via `[observability] enabled = true` in wrangler.toml (off by default in many scaffolds) to get structured invocation logs in the dashboard.",
+    "`wrangler tail` — real-time log streaming from a deployed Worker for local debugging.",
+    "Logpush — push Workers/HTTP request logs to an external destination (R2, S3, Datadog, Splunk, etc.) for retention beyond the dashboard's window.",
+    "Tail Workers — a Worker that receives the execution logs/events of other Workers, usable to build custom log pipelines or alerting entirely within Cloudflare's network.",
+    "OpenTelemetry/OTel export: Cloudflare has been expanding OTel-compatible tracing/exporting for Workers — [uncertain] exact current API surface not independently fetched in this pass; verify against the current Observability docs before relying on a specific OTel integration path.",
+    "Correlate Workers-side errors with the app's existing Sentry pipeline (per `deploy-ops.md` post-deploy smoke checklist) by forwarding Logpush or Tail Worker events into the same alerting surface, rather than treating Cloudflare logs as a silo."
+  ],
+  "cost_guardrails": [
+    "Set a billing alert/budget on the Cloudflare account for Workers paid-plan overage (CPU-ms beyond the 30M/month included) — CPU-heavy code paths are the most common surprise line item.",
+    "Monitor R2 Class A (write/list) operation volume specifically — it's ~12x more expensive per-operation than Class B (read) and easy to blow through with chatty list/upload patterns.",
+    "Cap Queue consumer batch size and timeout explicitly; unbounded batching against many small (<64KB) messages multiplies billed operations.",
+    "Avoid using Durable Objects as a high-frequency read/write store for data that KV or D1 could serve more cheaply — DO duration billing (GB-seconds) adds up under sustained active connections (e.g. long-lived websockets).",
+    "Right-size R2 storage class: use Infrequent Access pricing tier for cold/rarely-read objects (backups, archives) rather than paying Standard rates uniformly.",
+    "Track D1 query-per-invocation counts against the paid tier's 1,000-query ceiling before a batch job silently starts failing at scale.",
+    "Review the free-tier boundaries (100k Workers requests/day, 100k KV reads/day, 10 D1 databases) explicitly before assuming a side project stays free indefinitely as traffic grows.",
+    "Re-verify D1 per-row read/write pricing directly against the live pricing page before it becomes a line item in a cost model — this research pass could not confirm the exact number."
+  ],
+  "skill_scan_signals": [
+    "Repo contains a wrangler.toml or wrangler.jsonc — signals active Cloudflare Workers usage worth cross-referencing against this module.",
+    "package.json depends on `wrangler`, `@opennextjs/cloudflare`, or references `vinext` — signals Next.js-on-Workers deployment, trigger the Vercel-vs-Cloudflare decision gate check.",
+    "GitHub Actions workflow references `cloudflare/wrangler-action` — verify token scoping and SHA-pinning per this module's agent_codegen_policy.",
+    "Environment/secrets files reference CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID — verify these are CI-secret-store values, never committed.",
+    "Code imports an S3 SDK pointed at an `r2.cloudflarestorage.com` endpoint — signals R2 usage; check zero-egress assumptions are being exploited (not routing large downloads through a paid intermediary).",
+    "SQL migration files or a `.wrangler/` D1 local state directory present — signals D1 usage; check query batching against invocation limits.",
+    "Durable Object class definitions in Worker source (`extends DurableObject`) — check for SQLite-backed migration declarations (new_sqlite_classes) vs legacy KV-backed DO storage.",
+    "References to `cloudflare-pages` build output or a `_worker.js`/`functions/` directory pattern — signals a project still on legacy Pages that could be evaluated for migration to Workers + assets."
+  ],
+  "skill_module_bullets": [
+    "Cloudflare Workers: V8-isolate edge compute, 128 MB memory, CPU time capped 10ms free / up to 5 min paid — pick for latency-sensitive HTTP workloads, not long-running jobs.",
+    "R2 is the standout: S3-compatible API, genuinely zero egress fees — default choice over Supabase Storage or raw S3 whenever egress volume is a real cost driver.",
+    "D1 (serverless SQLite) and KV (eventually-consistent global KV) are edge-local satellites, not replacements for Supabase Postgres as the system of record.",
+    "Durable Objects give a single-threaded, strongly-consistent actor per object — the right tool for rate limiters, websocket rooms, and per-tenant locks; not a general database (10 GB/object, ~1,000 req/s ceiling).",
+    "Queues are Cloudflare-network-internal async messaging — fine for Worker-to-Worker fan-out, not a cross-cloud durable queue with SQS-grade guarantees.",
+    "Cloudflare is actively steering new projects from Pages to Workers + static assets; treat Pages as legacy for new work.",
+    "Next.js on Workers is real but not risk-free: vinext (Cloudflare's recommended path) is beta as of this writing; @opennextjs/cloudflare is the stable fallback — Vercel remains the lower-risk default for teams that want mature Next.js hosting without adapter risk.",
+    "Critical identity gap: Cloudflare has no GitHub Actions OIDC federation — CI auth is a scoped, rotated API token, which conflicts with a strict 'OIDC everywhere, never long-lived keys' policy and must be called out explicitly rather than silently assumed solved.",
+    "Cost model favors Cloudflare heavily for storage-egress-heavy or edge-latency-sensitive workloads; favors Vercel for teams optimizing purely for Next.js DX/maturity with lower ops risk."
+  ],
+  "checklist": [
+    "[ ] New frontend project uses Workers + [assets], not legacy Pages, unless already committed to Pages",
+    "[ ] wrangler.toml has an explicit, reviewed compatibility_date and no real account_id/database_id/bucket_name values",
+    "[ ] All runtime secrets set via `wrangler secret put`, none under [vars]",
+    "[ ] Cloudflare API tokens are scoped per-resource and per-environment, with owner/date/scope recorded in the credential inventory",
+    "[ ] GitHub Actions deploy workflow pins cloudflare/wrangler-action and actions/checkout to commit SHAs",
+    "[ ] D1 queries are parameterized; query-per-invocation volume checked against plan limits",
+    "[ ] R2 buckets default to private; any public access is deliberate and documented",
+    "[ ] Durable Object classes use SQLite backend (new_sqlite_classes) for new code",
+    "[ ] Next.js-on-Workers projects ran the vinext/@opennextjs/cloudflare compatibility checker before production deploy",
+    "[ ] Billing alerts set for Workers CPU-ms overage and R2 Class A operation volume",
+    "[ ] Cloudflare Access (if used) paired with app-level authorization, not relied on alone"
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "OIDC-vs-scoped-API-token conflict: The stack's identity-first policy requires OIDC from GitHub Actions to every cloud provider and forbids long-lived static keys in CI. Cloudflare does not offer GitHub Actions OIDC federation (unlike AWS/GCP) — confirmed by the absence of any such mechanism across the Workers CI/CD, GitHub Actions integration, and API token creation docs fetched for this research. This directly conflicts with the stated policy. The documented mitigation in `infra-security.md` ('No long-lived personal tokens in CI... prefer OIDC federation... where a static secret is unavoidable, store it in the provider's secret store, scope it minimally, and rotate it') already anticipates exactly this case — Cloudflare is the 'static secret is unavoidable' branch, not a policy violation, provided scoping + rotation discipline is followed.",
+    "Pricing/limits not independently verified: D1's exact per-row read/write $ pricing was not confirmed from a live pricing page in this pass (only inferred from the Durable Objects SQLite billing note, which states DO SQLite storage will be billed 'at matching D1 rates' starting January 2026 — $0.001/million rows read, $1.00/million rows written). Re-verify directly against developers.cloudflare.com/d1/platform/pricing/ before using this number in a cost model.",
+    "Pages vs Workers convergence: Cloudflare Pages is not formally deprecated but the docs now explicitly say 'Start new projects with Workers' and provide Pages-to-Workers migration guidance — this module treats Pages as legacy for new work, which is a judgment call based on current doc language rather than an announced EOL date.",
+    "vinext maturity: Cloudflare's own docs label vinext as beta and instruct running a compatibility check before adopting it for existing production apps — this module reflects that caution rather than treating vinext as production-ready parity with Vercel's Next.js hosting.",
+    "OTel/observability export specifics for Workers were not independently fetched in this pass and are marked [uncertain] in the observability field."
+  ],
+  "primary_sources": [
+    "https://developers.cloudflare.com/workers/platform/limits/",
+    "https://developers.cloudflare.com/workers/platform/pricing/",
+    "https://developers.cloudflare.com/r2/pricing/",
+    "https://developers.cloudflare.com/d1/platform/limits/",
+    "https://developers.cloudflare.com/kv/platform/limits/",
+    "https://developers.cloudflare.com/durable-objects/platform/limits/",
+    "https://developers.cloudflare.com/queues/platform/limits/",
+    "https://developers.cloudflare.com/pages/",
+    "https://developers.cloudflare.com/workers/ci-cd/",
+    "https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/",
+    "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+    "https://developers.cloudflare.com/workers/wrangler/",
+    "https://developers.cloudflare.com/cloudflare-one/",
+    "https://developers.cloudflare.com/workers/frameworks/framework-guides/nextjs/"
+  ],
+  "uncertain": [
+    "conflicts_noted",
+    "limits_quotas_pricing",
+    "observability",
+    "versions_as_of"
+  ]
+}

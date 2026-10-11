@@ -1,0 +1,86 @@
+{
+  "name": "Language choice decision matrix: Python vs TypeScript vs Rust",
+  "item_id": "py-vs-ts-vs-rust",
+  "cluster": "interop",
+  "priority": "P0",
+  "short_definition": "Canonical 2026 decision matrix for where work lives in the engineer stack: TypeScript/Next owns UI, session, BFF Server Actions, and Supabase-backed product CRUD; Python is a peer language for AI/LLM/RAG services, data/ML pipelines, scientific tooling, and Python-ecosystem workers — not a UI shell; Rust/Axum owns measured hot paths, high-throughput APIs, streaming fanout, infra proxies, and correctness-critical parsers. Choose the simplest language that meets latency, ecosystem, and team constraints; never rewrite without evidence (py-perf-profiling). Modular monolith first; extract services when measured need exists (system-architecture.md).",
+  "scope_in": "Problem-class → language recommendations; default ownership (UI/BFF/AI/hot-path/workers); anti-resume-driven rewrites; hybrid topology Next↔Python↔Rust; team skill constraints; when NOT to introduce a third language; link to contracts and data ownership; agent routing rules for codegen language choice.",
+  "scope_out": "Deep FastAPI patterns (py-fastapi); OpenAPI codegen mechanics (py-ts-boundary); profiling tooling details (py-perf-profiling); Docker packaging (py-docker-deploy); full Axum handbook (rust.md); frontend RSC details (frontend.md).",
+
+  "defaults": "Greenfield SaaS product surface: TypeScript + Next.js + Supabase (RLS) as the modular monolith. Add Python when the problem is AI/LLM orchestration, RAG, embeddings pipelines, heavy data transforms with PyData stack, or libraries that are Python-first (ML model servers, research ports). Add Rust when measured need for sub-50ms p99 hot endpoints, WebSocket/stream fanout at scale, CPU-bound isolation, gateways/proxies, or parsers where correctness+speed matter — after profiling. Default hybrid: Next (session + UI + CRUD) → REST/SSE to Python AI service and/or Rust hot service → Postgres with one writer per table. Prefer one extra language not two until needed. Document language choice in ADR for non-obvious splits.",
+  "decision_gates": "USE TypeScript when: UI, RSC, Server Actions, cookie session, Zod form validation, Supabase app data, marketing/dashboards, simple webhooks on Vercel, BFF aggregation. USE Python when: LLM/RAG/agents, ML inference orchestration, pandas/numpy/scipy/polars pipelines, AI SDK ecosystems (LangChain/LlamaIndex/etc. when chosen), batch scientific jobs, MCP tool servers heavy on Python libs. USE Rust when: hot read/write path failing Python/TS SLA after optimize, streaming fanout, infra proxy/gateway, CPU-heavy isolation (PDF/video codecs etc.), binary protocol parsers. DO NOT use Python for page UI or as Next replacement. DO NOT use Rust for CRUD BFF or form validation. DO NOT use TS serverless for long multi-minute agent loops without external worker. DO NOT introduce Python only because 'backend language' when TS BFF suffices. DO NOT rewrite working TS to Rust without measure.",
+  "do_dont": "DO: draw data flow before coding (api-data-flows); one table owner; contract-first at language boundaries; pass JWT/service token not browser cookies to Python/Rust; timeouts on every hop; modular monolith until split justified. DON'T: dual-write same table from two languages; hand-sync DTO types; put business rules only in the client; microservices for team of 2; Python notebook as production architecture; Rust for every new endpoint by default.",
+  "code_skeleton": "# Decision matrix (problem class → default language)\n#\n# | Problem class                         | Default | Alt if measured need      |\n# |---------------------------------------|---------|---------------------------|\n# | UI / RSC / client islands             | TS      | —                         |\n# | Auth session cookies                  | TS      | —                         |\n# | Product CRUD + RLS                    | TS      | Python only if AI-owned   |\n# | BFF aggregation for UI                | TS      | —                         |\n# | Public webhook (Stripe)               | TS      | Rust if extreme volume    |\n# | LLM chat / RAG / agents               | Python  | TS only if thin proxy     |\n# | Embedding/batch ML jobs               | Python  | Rust worker rare          |\n# | Data science transforms               | Python  | —                         |\n# | Hot path API p99 SLA breach           | Rust    | Optimize TS/Py first      |\n# | WebSocket fanout / proxy              | Rust    | —                         |\n# | Durable multi-step agent workflow     | Python  | Temporal multi-lang       |\n# | CLI ops / one-off admin               | TS or Py| match owning service      |\n# | Shared types across runtimes          | OpenAPI | protobuf for gRPC mesh    |\n#\n# Topology sketch:\n# Browser → Next (TS session) → Supabase Postgres (RLS)\n#                └→ Python AI service (Bearer JWT) → models/APIs\n#                └→ Rust hot service (JWT) → Postgres/Redis\n#\n# ADR stub:\n# Context: p99 /v1/search = 400ms, py-spy shows pure-Python ranker 70% CPU\n# Decision: extract ranker to Rust Axum; Python RAG stays\n# Consequences: OpenAPI contract; one writer on search_index table\n",
+  "failure_modes": "1) Three languages without contracts → type drift and outages. 2) Dual writes TS+Python on same table. 3) Long LLM work on Vercel serverless → timeouts. 4) Rust introduced for CRUD → velocity collapse. 5) Python used for UI templating against stack rules. 6) No timeouts on TS→Python/Rust → cascading failures. 7) Session cookies forwarded naively to Python. 8) Premature microservice split. 9) Notebook sprawl as 'AI architecture'. 10) Agents default wrong language for problem class.",
+  "anti_patterns": "Agents must not: scaffold FastAPI for a pure form CRUD app that Next+Supabase covers; put Axum on every greenfield todo app; rewrite TS BFF into Python without AI/data reason; share one ORM across languages writing same tables; skip OpenAPI and hand-copy interfaces; treat language choice as fashion.",
+
+  "tools": "TS: Next.js, Zod, Supabase JS, pnpm. Python: uv, FastAPI, Pydantic, SQLAlchemy/asyncpg or supabase-py, AI libs as needed. Rust: Axum, Tokio, SQLx, Tower. Contracts: OpenAPI, optional protobuf. Observability: OTel each runtime. Deploy: Vercel (TS), Docker/Fly/K8s (Python/Rust).",
+  "versions_as_of": "as_of 2026-07-13 — policy aligned to local modules verified 2026-07-12 (typescript.md, rust.md, system-architecture.md, api-data-flows.md). Python peer module research window 2025-07→2026-07. Concrete framework pins live in sibling result files (FastAPI, uv, etc.).",
+  "config_snippets": "# monorepo ownership map (document in README)\n# apps/web          → TypeScript / Next (UI + BFF + session)\n# services/py-ai    → Python FastAPI (LLM/RAG)\n# services/api-rust → Rust Axum (hot path)\n# contracts/openapi.yaml → codegen to packages/types\n# supabase/         → migrations; table owners listed in ADR\n\n# Table ownership example\n# | Table            | Writer        | Readers           |\n# | projects         | Next Actions  | RSC, optional Rust|\n# | embeddings       | Python worker | Python, TS read   |\n# | rate_limit_events| Rust gateway  | analytics         |\n",
+  "deprecation_watch": "Notebook-as-product architecture; Django/Flask greenfield when FastAPI is stack default for services; inventing a fourth language without ADR; dual GraphQL+REST+tRPC+OpenAPI without need; rewriting for resume-driven development; Python inside Next serverless as primary AI host without dedicated worker/service.",
+
+  "ts_boundary": "Session stays in Next; Python/Rust receive verified JWT or service token. TS validates with Zod at its edges; does not trust Python-only validation for browser input that hits TS first. Generate TS types from OpenAPI (py-ts-boundary). BFF may aggregate Python AI + Supabase — hide internal URLs from client.",
+  "rust_boundary": "Per rust.md when-to-use table + system-architecture split criteria. Hand off after measure (py-perf-profiling). Contract-first; no unwrap in handlers; pool and timeout discipline. Prefer extract single hot path over rewrite entire product.",
+  "supabase_boundary": "RLS for user-facing TS paths. Service role only on servers (Python/Rust workers) with explicit tenant checks. One migration owner (usually Supabase SQL for app tables). Python/Rust must not bypass RLS accidentally without documented service_role rationale.",
+  "boundary_contracts": "OpenAPI or protobuf for every cross-language HTTP/gRPC API; JSON error shape {error, code?}; versioned /v1/; env secrets per service; MCP tools isolated; ADRs for table ownership and language extracts; timeouts+retries documented per hop.",
+  "decision_matrix_row": "CRITICAL MATRIX — UI/session/CRUD BFF → TypeScript. LLM/RAG/ML/data science → Python. Hot path/streaming/proxy/CPU-critical → Rust. Shared types → OpenAPI codegen not hand-sync. Wait-bound 'slowness' → optimize I/O stay put. Unknown → modular monolith in TS until proven otherwise. Agent rule: pick language by problem class table above, not by familiarity alone.",
+
+  "threats": "Wrong trust boundary (client hits Rust/Python with elevated secrets); SSRF from Python tools; authz drift if TS checks then Python trusts blindly; supply chain across three package ecosystems; larger attack surface with more services.",
+  "mitigations": "Verify JWT on every service; least-privilege service tokens; network policies; RLS still for user data paths; uv audit + cargo audit + pnpm audit; single auth decision model documented; rate limits at edge and hot services.",
+  "agent_codegen_policy": "MUST: classify problem class before scaffolding; default TS for product UI/CRUD; Python only for AI/data/Python-ecosystem services; Rust only for measured hot/infra; emit OpenAPI at boundaries; document table owner. MUST NOT: FastAPI for pure Next CRUD; Rust for forms; dual-write tables; hand-synced DTOs; notebook production paths; third language without need.",
+
+  "tests_required": "Contract tests at language boundaries (Schemathesis/OpenAPI); unit tests in each runtime; e2e happy path through BFF; auth negative tests (expired JWT rejected by Python/Rust).",
+  "ci_gates": "Language-specific gates (pnpm / uv ruff basedpyright pytest / cargo fmt clippy test audit). PR touching contracts runs consumer+provider checks. Block dual migration tools on same tables.",
+  "skill_scan_signals": "POSITIVE: problem-class ADR; apps/web + services/py-* + services/*-rust map; OpenAPI contracts; one writer per table; JWT to services. NEGATIVE: Python UI framework as product shell; Rust CRUD BFF only; no contracts; dual writes; agents scaffolding wrong default language; notebook deploy as API.",
+
+  "skill_module_bullets": [
+    "Language defaults: TS = UI/session/CRUD BFF; Python = AI/RAG/ML/data; Rust = measured hot path/streaming/proxy.",
+    "Modular monolith first (usually Next+Supabase); extract Python/Rust on measured need.",
+    "Never rewrite working stack without profile/SLA evidence (link py-perf-profiling).",
+    "One writer per table; session in Next; JWT/service token to Python/Rust.",
+    "Contract-first OpenAPI/protobuf — no hand-synced cross-language types.",
+    "Do not use Python as Next replacement or Rust for form CRUD.",
+    "Agents must classify problem class before scaffolding a new service."
+  ],
+  "action_items": [
+    "Publish decision matrix prominently in references/python.md and cross-link typescript.md/rust.md.",
+    "Add agent routing rules: problem class → language.",
+    "Template monorepo README ownership map.",
+    "Scan prompts for resume-driven rewrite language.",
+    "Ensure py-ts-boundary codegen is the type bridge."
+  ],
+  "checklist": [
+    "Problem class identified",
+    "Language chosen per matrix",
+    "ADR if non-default or multi-service",
+    "Data flow diagram exists",
+    "Table owners listed",
+    "OpenAPI/proto at language boundary",
+    "Auth model: session vs JWT documented",
+    "Timeouts per hop",
+    "No dual-write",
+    "Deploy path per language (Vercel vs Docker)",
+    "CI gates per language green"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "Some teams run all BFF in Python (Django) — valid elsewhere but NOT engineer default (Next-first). Some run AI only in TS (Vercel AI SDK) — acceptable for thin streaming UI; heavy RAG/agents still prefer Python ecosystem. Rust advocates may push earlier extract — policy requires measure. Edge Functions (Deno/TS) vs Python workers: prefer Python for long AI jobs off-edge.",
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/",
+    "https://nextjs.org/docs",
+    "https://docs.rs/axum/latest/axum/",
+    "https://supabase.com/docs"
+  ],
+  "local_sources": [
+    "./references/typescript.md",
+    "./references/rust.md",
+    "./references/system-architecture.md",
+    "./references/api-data-flows.md",
+    "./references/deploy-ops.md",
+    "./research/backend-research.md",
+    "./research/coding-research.md"
+  ]
+}

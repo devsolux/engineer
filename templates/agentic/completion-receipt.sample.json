@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "contract": {
+    "path": "templates/agentic/execution-contract.sample.json",
+    "sha256": "d09e71f7b9d8359bb4b8dc040c16b99c8f4992531efec78bd91ce1138053a3a8"
+  },
+  "trajectory": {
+    "path": "templates/agentic/trajectory.sample.json",
+    "sha256": "a9fe2091385a57a9734fccd43ebbff2269d909615c77be7b90ba78416e5d2cc0"
+  },
+  "artifact_root": "templates/agentic/completion-evidence",
+  "artifacts": [
+    {
+      "path": "verification.json",
+      "sha256": "2f7b9dc7e75e03c83e2dbdd44546e0112cb72cb69859eb7a787c09f4af368267"
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "ac_resume",
+      "requirement_ids": [
+        "req_checkpoint"
+      ],
+      "criterion_sha256": "c7759ee1472b7241c92c92f6e0d108b026530f16f95f468a5d25b4b98ef7b0dc",
+      "oracle_count": 3,
+      "oracle_passed": true
+    },
+    {
+      "id": "ac_stop",
+      "requirement_ids": [
+        "req_stop"
+      ],
+      "criterion_sha256": "e6ed3caa9c030d0b097f7fe4bb8cc96bdf3638a9f0834e98a095d41f589f56e5",
+      "oracle_count": 3,
+      "oracle_passed": true
+    }
+  ],
+  "review": {
+    "maker": "fixture-agent",
+    "checker": "fixture-independent-checker",
+    "reviewed_at": "2026-07-15T06:05:00Z",
+    "review_after": "2026-08-15T06:05:00Z",
+    "approved": false,
+    "scope_diff_reviewed": true,
+    "oracle_sufficiency_reviewed": true,
+    "rollback": "discard the fixture revision and reopen both acceptance criteria"
+  },
+  "decision": {
+    "outcome": "incomplete",
+    "reasons": [
+      "Illustrative fixture demonstrates the completion receipt only."
+    ],
+    "unresolved_risks": [
+      "No real verification command or repository revision was observed."
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "devsolux-engineer",
+  "owner": {"name": "devsolux"},
+  "metadata": {"description": "Engineer workflows by devsolux"},
+  "plugins": [
+    {"name": "engineer", "source": "./plugins/engineer", "description": "Full-stack engineering workflows and verification tools"}
+  ]
+}

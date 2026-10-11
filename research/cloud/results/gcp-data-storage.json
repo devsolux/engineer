@@ -1,0 +1,332 @@
+{
+  "name": "GCP data layer — GCS, Cloud SQL Postgres vs Supabase/AlloyDB, Firestore fit, Pub/Sub, Secret Manager, Cloud Tasks/Scheduler",
+  "item_id": "gcp-data-storage",
+  "cluster": "gcp",
+  "short_definition": "The GCP-native data and messaging surface — Cloud Storage (GCS) for object storage, Cloud SQL for PostgreSQL and AlloyDB for PostgreSQL-compatible relational data, Firestore for document/NoSQL, Pub/Sub for async messaging, Secret Manager for credentials, and Cloud Tasks/Scheduler for deferred and cron work. In this stack's default TS/Next + Python-services + Supabase architecture, Supabase Postgres is the primary relational database and GCS/Cloud SQL/AlloyDB/Firestore are reached for deliberately when a workload needs GCP-VPC residency, GCP-native service integration, huge-scale object storage, or document/realtime access patterns Supabase doesn't fit well.",
+  "scope_in": "GCS buckets and lifecycle policy for blobs/backups/exports; Cloud SQL for Postgres and AlloyDB as alternative/adjunct relational stores to Supabase; Firestore as a document/NoSQL option; Pub/Sub as the GCP-native async messaging backbone; Secret Manager as the credential store for GCP-hosted workloads; Cloud Tasks for deferred HTTP work and Cloud Scheduler for cron triggers.",
+  "scope_out": "Supabase-specific Postgres setup, RLS, and Auth (owned by the Supabase cluster items); GCP IAM/Workload Identity Federation mechanics (owned by gcp-identity-wif — this item only references it); Cloud Run/GKE compute hosting (owned by gcp-compute items); BigQuery and data warehousing/analytics pipelines (owned by a separate analytics item if present); Vertex AI / ML services.",
+  "priority": "P0",
+  "defaults": [
+    "Default relational database for the stack is Supabase Postgres; do not stand up Cloud SQL or AlloyDB unless a decision gate below is triggered.",
+    "For object storage (uploads, exports, generated artifacts, backups) reach for GCS only when the workload already lives in GCP or needs GCP-native processing (Cloud Run, Dataflow, Vertex AI); otherwise Supabase Storage is the default.",
+    "When GCS is used, default to a single regional bucket per environment (not multi-region) unless multi-region durability is an explicit requirement, since multi-region roughly doubles storage cost.",
+    "Default GCS bucket to uniform bucket-level access (UBLA) on, public access prevention enforced, and a lifecycle rule that transitions or deletes objects — never leave a bucket with default (fine-grained) ACLs in new projects.",
+    "If Cloud SQL is chosen, default to Postgres engine version 16 or 17, private IP only, `require_ssl`/`ssl_mode` set to `ENCRYPTED_ONLY` or `TRUSTED_CLIENT_CERTIFICATE_REQUIRED`, and automated backups + point-in-time recovery enabled from day one.",
+    "Default to Cloud SQL over AlloyDB unless the workload specifically needs AlloyDB's columnar engine for HTAP/analytics-on-live-data or its higher scale ceiling — AlloyDB costs more and adds operational surface.",
+    "Default async messaging inside GCP to Pub/Sub with push subscriptions targeting Cloud Run/Cloud Functions over Workload Identity, not polling loops.",
+    "Default all secrets consumed by GCP workloads to Secret Manager references resolved at runtime via the attached service account identity — never bake secrets into container images, Terraform state, or plain environment variables.",
+    "Default deferred/one-off async HTTP work (webhooks, retries, rate-limited calls to third parties) to Cloud Tasks; default recurring/cron work to Cloud Scheduler hitting an authenticated HTTP endpoint (Cloud Run) or publishing to Pub/Sub.",
+    "Treat Firestore as an intentional, narrow choice (realtime sync, mobile/offline-first clients, deeply nested document access patterns) rather than a general-purpose database — do not use it as a second source of truth alongside Supabase Postgres."
+  ],
+  "decision_gates": [
+    "Use Supabase Postgres (default) when: the workload is standard TS/Next + Python CRUD/relational data, needs Row Level Security tied to Supabase Auth, benefits from Supabase's built-in realtime/storage/edge-functions, and has no hard GCP-residency requirement.",
+    "Use Cloud SQL for Postgres instead of Supabase when: the workload must run inside a private GCP VPC with no public egress (e.g. regulated data that cannot traverse the public internet even via TLS), must integrate tightly with other GCP-native services via Private Service Connect, or an existing GCP-only compliance boundary (e.g. specific data-residency/sovereignty commitments already scoped to GCP) requires the database to live in the same cloud and IAM domain.",
+    "Use AlloyDB instead of Cloud SQL/Supabase when: the workload needs HTAP — heavy analytical queries against live transactional data (AlloyDB's columnar engine) — or needs higher read-scale via read pools and vector search co-located with transactional data for GCP-native AI pipelines (Vertex AI integration), and the added cost/ops overhead is justified by that specific need.",
+    "Use Firestore instead of Postgres (Supabase or GCP) when: the access pattern is genuinely document-shaped with shallow, denormalized reads (per-user documents, config blobs, mobile/offline-first sync), the app needs Firestore's realtime listener/offline-sync SDKs specifically (not just 'realtime updates' — Supabase Realtime covers most of that), or write patterns are naturally hierarchical collections without cross-entity joins/transactions.",
+    "Do NOT use Firestore when the domain model requires relational joins, multi-row transactions across entities, complex aggregate queries, or strong consistency guarantees across collections — Postgres (Supabase/Cloud SQL/AlloyDB) wins.",
+    "Do NOT split the source of truth: pick one primary relational store per bounded context. If Cloud SQL/AlloyDB is chosen for a subsystem, do not also mirror that data into Supabase 'just in case' — use clear service boundaries and sync explicitly if truly needed.",
+    "Use GCS over Supabase Storage when: object volume/egress is large enough that GCS class tiering (Standard/Nearline/Coldline/Archive) and lifecycle rules meaningfully reduce cost, or objects are consumed directly by GCP-native compute (Cloud Run, Dataflow, BigQuery external tables, Vertex AI training data) and keeping data in-VPC avoids egress and latency.",
+    "Use Pub/Sub over a Python-service-internal queue (e.g. Redis/Celery) when: multiple GCP-native consumers need fan-out delivery, delivery must survive consumer downtime with durable retry, or the trigger needs to originate from another GCP service (Cloud Storage notifications, Cloud Scheduler, Eventarc).",
+    "Use Cloud Tasks over Pub/Sub when: the work is a single deferred call to a specific HTTP endpoint that needs per-task scheduling, rate limiting, and dedup — Pub/Sub is fan-out messaging, Cloud Tasks is a work queue with per-task control.",
+    "Escalate to gcp-identity-wif whenever any of these services need cross-cloud access (e.g. a Vercel-hosted Next.js app or GitHub Actions CI calling Cloud SQL/GCS/Secret Manager) — that access must be via Workload Identity Federation, never a downloaded service-account JSON key."
+  ],
+  "do_dont": [
+    "DO: enforce `publicAccessPrevention: enforced` and uniform bucket-level access on every GCS bucket; treat `allUsers`/`allAuthenticatedUsers` IAM bindings as an incident, not a config choice.",
+    "DO: put a lifecycle rule on every GCS bucket used for logs, exports, or queue-like drop zones (transition to Nearline/Coldline, then delete) so cost and blast radius don't grow unbounded.",
+    "DO: require SSL/TLS on every Cloud SQL instance and prefer private IP + Cloud SQL Auth Proxy or Private Service Connect over public IP.",
+    "DO: reference secrets via `projects/*/secrets/*/versions/latest` (or a pinned version) resolved by the runtime's attached service account — never via a plaintext `.env` value in Cloud Run/GKE manifests.",
+    "DO: make Cloud Tasks/Pub/Sub handlers idempotent — both give at-least-once delivery, so duplicate execution is expected, not exceptional.",
+    "DO: set Pub/Sub subscription acknowledgement deadlines and dead-letter topics for every production subscription.",
+    "DON'T: create a second Postgres (Cloud SQL/AlloyDB) 'just to be safe' when Supabase already serves the workload — this doubles the operational and identity surface for no benefit.",
+    "DON'T: use Firestore as a cache or session store substitute for Redis, or as a relational database with client-side joins — both are anti-patterns that show up as N+1 reads and inconsistent writes.",
+    "DON'T: grant `roles/secretmanager.admin` or broad `Editor`/`Owner` roles to a workload service account when it only needs `roles/secretmanager.secretAccessor` on specific secrets.",
+    "DON'T: hardcode a GCS bucket name, Cloud SQL connection string, or Secret Manager resource path with a real project id in application code — inject via environment/config resolved at deploy time.",
+    "DON'T: leave a Cloud SQL instance with a public IP and an open (0.0.0.0/0) authorized network in any environment, including staging.",
+    "DON'T: use long-lived downloaded service-account JSON keys for CI or app-to-GCP access — use Workload Identity Federation (see gcp-identity-wif)."
+  ],
+  "config_skeleton": "############################################\n# GCS bucket: private, lifecycle rule, no public access\n############################################\nresource \"google_storage_bucket\" \"my_bucket\" {\n  name                        = \"my-bucket\"\n  project                     = \"my-project\"\n  location                    = \"US-CENTRAL1\" # regional, not multi-region, unless required\n  storage_class                = \"STANDARD\"\n  uniform_bucket_level_access = true\n  public_access_prevention    = \"enforced\"\n  force_destroy               = false\n\n  versioning {\n    enabled = true\n  }\n\n  lifecycle_rule {\n    condition {\n      age = 30\n    }\n    action {\n      type          = \"SetStorageClass\"\n      storage_class = \"NEARLINE\"\n    }\n  }\n\n  lifecycle_rule {\n    condition {\n      age = 365\n    }\n    action {\n      type = \"Delete\"\n    }\n  }\n}\n\n# Never bind allUsers/allAuthenticatedUsers here. Grant access per-service-account:\nresource \"google_storage_bucket_iam_member\" \"my_bucket_reader\" {\n  bucket = google_storage_bucket.my_bucket.name\n  role   = \"roles/storage.objectViewer\"\n  member = \"serviceAccount:my-workload-sa@my-project.iam.gserviceaccount.com\"\n}\n\n############################################\n# Cloud SQL for Postgres: private IP, SSL required\n############################################\nresource \"google_sql_database_instance\" \"my_instance\" {\n  name             = \"my-instance\"\n  project          = \"my-project\"\n  database_version = \"POSTGRES_16\"\n  region           = \"us-central1\"\n\n  settings {\n    tier              = \"db-custom-2-8192\" # 2 vCPU / 8GB, placeholder sizing\n    availability_type = \"REGIONAL\"          # HA standby in another zone\n\n    ip_configuration {\n      ipv4_enabled    = false                       # no public IP\n      private_network = \"projects/my-project/global/networks/my-vpc\"\n      ssl_mode        = \"ENCRYPTED_ONLY\"             # enforce TLS on all connections\n    }\n\n    backup_configuration {\n      enabled                        = true\n      point_in_time_recovery_enabled = true\n    }\n  }\n\n  deletion_protection = true\n}\n\nresource \"google_sql_user\" \"app_user\" {\n  name     = \"app_user\"\n  instance = google_sql_database_instance.my_instance.name\n  password = \"change-me-via-secret-manager\" # do not hardcode in real usage; use random_password + Secret Manager\n}\n\n############################################\n# Secret Manager: secret + IAM binding scoped to one service account\n############################################\nresource \"google_secret_manager_secret\" \"db_password\" {\n  project   = \"my-project\"\n  secret_id = \"my-instance-db-password\"\n\n  replication {\n    auto {}  # or user_managed { replicas { location = \"us-central1\" } } for residency control\n  }\n}\n\nresource \"google_secret_manager_secret_version\" \"db_password_v1\" {\n  secret      = google_secret_manager_secret.db_password.id\n  secret_data = \"CHANGE_ME\" # supplied via CI secret input, never committed\n}\n\nresource \"google_secret_manager_secret_iam_member\" \"db_password_accessor\" {\n  secret_id = google_secret_manager_secret.db_password.id\n  role      = \"roles/secretmanager.secretAccessor\"\n  member    = \"serviceAccount:my-workload-sa@my-project.iam.gserviceaccount.com\"\n}\n\n############################################\n# Pub/Sub: topic + subscription with dead-letter and ack deadline\n############################################\nresource \"google_pubsub_topic\" \"events\" {\n  project = \"my-project\"\n  name    = \"my-events-topic\"\n}\n\nresource \"google_pubsub_topic\" \"events_dlq\" {\n  project = \"my-project\"\n  name    = \"my-events-topic-dlq\"\n}\n\nresource \"google_pubsub_subscription\" \"events_sub\" {\n  project              = \"my-project\"\n  name                 = \"my-events-sub\"\n  topic                = google_pubsub_topic.events.id\n  ack_deadline_seconds = 60\n\n  dead_letter_policy {\n    dead_letter_topic     = google_pubsub_topic.events_dlq.id\n    max_delivery_attempts = 5\n  }\n\n  retry_policy {\n    minimum_backoff = \"10s\"\n    maximum_backoff = \"600s\"\n  }\n}\n\n# Grant the subscriber service account pull rights only (no admin/edit)\nresource \"google_pubsub_subscription_iam_member\" \"subscriber\" {\n  subscription = google_pubsub_subscription.events_sub.id\n  role         = \"roles/pubsub.subscriber\"\n  member       = \"serviceAccount:my-workload-sa@my-project.iam.gserviceaccount.com\"\n}\n\n# gcloud equivalent for quick manual checks (never for production provisioning):\n# gcloud storage buckets create gs://my-bucket --uniform-bucket-level-access --public-access-prevention=enforced\n# gcloud sql instances create my-instance --database-version=POSTGRES_16 --no-assign-ip --require-ssl\n# gcloud secrets create my-instance-db-password --replication-policy=automatic\n# gcloud pubsub topics create my-events-topic\n",
+  "failure_modes": [
+    "A GCS bucket created without `public_access_prevention=enforced` gets an accidental `allUsers` object viewer binding and leaks data — the single most common GCP data-layer incident.",
+    "Cloud SQL instance left with a public IP and a broad authorized-network CIDR (or none at all configured, defaulting open) becomes internet-reachable; brute-force or credential-stuffing follows.",
+    "Cloud SQL/AlloyDB hits max_connections under load because the app doesn't use a connection pooler (PgBouncer/Cloud SQL built-in pooling) — this is a frequent outage cause when many serverless (Cloud Run) instances each open direct connections.",
+    "Pub/Sub subscriber falls behind or crashes without a dead-letter topic configured; messages retry indefinitely, silently masking a poison-message bug and inflating cost.",
+    "Secret Manager secret rotated but the running Cloud Run/GKE workload has the old version cached in memory or pinned to a specific version number — rotation doesn't propagate until redeploy.",
+    "GCS bucket used as an ad hoc queue (drop-file-trigger-function pattern) with no lifecycle rule accumulates unbounded objects, silently growing storage cost and eventually hitting per-bucket listing/request-rate friction.",
+    "Firestore document exceeds the 1 MiB size limit because a team stores large blobs or growing arrays directly in a document instead of GCS + a reference — writes start failing in production.",
+    "Cloud Tasks queue configured without rate limiting floods a downstream third-party API, tripping that API's own rate limits and causing cascading task failures/retries.",
+    "Cross-cloud call (Vercel/GitHub Actions to GCP) implemented with a downloaded service-account JSON key checked into a repo secret manager; key leaks or is never rotated, becoming a long-lived credential risk.",
+    "Splitting the source of truth between Supabase Postgres and a GCP-native store (Cloud SQL or Firestore) without a clear sync contract leads to data drift and inconsistent reads across the two systems."
+  ],
+  "anti_patterns": [
+    "Provisioning a second Postgres instance (Cloud SQL/AlloyDB) purely for 'GCP-native feel' when Supabase already serves the workload and no decision gate is triggered.",
+    "Generating Terraform/gcloud that creates a GCS bucket without `uniform_bucket_level_access` or `public_access_prevention`.",
+    "Generating a Cloud SQL instance resource with `ipv4_enabled = true` and no `authorized_networks` restriction, or without `ssl_mode`/`require_ssl` set.",
+    "Embedding secrets as plaintext `env` blocks in Cloud Run/Kubernetes manifests instead of `--set-secrets` / `secretKeyRef` pointing at Secret Manager.",
+    "Using Firestore as a relational join engine by fetching whole collections client-side and joining in application code.",
+    "Writing a Pub/Sub subscriber without an ack/nack path or idempotency key, assuming exactly-once delivery.",
+    "Issuing a downloaded JSON service-account key for CI instead of Workload Identity Federation (cross-reference gcp-identity-wif) — never generate this as a default in codegen.",
+    "Storing a Cloud SQL/Secret Manager resource ID or connection string with a real project id, IP, or hostname in checked-in code — placeholders only until real infra exists."
+  ],
+  "tools": [
+    "gcloud CLI (storage, sql, secrets, pubsub, tasks, scheduler command groups)",
+    "Terraform google/google-beta provider (google_storage_bucket, google_sql_database_instance, google_secret_manager_secret, google_pubsub_topic/subscription, google_cloud_tasks_queue, google_cloud_scheduler_job)",
+    "Google Cloud Console (Cloud Storage, Cloud SQL, Firestore, Pub/Sub, Secret Manager, Cloud Tasks, Cloud Scheduler consoles)",
+    "Node.js client libraries: @google-cloud/storage, @google-cloud/pubsub, @google-cloud/secret-manager, @google-cloud/tasks, pg / node-postgres for Cloud SQL",
+    "Python client libraries: google-cloud-storage, google-cloud-pubsub, google-cloud-secret-manager, google-cloud-tasks, psycopg / SQLAlchemy for Cloud SQL/AlloyDB",
+    "Cloud SQL Auth Proxy (cloud-sql-proxy) for local/dev connections without public IP exposure",
+    "Supabase CLI and Postgres client tooling (psql, Supabase Studio) for the default relational store",
+    "pgBouncer or Cloud SQL's built-in connection pooling for high-connection-count serverless workloads",
+    "Firebase CLI / Firestore emulator for local Firestore development",
+    "Eventarc (for wiring GCS/Cloud SQL events into Pub/Sub or Cloud Run triggers)"
+  ],
+  "versions_as_of": [
+    "Cloud SQL for PostgreSQL — supports major versions through Postgres 16/17 in most regions — as_of 2026-08-29 [uncertain: exact latest supported minor/major per region not independently re-verified this session]",
+    "AlloyDB for PostgreSQL — PostgreSQL-compatible engine, current generation with columnar engine and vector search GA — as_of 2026-08-29",
+    "Firestore — Native mode is the recommended mode for new projects; Datastore mode retained for legacy compatibility; MongoDB API compatibility layer available — as_of 2026-08-29",
+    "Cloud Storage — no versioned engine; storage classes Standard/Nearline/Coldline/Archive plus Autoclass and 'Rapid Bucket' (zonal, low-latency) option for AI/ML workloads — as_of 2026-08-29",
+    "Pub/Sub — no versioned engine; supports message ordering, exactly-once delivery (subscription-level setting), and configurable retention — as_of 2026-08-29",
+    "Secret Manager — no versioned engine; regional and automatic (multi-region) replication policies both GA — as_of 2026-08-29",
+    "Cloud Tasks and Cloud Scheduler — stable GA services; Cloud Tasks HTTP targets support Cloud Run/GKE/Compute Engine/on-prem — as_of 2026-08-29"
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "GCS maximum single object size",
+      "value": "5 TiB",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/quotas"
+    },
+    {
+      "item": "GCS default per-bucket write throughput before autoscaling",
+      "value": "~1,000 writes/sec initial, autoscales",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/quotas"
+    },
+    {
+      "item": "GCS default per-bucket read throughput before autoscaling",
+      "value": "~5,000 object reads/sec initial, autoscales",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/quotas"
+    },
+    {
+      "item": "GCS single-object write rate",
+      "value": "1 write/sec to the same object name (throttled beyond)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/quotas"
+    },
+    {
+      "item": "GCS Standard storage price (US region, approx)",
+      "value": "$0.020 per GB/month [uncertain — pricing page did not render numeric table this session, value based on long-standing published GCP list price]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/pricing"
+    },
+    {
+      "item": "GCS Nearline/Coldline/Archive storage price (US region, approx)",
+      "value": "$0.010 / $0.004 / $0.0012 per GB/month respectively [uncertain — same rendering issue]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/storage/pricing"
+    },
+    {
+      "item": "Cloud SQL max storage per instance",
+      "value": "Up to 64 TB (dedicated-core); up to 3 TB (shared-core)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/sql/docs/postgres/quotas"
+    },
+    {
+      "item": "Cloud SQL combined process/connection ceiling",
+      "value": "max_connections + autovacuum_max_workers + max_worker_processes <= 262,142",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/sql/docs/postgres/quotas"
+    },
+    {
+      "item": "Cloud SQL Postgres Enterprise edition on-demand compute price (approx)",
+      "value": "~$0.04/vCPU-hr and ~$0.007/GB RAM-hr [uncertain — pricing page did not render numeric table this session]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/sql/pricing"
+    },
+    {
+      "item": "AlloyDB pricing model",
+      "value": "Consumption-based: vCPU + RAM for primary/read-pool instances, storage volume, and network egress; no flat numeric rate confirmed this session (uncertain)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/alloydb/docs/overview"
+    },
+    {
+      "item": "Firestore max document size",
+      "value": "1 MiB (1,048,576 bytes)",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/firestore/docs"
+    },
+    {
+      "item": "Firestore free tier (daily, approx)",
+      "value": "50,000 reads / 20,000 writes / 20,000 deletes per day, 1 GiB stored [uncertain — not independently re-verified this session; based on long-standing published free tier]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/firestore/docs"
+    },
+    {
+      "item": "Pub/Sub max message size",
+      "value": "10 MB per message [uncertain — not confirmed via this session's fetch, based on long-standing published limit]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/pubsub/docs/overview"
+    },
+    {
+      "item": "Pub/Sub message retention",
+      "value": "Default 7 days, configurable up to ~31 days [uncertain — not confirmed this session]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/pubsub/docs/overview"
+    },
+    {
+      "item": "Secret Manager payload size per version",
+      "value": "64 KiB",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/secret-manager/quotas"
+    },
+    {
+      "item": "Secret Manager access request rate",
+      "value": "90,000 access calls/minute/project; 600 write ops/min/project; 600 read ops/min/project",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/secret-manager/quotas"
+    },
+    {
+      "item": "Secret Manager pricing (approx)",
+      "value": "~$0.06 per active secret version per location per month, ~$0.03 per 10,000 access operations [uncertain — not confirmed via this session's fetch]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/secret-manager/docs/overview"
+    },
+    {
+      "item": "Cloud Scheduler free tier / pricing (approx)",
+      "value": "3 free jobs per project per month, then ~$0.10 per job/month [uncertain — not confirmed via this session's fetch]",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/scheduler/docs"
+    },
+    {
+      "item": "Cloud Tasks HTTP target dispatch deadline",
+      "value": "Default 10 minutes, max 30 minutes for HTTP targets",
+      "as_of": "2026-08-29",
+      "source": "https://cloud.google.com/tasks/docs/dual-overview"
+    },
+    "[uncertain] one or more entries above are unverified"
+  ],
+  "deprecation_watch": [
+    "Firestore Datastore mode is legacy-compatibility only — do not choose it for new greenfield work; use Firestore Native mode.",
+    "GCS fine-grained (ACL-based) bucket access is discouraged in favor of uniform bucket-level access; new buckets should default to UBLA.",
+    "Downloaded service-account JSON keys remain technically supported but are increasingly restricted by org policy across GCP; treat them as deprecated-in-practice for CI/cross-cloud auth in favor of Workload Identity Federation (see gcp-identity-wif).",
+    "App Engine-targeted Cloud Tasks queues are a legacy pattern tied to App Engine; prefer HTTP targets against Cloud Run for new services.",
+    "Cloud SQL first-generation instances and very old Postgres major versions (pre-13) are past or nearing end-of-life support paths — always provision current-generation, current-major-version instances.",
+    "Cloud Pub/Sub 'exactly-once' guarantees are subscription-level opt-in, not default — do not assume ordering or exactly-once without explicitly enabling and testing those settings."
+  ],
+  "identity_model": "Every service-to-service and CI interaction with GCS, Cloud SQL/AlloyDB, Firestore, Pub/Sub, Secret Manager, Cloud Tasks, and Cloud Scheduler must be authorized through IAM service accounts and short-lived credentials — never long-lived JSON key files. Workloads running on GCP compute (Cloud Run, GKE, Compute Engine) get identity automatically via attached service accounts and the metadata server; workloads outside GCP (Vercel-hosted Next.js, GitHub Actions CI, a Python service running elsewhere) must use Workload Identity Federation (WIF) to exchange an external OIDC token for short-lived GCP credentials scoped to a specific service account and role. Grant the narrowest applicable predefined or custom role per resource (e.g. `roles/storage.objectViewer` on one bucket, `roles/secretmanager.secretAccessor` on one secret, `roles/cloudsql.client` on one instance) rather than project-level Editor/Owner. Full WIF provider/pool setup, attestation conditions, and CI wiring are owned by gcp-identity-wif — this item assumes that identity plumbing exists and only specifies which role each data service needs.",
+  "threats": [
+    "Publicly readable GCS bucket (allUsers/allAuthenticatedUsers binding) exposing customer data or backups.",
+    "Cloud SQL instance with public IP and permissive authorized networks exposed to internet-wide brute force or credential stuffing.",
+    "Secrets stored in plaintext environment variables or checked-in config, visible in logs, process listings, or repo history.",
+    "Long-lived service-account JSON keys leaked via CI logs, repo commits, or laptop exfiltration, granting durable unauthorized access.",
+    "Pub/Sub topics/subscriptions with overly broad IAM (e.g. `roles/pubsub.editor` project-wide) allowing any workload to publish forged events or drain subscriptions.",
+    "Firestore security rules misconfigured (default-allow or overly permissive) exposing documents to any authenticated or unauthenticated client.",
+    "Cloud Tasks queue accepting unauthenticated task creation, allowing an attacker to flood a downstream handler or third-party API.",
+    "Data residency violation from choosing multi-region/automatic replication for GCS or Secret Manager when the workload has region-pinned compliance requirements."
+  ],
+  "mitigations": [
+    "Enforce `public_access_prevention = enforced` and uniform bucket-level access on every GCS bucket via org policy constraint, not just per-resource config.",
+    "Require private IP + `ssl_mode = ENCRYPTED_ONLY` (or client-cert) on all Cloud SQL/AlloyDB instances; block public IP creation via org policy where possible.",
+    "Route every secret through Secret Manager with per-secret, per-service-account IAM bindings (`roles/secretmanager.secretAccessor`) — never a project-wide grant.",
+    "Eliminate service-account JSON keys for CI and cross-cloud calls; use Workload Identity Federation exclusively (gcp-identity-wif) and set an org policy to disable service account key creation.",
+    "Scope Pub/Sub IAM to per-topic/per-subscription publisher or subscriber roles, never `roles/pubsub.editor` at project level.",
+    "Write and test Firestore security rules explicitly denying by default, allowing only the specific access patterns the app needs, validated with the Firestore emulator in CI.",
+    "Require OIDC-authenticated invocation on Cloud Tasks HTTP targets (Cloud Run with `--no-allow-unauthenticated` and task-level auth headers).",
+    "Pin GCS/Secret Manager replication/location policy to the region(s) required by data-residency commitments; avoid `automatic` replication when residency matters.",
+    "Enable Cloud Audit Logs on all these services and alert on IAM policy changes (new bindings, especially `allUsers`/broad roles)."
+  ],
+  "agent_codegen_policy": [
+    "MUST default new relational-data code to Supabase Postgres client/connection patterns unless the task explicitly names a GCP-native requirement matching a decision gate above.",
+    "MUST generate GCS bucket Terraform with `uniform_bucket_level_access = true` and `public_access_prevention = \"enforced\"` every time, with no toggle to disable public access prevention without an explicit user request and warning.",
+    "MUST generate Cloud SQL/AlloyDB instances with private IP and SSL/TLS enforcement by default; must not set `ipv4_enabled = true` unless the user explicitly asks for a public IP and acknowledges the risk.",
+    "MUST reference secrets via Secret Manager resource paths resolved by IAM/service-account identity, never emit plaintext secret values into generated `.env`, YAML, or Terraform variable defaults.",
+    "MUST NOT generate code that creates or downloads a service-account JSON key for CI or app authentication; must generate Workload Identity Federation wiring instead (or flag that gcp-identity-wif should be consulted).",
+    "MUST generate idempotent handler scaffolding (dedup key or upsert semantics) whenever writing Pub/Sub subscriber or Cloud Tasks handler code, given at-least-once delivery.",
+    "MUST NOT scaffold Firestore as a relational replacement (e.g. generating client-side join loops across collections) — if relational semantics are needed, must redirect to Postgres.",
+    "MUST include a GCS lifecycle rule in any generated bucket config that is described as a log/export/queue-drop-zone destination."
+  ],
+  "ci_gates": [
+    "Terraform plan/apply pipeline fails the build if it detects a `google_storage_bucket` without `uniform_bucket_level_access = true` or `public_access_prevention = \"enforced\"`.",
+    "CI policy check (e.g. OPA/Conftest) blocks `google_sql_database_instance` resources with `ipv4_enabled = true` and no explicit override annotation.",
+    "Secret-scanning step (e.g. gitleaks/truffleHog) runs on every PR to catch accidental plaintext secrets before they reach Secret Manager-backed config.",
+    "IAM diff review gate flags any new `allUsers`, `allAuthenticatedUsers`, or project-level `roles/*.admin`/`Editor`/`Owner` binding introduced by a PR's Terraform plan.",
+    "Firestore security rules are linted and tested against the local emulator in CI before deploy.",
+    "Pub/Sub subscription configs are checked in CI to require a `dead_letter_policy` on every production subscription.",
+    "Integration test suite verifies Cloud Tasks/Scheduler handlers return correctly on duplicate delivery (idempotency test)."
+  ],
+  "observability": [
+    "Cloud Audit Logs (Admin Activity + Data Access) enabled and exported to a log sink for GCS, Cloud SQL, Secret Manager, and Pub/Sub IAM/config changes.",
+    "Cloud Monitoring alerts on Cloud SQL connection count approaching max_connections, storage utilization approaching instance limit, and replication lag on HA standby.",
+    "Cloud Monitoring alerts on Pub/Sub subscription oldest-unacked-message-age and dead-letter topic message count.",
+    "GCS bucket-level metrics (request count, error rate, egress bytes) monitored to catch runaway consumers or lifecycle rule misconfiguration.",
+    "Secret Manager access logs reviewed/alerted on for access from unexpected service accounts or unexpected regions.",
+    "Cloud Tasks queue depth and dispatch error rate monitored to catch downstream endpoint failures before they cascade.",
+    "Cost anomaly alerts (Cloud Billing budgets) set per project/service to catch runaway GCS storage growth or Cloud SQL over-provisioning early."
+  ],
+  "cost_guardrails": [
+    "Set a lifecycle rule on every GCS bucket that isn't an intentional permanent archive — unbounded growth is the most common silent GCP cost leak.",
+    "Right-size Cloud SQL/AlloyDB instances to actual load; avoid defaulting to large dedicated-core tiers for low-traffic services — start small and scale with monitoring data.",
+    "Prefer regional (not multi-region) GCS buckets and Standard storage class unless durability/availability requirements justify the cost premium.",
+    "Use Cloud SQL committed-use discounts or sustained-use pricing once workload size is stable and predictable, not before.",
+    "Avoid AlloyDB unless its HTAP/read-pool/vector features are actually used — it costs materially more than Cloud SQL for equivalent basic relational workloads.",
+    "Set Cloud Billing budget alerts per project scoped to this data layer (GCS, Cloud SQL, Pub/Sub, Secret Manager) so a misconfigured lifecycle rule or runaway Pub/Sub retry loop is caught before month-end.",
+    "Batch Secret Manager access where possible; excessive per-request secret fetches at high QPS can add measurable cost at scale."
+  ],
+  "skill_scan_signals": [
+    "Flag any GCS bucket IAM policy containing `allUsers` or `allAuthenticatedUsers` as a critical public-exposure finding.",
+    "Flag any GCS bucket resource missing `uniform_bucket_level_access = true` or `public_access_prevention = \"enforced\"`.",
+    "Flag any GCS bucket used as a queue/drop-zone pattern (inferred from naming or trigger wiring) with no lifecycle rule configured.",
+    "Flag any Cloud SQL/AlloyDB instance with `ipv4_enabled = true` (public IP) combined with an empty or `0.0.0.0/0` authorized networks list.",
+    "Flag any Cloud SQL instance without `ssl_mode`/`require_ssl` enforcement configured.",
+    "Flag secrets referenced as plaintext values in environment variable blocks, Kubernetes manifests, or `.env` files instead of Secret Manager resource paths.",
+    "Flag any service-account JSON key file present in a repo or referenced in CI config instead of Workload Identity Federation.",
+    "Flag Pub/Sub subscriptions without a configured `dead_letter_policy` in production Terraform/config.",
+    "Flag IAM bindings granting `roles/editor`, `roles/owner`, or `*.admin` roles to a workload service account where a narrower predefined role would suffice."
+  ],
+  "skill_module_bullets": [
+    "GCP data layer is opt-in infrastructure in this stack: default to Supabase Postgres and Supabase Storage; only introduce GCS/Cloud SQL/AlloyDB/Firestore when a specific decision gate (VPC residency, GCP-native integration, HTAP/analytics, or document/realtime fit) is met.",
+    "Every GCS bucket must ship with uniform bucket-level access, enforced public access prevention, and a lifecycle rule — no exceptions in generated code.",
+    "Every Cloud SQL/AlloyDB instance must default to private IP + TLS enforcement + automated backups; public IP requires explicit user opt-in with an acknowledged risk note.",
+    "All secrets for GCP-hosted workloads flow through Secret Manager referenced by IAM identity; plaintext env secrets are a scan-blocking finding.",
+    "Cross-cloud and CI access to any of these services uses Workload Identity Federation, never a downloaded service-account key — cross-reference gcp-identity-wif for the full setup.",
+    "Pub/Sub and Cloud Tasks both deliver at-least-once; all generated handlers must be idempotent and Pub/Sub subscriptions must have dead-letter topics.",
+    "Firestore is a narrow, deliberate choice for document/realtime/offline-sync access patterns — never a relational-database substitute or a second source of truth alongside Supabase."
+  ],
+  "checklist": [
+    "Confirm the workload actually needs GCP-native data services before provisioning anything beyond Supabase — cite the triggered decision gate.",
+    "GCS buckets: uniform bucket-level access on, public access prevention enforced, lifecycle rule present, IAM scoped per-service-account.",
+    "Cloud SQL/AlloyDB: private IP only, SSL/TLS enforced, automated backups + PITR enabled, connection pooling in place for serverless callers.",
+    "Secret Manager: every secret has a scoped `secretAccessor` binding per consuming service account; no plaintext secret values anywhere in code or CI logs.",
+    "Pub/Sub: every production subscription has an ack deadline, retry policy, and dead-letter topic; publisher/subscriber IAM scoped per-topic.",
+    "Cloud Tasks/Scheduler: HTTP targets require authenticated invocation; handlers verified idempotent under duplicate delivery.",
+    "Firestore (if used): security rules default-deny and tested against the emulator; document sizes verified under the 1 MiB limit.",
+    "All cross-cloud/CI access verified to use Workload Identity Federation — no service-account JSON key files present anywhere in the repo or deploy pipeline.",
+    "Cost guardrails in place: lifecycle rules, right-sized instances, billing budget alerts scoped to this data layer.",
+    "Audit logging enabled and alerting configured for IAM policy changes on all provisioned data services."
+  ],
+  "source_tier": "primary (official Google Cloud documentation)",
+  "confidence": "medium-high — quota and architectural details verified against current GCP docs this session; several exact pricing figures could not be confirmed live due to pricing-page rendering truncation and are marked [uncertain], sourced instead from long-standing published GCP list prices that may have since changed",
+  "conflicts_noted": "No direct conflicts found between sources; primary gap is that GCP pricing pages (Cloud Storage, Cloud SQL, Secret Manager, Cloud Scheduler) render pricing tables via client-side/dynamic content that the fetch tool could not extract this session, so numeric pricing should be re-verified against the console pricing calculator or billing export before being used for cost commitments.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://cloud.google.com/storage/docs/introduction",
+    "https://cloud.google.com/storage/lifecycle",
+    "https://cloud.google.com/storage/pricing",
+    "https://cloud.google.com/storage/quotas",
+    "https://cloud.google.com/sql/docs/postgres/introduction",
+    "https://cloud.google.com/sql/docs/postgres/quotas",
+    "https://cloud.google.com/sql/pricing",
+    "https://cloud.google.com/alloydb/docs/overview",
+    "https://cloud.google.com/firestore/docs",
+    "https://cloud.google.com/pubsub/docs/overview",
+    "https://cloud.google.com/secret-manager/docs/overview",
+    "https://cloud.google.com/secret-manager/quotas",
+    "https://cloud.google.com/tasks/docs/dual-overview",
+    "https://cloud.google.com/scheduler/docs"
+  ],
+  "uncertain": [
+    "confidence",
+    "limits_quotas_pricing"
+  ]
+}

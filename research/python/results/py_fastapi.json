@@ -1,0 +1,252 @@
+{
+  "name": "FastAPI routers, dependencies, lifespan, OpenAPI",
+  "item_id": "py-fastapi",
+  "cluster": "web",
+  "short_definition": "FastAPI is the default Python ASGI web framework for engineer services: Starlette-based routing, Pydantic v2 request/response validation, dependency injection via Depends/Annotated, lifespan context for resource lifecycle, and automatic OpenAPI. As of 2026-07-13 PyPI latest is 0.139.0. Use for Python HTTP APIs, SSE/LLM token streams, and BFF-adjacent services — not as a Next.js replacement for UI.",
+  "scope_in": [
+    "App factory, APIRouter modular layout, include_router",
+    "Depends / Annotated dependency patterns (auth, DB session, settings)",
+    "lifespan async context manager for pools, models, clients",
+    "OpenAPI/Swagger/ReDoc generation and response_model discipline",
+    "Request validation, status codes, exception handlers",
+    "BackgroundTasks (short only) vs real job queues",
+    "Integration with uvicorn/granian as ASGI servers"
+  ],
+  "scope_out": [
+    "Next.js Server Actions / Route Handlers (TS BFF path)",
+    "Full auth product design (see py-auth-security)",
+    "SQLAlchemy model details (see py-sqlalchemy-async)",
+    "Celery/Temporal workflows (see workers cluster)",
+    "Serving HTML SPAs as primary product shell"
+  ],
+  "priority": "P0",
+
+  "defaults": {
+    "framework": "FastAPI + Pydantic v2 + Starlette",
+    "layout": "src/<pkg>/main.py app factory; routers/ by domain; deps.py for Annotated deps; lifespan for resources",
+    "di": "Annotated[T, Depends(...)] aliases (e.g. CurrentUser) — not raw Depends in every signature",
+    "lifecycle": "lifespan= asynccontextmanager only; @app.on_event startup/shutdown is deprecated",
+    "openapi": "response_model on mutating and public GETs; tags + prefix per router; disable docs in prod if threat model requires",
+    "async": "async def for I/O handlers; def only for pure CPU-light sync; never block event loop",
+    "settings": "pydantic-settings; inject via Depends",
+    "server": "uvicorn for local; production per py-asgi-servers"
+  },
+  "decision_gates": {
+    "use_when": [
+      "Python service needs HTTP JSON API, OpenAPI, or SSE",
+      "AI/RAG/LLM gateway in Python",
+      "Shared validation + schema for external clients",
+      "Team already on async SQLAlchemy / httpx stack"
+    ],
+    "do_not_use_when": [
+      "UI-only work → Next.js",
+      "Ultra-low-latency / high-throughput binary protocols → consider Rust/Axum",
+      "Simple Supabase-only CRUD from browser with RLS — may not need Python service",
+      "Sync Django monolith already shipping — don't rewrite for fashion"
+    ],
+    "alternatives": {
+      "starlette": "Bare ASGI if you need less magic",
+      "litestar": "If msgspec-first and DI style preferred",
+      "django_ninja": "If locked into Django",
+      "axum": "Rust path for perf/correctness-critical services"
+    }
+  },
+  "do_dont": {
+    "do": [
+      "Use lifespan for DB pools, httpx.AsyncClient, Redis, ML model load",
+      "APIRouter(prefix=..., tags=..., dependencies=[...]) for cross-cutting router auth",
+      "Central AppError → exception handler; never leak stack traces in prod",
+      "Typed path/query/body models; prefer response_model",
+      "Dependency-scoped sessions (yield) with proper close",
+      "Health routes outside heavy auth middleware when probes need them"
+    ],
+    "dont": [
+      "Don't use @app.on_event('startup') on new code",
+      "Don't put business logic in path operation functions — keep handlers thin",
+      "Don't create global engines/clients at import time without test escape hatches",
+      "Don't use BackgroundTasks for multi-minute or must-not-lose work",
+      "Don't enable allow_origins=['*'] with allow_credentials=True",
+      "Don't return ORM objects directly without schema"
+    ]
+  },
+  "code_skeleton": "from contextlib import asynccontextmanager\nfrom typing import Annotated, AsyncIterator\n\nfrom fastapi import APIRouter, Depends, FastAPI, HTTPException, status\nfrom pydantic import BaseModel, Field\n\nclass ItemCreate(BaseModel):\n    name: str = Field(min_length=1, max_length=200)\n\nclass ItemOut(BaseModel):\n    id: str\n    name: str\n\nclass AppState:\n    def __init__(self) -> None:\n        self.ready = False\n\nstate = AppState()\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI) -> AsyncIterator[None]:\n    # startup: pools, clients, warm caches\n    state.ready = True\n    yield\n    # shutdown: close pools/clients\n    state.ready = False\n\nPROD = False  # from settings\napp = FastAPI(title=\"service\", lifespan=lifespan, docs_url=None if PROD else \"/docs\")\n\nasync def get_current_user() -> str:\n    # replace with real JWT/session dependency\n    return \"user_123\"\n\nCurrentUser = Annotated[str, Depends(get_current_user)]\n\nrouter = APIRouter(prefix=\"/v1/items\", tags=[\"items\"])\n\n@router.post(\"\", response_model=ItemOut, status_code=status.HTTP_201_CREATED)\nasync def create_item(body: ItemCreate, user: CurrentUser) -> ItemOut:\n    if not state.ready:\n        raise HTTPException(status_code=503, detail=\"not ready\")\n    return ItemOut(id=\"itm_1\", name=body.name)\n\n@app.get(\"/healthz\")\nasync def healthz() -> dict[str, str]:\n    return {\"status\": \"ok\" if state.ready else \"starting\"}\n\napp.include_router(router)\n",
+  "failure_modes": [
+    "Import-time side effects load DB/ML even in unit tests → slow/flaky CI",
+    "Sync ORM or time.sleep in async route → event loop stall",
+    "Missing lifespan teardown → connection leaks under reload/k8s churn",
+    "Depends yield not closed on exceptions → pool exhaustion",
+    "OpenAPI models out of sync with actual responses (response_model=None everywhere)",
+    "CORS misconfig blocks browser BFF or over-opens credentials",
+    "Exception handlers return internal details in production"
+  ],
+  "anti_patterns": [
+    "Monolithic main.py with 50 routes and no routers",
+    "on_event startup + lifespan mixed (docs: lifespan disables events)",
+    "Global mutable singletons without lifespan ownership",
+    "HTTPException for domain control flow deep in services",
+    "Agent scaffolding Flask/Django REST for greenfield async services",
+    "Notebooks exported as FastAPI apps without structure"
+  ],
+
+  "tools": {
+    "primary": ["fastapi", "pydantic", "pydantic-settings", "starlette", "uvicorn"],
+    "testing": ["httpx.AsyncClient + ASGITransport", "pytest", "pytest-asyncio"],
+    "optional": ["fastapi-cli", "sentry-sdk FastAPIIntegration", "opentelemetry-instrumentation-fastapi"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "fastapi": "0.139.0",
+    "starlette": "1.3.1",
+    "pydantic": "2.13.4",
+    "pydantic-settings": "2.14.2",
+    "uvicorn": "0.51.0",
+    "httpx": "0.28.1",
+    "python_multipart": "0.0.32 (forms/files)"
+  },
+  "config_snippets": {
+    "pyproject": "[project]\ndependencies = [\n  \"fastapi>=0.139,<0.140\",\n  \"uvicorn[standard]>=0.51,<0.52\",\n  \"pydantic>=2.13,<3\",\n  \"pydantic-settings>=2.14,<3\",\n  \"httpx>=0.28,<0.29\",\n]\n",
+    "run_dev": "uv run uvicorn mypkg.main:app --reload --host 0.0.0.0 --port 8000",
+    "pytest": "# tests/conftest.py\nimport pytest\nfrom httpx import ASGITransport, AsyncClient\nfrom mypkg.main import app\n\n@pytest.fixture\nasync def client():\n    transport = ASGITransport(app=app)\n    async with AsyncClient(transport=transport, base_url=\"http://test\") as ac:\n        yield ac\n"
+  },
+  "deprecation_watch": [
+    "@app.on_event('startup'|'shutdown') — use lifespan",
+    "Pydantic v1 BaseSettings / .dict() / .parse_obj — v2 model_dump / model_validate",
+    "Flask + marshmallow greenfield for new async APIs",
+    "apiapp = FastAPI() per module without include_router discipline"
+  ],
+
+  "ts_boundary": "Next.js remains UI + cookie SSR auth shell. Call Python FastAPI for AI, heavy compute, long SSE, or shared multi-client OpenAPI. Generate TS clients from OpenAPI (openapi-typescript / orval) rather than hand-written fetch types. Do not duplicate business rules in both Server Actions and FastAPI without a single source of truth.",
+  "rust_boundary": "Prefer Axum when p99/cpu cost justifies (see rust.md). Keep FastAPI for iteration speed on AI glue and CRUD-ish services. Same OpenAPI-ish contract discipline at the edge; don't rewrite working FastAPI without measured need.",
+  "supabase_boundary": "Prefer direct Postgres (async SQLAlchemy/asyncpg) from FastAPI for service-role server paths; use supabase-py only when matching client SDK features. Never expose service role to browser. RLS still applies for user-scoped data; service bypass must be explicit and audited.",
+  "boundary_contracts": [
+    "OpenAPI 3 as contract artifact in CI",
+    "Shared error JSON shape {error, code, request_id}",
+    "Env via pydantic-settings; document in .env.example",
+    "Auth: Bearer JWT or mTLS service-to-service; align claims with Supabase JWT if used",
+    "Migrations owned by Alembic or Supabase — one writer"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "HTTP JSON/SSE API in product backend",
+    "python": "FastAPI default for AI services, workers' control plane, OpenAPI APIs",
+    "ts": "Next Server Actions / Route Handlers for same-app BFF mutations",
+    "rust": "High-throughput gateways, parsers, latency-critical paths"
+  },
+
+  "threats": [
+    "Mass assignment / over-accepting body fields",
+    "AuthZ gaps if Depends only on some routes",
+    "SSRF via user-supplied URLs in server-side fetch",
+    "OpenAPI docs exposing internal models in production",
+    "Dependency injection of untrusted settings",
+    "CORS credential reflection misconfig"
+  ],
+  "mitigations": [
+    "Pydantic models with explicit fields; forbid extras where appropriate",
+    "Router-level dependencies for auth on protected prefixes",
+    "Allowlist outbound URLs; timeouts on httpx",
+    "docs_url/redoc_url/openapi_url None in prod or protect with network policy",
+    "Secrets only from env/secret manager",
+    "Explicit allow_origins; never * with credentials"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "lifespan context manager for resources",
+      "APIRouter modules with prefix/tags",
+      "Annotated Depends aliases",
+      "response_model + status codes",
+      "healthz/readyz endpoints",
+      "Pydantic v2 models (not v1 APIs)"
+    ],
+    "must_not_generate": [
+      "on_event startup/shutdown",
+      "Bare global database connections without lifecycle",
+      "sync blocking I/O in async routes",
+      "BackgroundTasks for durable jobs",
+      "Flask scaffolds for new Python services"
+    ]
+  },
+
+  "tests_required": [
+    "httpx ASGITransport tests per router",
+    "Auth dependency override tests (401/403)",
+    "Validation error cases (422 shape)",
+    "Lifespan startup failure / readiness",
+    "OpenAPI schema smoke (path exists, security schemes if any)",
+    "Contract tests optional via Schemathesis (py-contract-testing)"
+  ],
+  "ci_gates": [
+    "ruff check + format",
+    "basedpyright on app package",
+    "pytest",
+    "uv sync --frozen / lock present",
+    "optional: schemathesis against OpenAPI"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "FastAPI(lifespan=...)",
+      "APIRouter with prefix/tags",
+      "Annotated[..., Depends(...)]",
+      "response_model= on public routes",
+      "pydantic-settings for config"
+    ],
+    "negative": [
+      "@app.on_event(",
+      "time.sleep in async def route",
+      "from flask import",
+      "BackgroundTasks used for payments/emails without queue",
+      "response_model omitted on all POST handlers",
+      "SQLAlchemy session without yield dependency"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default Python HTTP framework: FastAPI 0.139.x + Pydantic v2 as_of 2026-07-13",
+    "lifespan only for startup/shutdown; on_event is deprecated",
+    "Routers + Annotated Depends; thin handlers; domain pure",
+    "OpenAPI is the TS contract; generate clients, don't invent parallel types",
+    "BackgroundTasks ≠ job queue; escalate to arq/Taskiq/Temporal for durability",
+    "Health endpoints + exception handlers without internal leak"
+  ],
+  "action_items": [
+    "Seed references/python.md FastAPI section from this item",
+    "Add agent must-not: on_event, Flask greenfield",
+    "Example app skeleton in skill samples (optional)",
+    "Wire scan IDs for on_event and missing lifespan resources"
+  ],
+  "checklist": [
+    "lifespan owns pools/clients",
+    "Routers modular; auth deps on protected prefixes",
+    "Pydantic models for in/out",
+    "docs disabled or protected in prod",
+    "CORS explicit",
+    "Tests via ASGITransport",
+    "OpenAPI reviewed for sensitive fields",
+    "Server chosen per py-asgi-servers"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "Some 2024–2025 guides still show on_event; official docs recommend lifespan and mark events as alternative/deprecated path",
+    "Litestar/msgspec community argues against Pydantic-first; FastAPI ecosystem and OpenAPI DX keep Pydantic as default for this skill",
+    "Gunicorn+UvicornWorker vs pure uvicorn workers vs Granian — deferred to py-asgi-servers"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2026-10-13",
+  "primary_sources": [
+    "https://fastapi.tiangolo.com/",
+    "https://fastapi.tiangolo.com/advanced/events/",
+    "https://fastapi.tiangolo.com/tutorial/bigger-applications/",
+    "https://fastapi.tiangolo.com/tutorial/dependencies/",
+    "https://fastapi.tiangolo.com/tutorial/middleware/",
+    "https://fastapi.tiangolo.com/tutorial/cors/",
+    "https://github.com/fastapi/fastapi",
+    "https://pypi.org/project/fastapi/"
+  ],
+  "local_sources": [
+    "./references/rust.md",
+    "./references/backend-api.md",
+    "./references/backend-security.md",
+    "./research/python/outline.yaml"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "comparison_id": "public-routing-smoke-self-check",
+  "baseline": ["templates/agentic/skill-eval-grade.sample.json"],
+  "candidate": ["templates/agentic/skill-eval-grade.sample.json"],
+  "gates": {
+    "min_scenarios": 3,
+    "min_trials_per_scenario": 3,
+    "max_pass_rate_drop": 0,
+    "max_safety_regressions": 0
+  }
+}

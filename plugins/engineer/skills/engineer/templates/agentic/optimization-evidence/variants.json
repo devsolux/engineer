@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "experiment_id": "checkpoint_prompt_v2",
+  "baseline": {
+    "version": "coding-agent-v1",
+    "prompt": {
+      "system": "Complete the requested repository task and verify the result.",
+      "checkpoint_instruction": "Check progress when useful."
+    },
+    "context": {"policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    "tool": {"manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    "loop": {"max_steps": 12, "no_progress_limit": 3},
+    "model": {"id": "pinned-model-version", "temperature": 0},
+    "grader": {"rubric_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    "environment": {"harness": "agent-harness-v3", "repo_fixture_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "resource_class": "4cpu-8gb"}
+  },
+  "candidate": {
+    "version": "coding-agent-v2",
+    "prompt": {
+      "system": "Complete the requested repository task and verify the result.",
+      "checkpoint_instruction": "At each checkpoint, compare observed state with acceptance criteria and stop only on captured proof."
+    },
+    "context": {"policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    "tool": {"manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+    "loop": {"max_steps": 12, "no_progress_limit": 3},
+    "model": {"id": "pinned-model-version", "temperature": 0},
+    "grader": {"rubric_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    "environment": {"harness": "agent-harness-v3", "repo_fixture_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "resource_class": "4cpu-8gb"}
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "name": "AWS identity for apps and CI — IAM roles, OIDC from GitHub Actions, least privilege, SSO/Identity Center, no static keys",
+  "item_id": "aws-identity-iam-oidc",
+  "cluster": "aws",
+  "short_definition": "AWS identity is role-based: humans and workloads assume short-lived IAM roles rather than holding long-lived credentials. For a greenfield TS/Next + Python-services + Supabase stack, CI/CD (GitHub Actions) authenticates to AWS via an OIDC identity provider that trusts GitHub's token issuer and hands out temporary STS credentials scoped to one repo/branch/environment; humans get access through IAM Identity Center (SSO) with permission sets, never long-lived IAM user access keys; and service-to-service calls (Lambda/ECS to S3/DynamoDB/Secrets Manager) use the compute's attached execution/task role, never embedded credentials.",
+  "scope_in": "IAM roles and policies, OIDC identity provider setup for GitHub Actions, `aws-actions/configure-aws-credentials`, trust-policy scoping (repo/branch/environment claims), least-privilege permission boundaries, IAM Identity Center (workforce SSO, permission sets), service-to-service identity via instance/task/execution roles, secrets-free CI patterns.",
+  "scope_out": "Secrets storage/rotation mechanics (Secrets Manager/Parameter Store) belong to aws-data-storage; network-level access control (security groups, VPC) belongs to aws-edge-network-cost; container/runtime packaging of the identity-bearing compute belongs to aws-compute-serverless; cross-cloud OIDC federation patterns are in multicloud-secrets-observability-cost.",
+  "priority": "P0",
+  "defaults": [
+    "One IAM OIDC provider per AWS account pointing at https://token.actions.githubusercontent.com with audience sts.amazonaws.com — create it once via Terraform/CDK, never by hand in console for a repeatable stack.",
+    "One IAM role per GitHub repo + environment (e.g. my-app-gha-deploy-staging, my-app-gha-deploy-prod), each with a trust policy pinned to `token.actions.githubusercontent.com:sub` for that exact repo/branch/environment — never a wildcard `repo:org/*`.",
+    "Use `aws-actions/configure-aws-credentials@v6` (pin to a full version, not just `@v4`) with `permissions: id-token: write` and `contents: read` at the job level, least-privilege, no `secrets: inherit`.",
+    "Attach an IAM permission boundary to every CI-assumed role capping max privilege regardless of policy drift, in addition to a scoped inline/managed policy.",
+    "Human console/CLI access goes through IAM Identity Center with permission sets (ReadOnly for most engineers, scoped Admin for a small break-glass group) federated from your identity provider — no IAM users with long-lived access keys, ever, including for the account root.",
+    "Runtime AWS SDK calls (Lambda, ECS, App Runner) authenticate via the execution/task role attached to the compute resource — never inject `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` as environment variables in any Lambda, ECS task definition, or App Runner service.",
+    "Enforce MFA and session duration limits (`MaxSessionDuration`, e.g. 1h for CI roles) on every assumable role; require external ID only for genuine third-party (non-GitHub-OIDC) cross-account trust.",
+    "Turn on IAM Access Analyzer and CloudTrail organization trail from day one so any unused permission or unexpected `AssumeRole` is visible before it becomes an incident."
+  ],
+  "decision_gates": [
+    "Use GitHub OIDC + IAM role assumption for all CI/CD deploys (Terraform apply, CDK deploy, container push+deploy) — this is the default and should not require deliberation.",
+    "Use IAM Identity Center (not IAM users) whenever a human needs console or CLI access to more than one AWS account, or when >3 engineers touch the account; for a true single-developer solo account, `aws sso login` against a single Identity Center instance is still preferred over IAM user keys because it gives short-lived credentials and easy revocation.",
+    "Use a permission boundary + SCP (if AWS Organizations is in use) rather than relying on IAM policy alone when the CI role can create other IAM resources (e.g. Terraform managing IAM) — otherwise a compromised CI run can escalate privilege.",
+    "Skip AWS entirely for identity if the workload is 100% Supabase (Postgres + Auth + Storage) with no AWS resources — Supabase's own service-role/anon key model and its own GitHub Action apply; only bring in AWS IAM/OIDC once an AWS resource (S3, Lambda, SES, etc.) enters the stack.",
+    "If deploying through Vercel instead of AWS compute, Vercel's own OIDC-to-AWS federation (Vercel's built-in AWS role assumption for its functions) can replace part of this pattern for read access to AWS resources from Vercel functions — evaluate before standing up a second identity path.",
+    "Reach for cross-account roles (not a single shared account) once you have distinct staging/production AWS accounts under AWS Organizations; the GitHub Actions OIDC provider and trust policy are created per-account, and CI assumes a role in whichever account matches the deploy environment."
+  ],
+  "do_dont": [
+    "Do scope the OIDC trust policy's `token.actions.githubusercontent.com:sub` condition to `repo:my-org/my-app:environment:production` (using GitHub Environments) rather than any branch, so only an approved-environment deployment can assume the prod role.",
+    "Do rotate/delete the IAM OIDC provider's thumbprint concern by relying on AWS's TLS-based verification (no manual thumbprint babysitting needed as of current IAM behavior), but do verify the provider URL and audience on creation.",
+    "Do use separate CI roles per environment (staging vs production) with different trust conditions and different permission scopes.",
+    "Do enable CloudTrail data events for `AssumeRoleWithWebIdentity` and alert on assumes from unexpected repos or outside GitHub Actions IP/agent patterns.",
+    "Don't store `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in GitHub repo or org secrets for any new workflow — treat any PR introducing these as a hard fail.",
+    "Don't use a single broad `AdministratorAccess`-attached role for CI 'to keep things simple' — scope to the exact services/actions/resources the pipeline needs (e.g. `s3:PutObject` on one bucket ARN, not `s3:*` on `*`).",
+    "Don't wildcard the trust policy's `sub` claim as `repo:my-org/*:*` — this lets any repo in the org, any branch, or any fork-triggered workflow assume the role.",
+    "Don't create IAM users for machine identities (build servers, scripts) — every non-human caller should be a role assumed via OIDC or resource-attached role.",
+    "Don't grant `iam:PassRole` broadly to a CI role that also has `iam:CreateRole`/`lambda:CreateFunction` — this combination is a well-known privilege-escalation path.",
+    "Don't reuse one IAM Identity Center permission set across environments with different risk levels — separate 'prod-readonly' from 'staging-poweruser'."
+  ],
+  "config_skeleton": "# --- Terraform: GitHub OIDC provider + scoped deploy role (placeholders only) ---\n# Create once per AWS account.\nresource \"aws_iam_openid_connect_provider\" \"github\" {\n  url             = \"https://token.actions.githubusercontent.com\"\n  client_id_list  = [\"sts.amazonaws.com\"]\n  # AWS verifies via trusted CAs; thumbprint_list can be left as AWS-managed default.\n}\n\ndata \"aws_iam_policy_document\" \"gha_trust\" {\n  statement {\n    effect  = \"Allow\"\n    actions = [\"sts:AssumeRoleWithWebIdentity\"]\n    principals {\n      type        = \"Federated\"\n      identifiers = [aws_iam_openid_connect_provider.github.arn]\n    }\n    condition {\n      test     = \"StringEquals\"\n      variable = \"token.actions.githubusercontent.com:aud\"\n      values   = [\"sts.amazonaws.com\"]\n    }\n    condition {\n      test     = \"StringEquals\"\n      # Scope to one repo + one GitHub Environment (not a branch glob).\n      variable = \"token.actions.githubusercontent.com:sub\"\n      values   = [\"repo:example-org/my-app:environment:production\"]\n    }\n  }\n}\n\nresource \"aws_iam_role\" \"gha_deploy_prod\" {\n  name                 = \"my-app-gha-deploy-production\"\n  assume_role_policy   = data.aws_iam_policy_document.gha_trust.json\n  max_session_duration = 3600\n  permissions_boundary = aws_iam_policy.ci_boundary.arn\n}\n\nresource \"aws_iam_role_policy\" \"gha_deploy_prod_scoped\" {\n  name = \"deploy-scoped\"\n  role = aws_iam_role.gha_deploy_prod.id\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect   = \"Allow\"\n        Action   = [\"s3:PutObject\", \"s3:GetObject\"]\n        Resource = \"arn:aws:s3:::my-app-artifacts-123456789012/*\"\n      },\n      {\n        Effect   = \"Allow\"\n        Action   = [\"lambda:UpdateFunctionCode\", \"lambda:PublishVersion\"]\n        Resource = \"arn:aws:lambda:us-east-1:123456789012:function:my-app-*\"\n      }\n    ]\n  })\n}\n\n# --- GitHub Actions workflow snippet ---\n# .github/workflows/deploy.yml\n# permissions:\n#   id-token: write   # required for OIDC\n#   contents: read\n# jobs:\n#   deploy:\n#     runs-on: ubuntu-latest\n#     environment: production   # gates via GitHub Environments + required reviewers\n#     steps:\n#       - uses: actions/checkout@v4\n#       - uses: aws-actions/configure-aws-credentials@v6\n#         with:\n#           role-to-assume: arn:aws:iam::123456789012:role/my-app-gha-deploy-production\n#           aws-region: us-east-1\n#           role-session-name: gha-my-app-deploy\n#       - run: aws sts get-caller-identity   # smoke check, no static keys anywhere\n",
+  "failure_modes": [
+    "Wildcard trust policy (`repo:org/*` or missing `:environment:`/`:ref:` qualifier) lets any branch or fork PR in the org assume a production-capable role — classic supply-chain escalation.",
+    "CI role granted `iam:*` or `AdministratorAccess` 'temporarily' during initial setup and never scoped down — becomes permanent over-privilege.",
+    "Long-lived IAM user access keys checked into a secret manager or `.env` file 'until OIDC is set up', then never removed — most common finding in real audits.",
+    "`iam:PassRole` + resource-creation permissions combined on the same CI role, enabling privilege escalation via a newly created Lambda/EC2 with a more privileged role.",
+    "Assuming a role for too long a session (`MaxSessionDuration` at 12h) so a leaked token from a build log stays valid far longer than the job needs.",
+    "IAM Identity Center permission sets left over-scoped (e.g. everyone gets PowerUser) because it was faster to provision during initial rollout.",
+    "OIDC provider or role deleted/renamed during an account migration without updating GitHub's `role-to-assume` ARN, silently breaking all deploys until someone reads the run logs.",
+    "Cross-account deploy roles missing an explicit `aws:SourceAccount`/external-ID-equivalent condition when multiple GitHub orgs or repos share one AWS account, allowing role confusion."
+  ],
+  "anti_patterns": [
+    "Generating GitHub Actions workflows that use `aws-access-key-id`/`aws-secret-access-key` inputs to `configure-aws-credentials` instead of `role-to-assume`.",
+    "Emitting IAM policies with `\"Action\": \"*\"` or `\"Resource\": \"*\"` for a CI deploy role 'to unblock the build'.",
+    "Creating an IAM user (`aws_iam_user` / `aws iam create-user`) for any automated or service workload.",
+    "Trust policies with `\"sub\": \"repo:org/*\"` or no `sub` condition at all (any GitHub org's OIDC token would satisfy the federated principal).",
+    "Embedding `AWS_ACCESS_KEY_ID` as a plaintext env var in a Dockerfile, ECS task definition, or Lambda console/IaC config.",
+    "Skipping `permissions: id-token: write` and then working around the resulting auth failure by falling back to static keys instead of fixing the workflow permissions block."
+  ],
+  "tools": [
+    "aws-actions/configure-aws-credentials (GitHub Action) — primary OIDC-to-AWS bridge for CI.",
+    "AWS CLI v2 with `aws sso login` / `aws configure sso` — human access via IAM Identity Center, no static profile keys.",
+    "Terraform (aws provider) or AWS CDK — declare the OIDC provider, roles, and trust policies as code; avoid console-created IAM resources for anything repeatable.",
+    "IAM Access Analyzer — detects unused access and external/public exposure of roles and resource policies.",
+    "AWS IAM Identity Center — workforce SSO, permission sets, integrates with an external IdP (Okta/Entra/Google) via SAML/SCIM.",
+    "AWS CloudTrail (org trail) — audit `AssumeRoleWithWebIdentity` and `AssumeRole` events.",
+    "Alternative/legacy: `aws-actions/configure-aws-credentials` v4 (older major, still functional but lacks newer immutable-subject-claim protections) — do not pin to this for new setups."
+  ],
+  "versions_as_of": [
+    "aws-actions/configure-aws-credentials: v6 major line (e.g. v6.2.3) is current recommended; pin an exact patch tag, not a floating `@master`. as_of 2026-08-29.",
+    "AWS CLI v2 is current; CLI v1 is end-of-support and should not appear in new pipelines. as_of 2026-08-29.",
+    "GitHub-hosted repos created after 2026-07-15 emit OIDC subject claims that embed org/repo IDs (not just names) to prevent subject reuse after a repo rename/delete — trust policies written against names still work but should be reviewed against the newer claim shape for repos created post-cutover. as_of 2026-08-29 [uncertain: exact claim-shape migration timeline for pre-existing repos]."
+  ],
+  "limits_quotas_pricing": [
+    {
+      "item": "Max thumbprints per IAM OIDC provider",
+      "value": "5 (min 1)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html"
+    },
+    {
+      "item": "Max audiences per IAM OIDC provider",
+      "value": "100 (min 1)",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html"
+    },
+    {
+      "item": "JWKS key cap per provider before AssumeRoleWithWebIdentity fails",
+      "value": "100 RSA keys and 100 EC keys max",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html"
+    },
+    {
+      "item": "IAM role session duration (assumable range)",
+      "value": "15 min to 12 hours (configurable MaxSessionDuration); recommend 1h for CI",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html"
+    },
+    {
+      "item": "IAM Identity Center cost",
+      "value": "No additional charge for the service itself; you pay for the AWS resources accessed",
+      "as_of": "2026-08-29",
+      "source": "https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html"
+    },
+    {
+      "item": "AWS Free Tier structure change",
+      "value": "New accounts (from 2025-07-15) get up to $200 in credits over 6 months instead of the legacy 12-month per-service free tier; account auto-closes at 6 months or when credits exhaust [uncertain: exact grandfathering rules for pre-2025-07-15 accounts]",
+      "as_of": "2026-08-29",
+      "source": "https://aws.amazon.com/free/"
+    }
+  ],
+  "deprecation_watch": [
+    "IAM user long-lived access keys — not deprecated by AWS but treated as legacy/high-risk; AWS increasingly nudges toward IAM Identity Center and OIDC federation; avoid for any new build.",
+    "AWS CLI v1 — superseded by v2; do not install v1 in new CI images.",
+    "configure-aws-credentials v1–v3 major lines — superseded; v6+ has the immutable-subject-claim protections for GitHub repo recycling.",
+    "AWS SSO (old name) — fully renamed to IAM Identity Center; docs, CLI namespaces (`sso`, `identitystore`) remain for compatibility but new material should use the Identity Center name."
+  ],
+  "identity_model": "Workload identity for CI is OIDC federation: GitHub Actions issues a short-lived JWT (issuer token.actions.githubusercontent.com, audience sts.amazonaws.com) that the runner presents to AWS STS's AssumeRoleWithWebIdentity; IAM evaluates the role's trust policy against JWT claims (chiefly `sub`, scoped to repo+environment) and issues temporary credentials (default up to the role's MaxSessionDuration) with no static secret ever created or stored. Workload identity for compute-to-AWS-service calls is the resource-attached execution/task role (Lambda execution role, ECS task role, App Runner instance role) — the SDK's default credential chain picks this up automatically via the metadata/credentials endpoint, again with no embedded keys. Human identity runs through IAM Identity Center: users/groups synced or federated from an external IdP, assigned permission sets per AWS account, authenticating interactively (browser SSO) or via `aws sso login` for CLI, always producing short-lived STS credentials cached locally. The unifying rule: every actor in the system — human, CI job, or running service — obtains AWS credentials by assuming a role for a bounded session; the account should have zero active IAM user access keys, including on the root user (root access keys should not exist at all).",
+  "threats": [
+    "Overly broad OIDC trust policy allows any branch/fork/repo in an org (or beyond) to assume a privileged role — the single most common real-world OIDC misconfiguration.",
+    "Compromised CI job (malicious dependency, poisoned action, PR from untrusted fork) uses the assumed role's credentials to exfiltrate data or pivot within the account during the job's session window.",
+    "Privilege escalation via `iam:PassRole` + a resource-creation permission on the CI role, letting an attacker attach a more privileged role to a new resource they control.",
+    "Leaked static IAM user keys (in logs, git history, or a misconfigured Lambda env var) providing indefinite access until manually rotated/revoked.",
+    "Stale/unused IAM roles and permission sets accumulating permissions no one prunes, expanding blast radius over time.",
+    "Root account or IAM Identity Center admin permission sets without MFA enforced.",
+    "Cross-account role confusion when multiple GitHub orgs/repos share a single AWS account without per-repo trust-policy scoping."
+  ],
+  "mitigations": [
+    "Scope every OIDC trust policy `sub` condition to an exact repo + GitHub Environment (not a branch wildcard); require the deploy job to run inside a protected GitHub Environment with required reviewers for production.",
+    "Attach a permission boundary to every CI-assumable role, independent of the inline/managed policy, capping worst-case privilege even if the policy is later widened by mistake.",
+    "Never co-locate `iam:PassRole` with resource-creation actions on the same role unless scoped tightly to a specific resource ARN and specific target role ARN.",
+    "Run IAM Access Analyzer continuously; alert on any newly created external-access finding or unused-access finding older than 90 days.",
+    "Enforce MFA for all IAM Identity Center human sign-ins and for any break-glass IAM admin path; disable root access keys entirely and enable a hardware/virtual MFA device on root.",
+    "Set short MaxSessionDuration (≤1h) on CI roles; set CloudTrail alerts on AssumeRoleWithWebIdentity calls from unexpected source repos, IP ranges outside GitHub's published runner ranges, or outside expected hours.",
+    "Use AWS Organizations SCPs to hard-block IAM user access-key creation account-wide as a backstop against accidental reintroduction of static keys."
+  ],
+  "agent_codegen_policy": [
+    "Must generate GitHub Actions auth via `aws-actions/configure-aws-credentials` with `role-to-assume` and `permissions: id-token: write`; must never generate `aws-access-key-id`/`aws-secret-access-key` inputs.",
+    "Must scope every generated IAM trust policy's `sub` condition to a specific `repo:org/name:environment:<env>` or `repo:org/name:ref:refs/heads/<branch>` value — never emit `repo:org/*` or an unconditioned Federated principal.",
+    "Must never generate an `aws_iam_user` / `aws iam create-user` resource for any workload, service, or CI identity.",
+    "Must never place `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` in Terraform variables, `.env` files, Dockerfiles, ECS task definitions, or Lambda console/IaC environment blocks.",
+    "Must attach the narrowest IAM policy that satisfies the stated task (explicit actions and resource ARNs) rather than defaulting to managed policies like `AdministratorAccess` or `PowerUserAccess`.",
+    "Must flag (not silently fix) any existing `iam:PassRole` + resource-creation combination found on a CI role during a review, since resolving it requires a human privilege decision.",
+    "Should default to IAM Identity Center for any new human-access request rather than proposing an IAM user."
+  ],
+  "ci_gates": [
+    "`terraform plan`/`cdk diff` review required for any change touching IAM roles, policies, or the OIDC provider, with a human approval gate before apply in production.",
+    "A policy-linting step (e.g. IAM Access Analyzer policy validation, or `checkov`/`tfsec`-style scanning) blocking merges that introduce wildcard actions/resources on CI-facing roles.",
+    "A secret-scanning step (e.g. gitleaks/trufflehog) blocking any commit containing an `AKIA...` access-key pattern.",
+    "A required GitHub Environment with protection rules (required reviewers, restricted branches) gating any workflow that assumes a production-scoped role."
+  ],
+  "observability": [
+    "CloudTrail (org trail, multi-region) capturing AssumeRoleWithWebIdentity and AssumeRole calls, shipped to a central log sink for retention beyond the default 90 days.",
+    "IAM Access Analyzer findings surfaced into a dashboard/alert channel, not just left in-console.",
+    "Alert on: AssumeRoleWithWebIdentity from an unexpected repo/environment claim, any IAM user access-key creation event, any root-account sign-in or API call, and any policy attachment widening a CI role's permissions.",
+    "IAM Identity Center sign-in logs and permission-set assignment changes exported to the same observability pipeline as application logs for unified audit."
+  ],
+  "cost_guardrails": [
+    "IAM, OIDC providers, and IAM Identity Center themselves are free — the cost risk is entirely indirect: over-privileged roles enabling resource sprawl (e.g. a compromised or careless CI job spinning up expensive compute) rather than direct IAM billing.",
+    "First surprise: AWS Budgets/Cost Anomaly Detection not wired up at all in a greenfield account, so an IAM misconfiguration that enables resource creation goes unnoticed until the monthly bill.",
+    "Second surprise: CloudTrail data-event logging (needed to actually see AssumeRole abuse) has its own per-event cost if enabled broadly across all S3/Lambda data events — scope data-event logging deliberately rather than 'log everything'.",
+    "Third surprise: the 2025-07-15 Free Tier change to a 6-month, ~$200-credit model for new accounts means a greenfield account has a much shorter runway before real billing starts than older tutorials assume — set a Budget alert on day one, not after the first invoice."
+  ],
+  "skill_scan_signals": [
+    "Positive: workflow YAML containing `permissions: id-token: write` paired with `aws-actions/configure-aws-credentials` and a `role-to-assume` ARN.",
+    "Negative (flag): any `AKIA[0-9A-Z]{16}`-shaped string or `aws_secret_access_key`/`AWS_SECRET_ACCESS_KEY` literal in source, workflow files, Dockerfiles, or task definitions.",
+    "Negative (flag): IAM policy JSON/HCL containing `\"Action\": \"*\"` or `\"Resource\": \"*\"` on a role whose name/tags indicate CI or deploy usage.",
+    "Negative (flag): trust policy `sub` condition using a bare `repo:org/*` or missing entirely from a Federated-principal `AssumeRoleWithWebIdentity` statement.",
+    "Negative (flag): `aws_iam_user` (Terraform) or `AWS::IAM::User` (CloudFormation/CDK) resource declarations for anything other than a documented legacy/interop exception.",
+    "Negative (flag): `iam:PassRole` combined with `lambda:CreateFunction`, `ec2:RunInstances`, or similar resource-creation actions on the same statement/role without resource-ARN scoping."
+  ],
+  "skill_module_bullets": [
+    "Default every AWS-facing GitHub Actions workflow to OIDC via `aws-actions/configure-aws-credentials@v6` with `role-to-assume`; never static keys.",
+    "One IAM role per repo + environment, trust policy scoped to `repo:org/name:environment:<env>`, never a wildcard.",
+    "Human access via IAM Identity Center + permission sets; zero IAM users with access keys, including root.",
+    "Compute identity comes from the attached execution/task role, not injected env-var credentials.",
+    "Attach permission boundaries to CI roles as a backstop against policy drift.",
+    "Never co-locate `iam:PassRole` with resource-creation permissions without ARN scoping.",
+    "IAM Identity Center and OIDC providers are free; the real cost risk is unmonitored privilege enabling resource sprawl.",
+    "2025-07-15 Free Tier shift: new accounts get ~$200 credit over 6 months, not the old 12-month per-service free tier — budget alerts from day one."
+  ],
+  "checklist": [
+    "OIDC provider created once per account for token.actions.githubusercontent.com with audience sts.amazonaws.com.",
+    "Every CI-assumable role's trust policy scoped to exact repo + environment/branch, no wildcards.",
+    "Permission boundary attached to every CI role.",
+    "No `aws_iam_user`/IAM user access keys exist anywhere in the account (including root).",
+    "GitHub workflow has `permissions: id-token: write` and uses `role-to-assume`, pinned action version.",
+    "IAM Identity Center set up for all human access; MFA enforced.",
+    "IAM Access Analyzer and CloudTrail org trail enabled with alerting wired to a real channel.",
+    "AWS Budget + anomaly alert configured before any resource is deployed, given the 6-month credit runway on new accounts.",
+    "No `iam:PassRole` + resource-creation combination without explicit ARN scoping on any role."
+  ],
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": "AWS's Free Tier model changed materially between the era most tutorials/blog posts describe (12-month per-service free tier, e.g. 1M Lambda requests, 750 RDS hours) and the current (as of 2025-07-15) credit-based model (~$200 credits over 6 months for new accounts). Most third-party 'AWS OIDC for GitHub Actions' walkthroughs predate GitHub's 2026-07-15 immutable-subject-claim change for newly created repos and IAM's TLS-based (vs thumbprint-based) OIDC provider verification, so older posts overstate thumbprint-management effort.",
+  "as_of": "2026-08-29",
+  "review_by": "2026-11-29",
+  "primary_sources": [
+    "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html",
+    "https://github.com/aws-actions/configure-aws-credentials",
+    "https://aws.amazon.com/blogs/security/use-iam-roles-to-connect-github-actions-to-actions-in-aws/",
+    "https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html",
+    "https://aws.amazon.com/free/"
+  ],
+  "uncertain": []
+}

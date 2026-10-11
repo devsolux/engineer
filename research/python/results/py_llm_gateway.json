@@ -1,0 +1,237 @@
+{
+  "name": "LiteLLM multi-provider gateway",
+  "item_id": "py-llm-gateway",
+  "cluster": "interop",
+  "short_definition": "Centralize multi-provider LLM access behind an OpenAI-compatible gateway so FastAPI services call one base_url with virtual keys, budgets, routing, retries, and spend tracking. LiteLLM (SDK + Proxy Server) is the default Python-native option as of 2026-07-13 (PyPI litellm 1.92.0). Use the Proxy as the team gateway; use the SDK only for process-local unification without central auth/spend. At extreme RPS, evaluate Go/Envoy gateways (Bifrost, WSO2, etc.) — not default for most product stacks.",
+  "scope_in": [
+    "LiteLLM Proxy (AI Gateway) deployment and config.yaml model_list",
+    "LiteLLM Python SDK completion/acompletion vs proxy",
+    "Virtual keys, budgets, rate limits, fallbacks/router",
+    "OpenAI-compatible client usage from FastAPI (openai SDK or httpx)",
+    "Observability callbacks (Langfuse, custom, spend logs)",
+    "When to replace or complement with non-Python gateways"
+  ],
+  "scope_out": [
+    "Full RAG service design (py-ai-service-boundary)",
+    "MCP tool servers (py-mcp-tool-boundary)",
+    "Temporal agent durability (py-durable-workflows)",
+    "Training/fine-tune infrastructure",
+    "Frontend Vercel AI Gateway as sole multi-tenant enterprise control plane (optional complement only)"
+  ],
+  "priority": "P1",
+
+  "defaults": {
+    "mode": "Deploy LiteLLM Proxy as internal service (Docker/K8s); apps point openai base_url at proxy",
+    "sdk_when": "Single service, few providers, no need for virtual keys/central spend — litellm.acompletion in-process OK",
+    "auth": "Proxy master_key + virtual keys per service/team; never share provider master keys to apps",
+    "config": "model_list in litellm_config.yaml; secrets via env (os.environ/KEY refs)",
+    "client": "openai.AsyncOpenAI(base_url=LLM_BASE_URL, api_key=VIRTUAL_KEY) from FastAPI",
+    "routing": "Router fallbacks across Azure/OpenAI/Anthropic deployments for reliability",
+    "budgets": "Per-key/project spend limits and RPM/TPM where available",
+    "obs": "success_callback to Langfuse/OTel; log model, tokens, cost, request_id — redact content in prod if policy requires",
+    "timeouts": "Explicit client timeouts; proxy timeouts aligned with max generation"
+  },
+  "decision_gates": {
+    "use_proxy_when": [
+      "Multiple services/teams share providers",
+      "Need virtual keys, spend, central guardrails",
+      "Want one OpenAI-compatible URL for all models"
+    ],
+    "use_sdk_only_when": [
+      "One app, low ops overhead, secrets already isolated",
+      "No multi-tenant budget enforcement needed"
+    ],
+    "consider_non_python_gateway_when": [
+      "Measured GIL/latency issues at multi-k RPS on the gateway hop",
+      "Org standardizes on Envoy/Go AI gateway with existing ops"
+    ],
+    "do_not": [
+      "Don't put provider API keys in every microservice",
+      "Don't expose LiteLLM proxy to the public internet without auth and network policy",
+      "Don't use gateway as a substitute for app-level prompt/authZ checks"
+    ]
+  },
+  "do_dont": {
+    "do": [
+      "Run proxy with config as code; pin image tag",
+      "Issue per-service virtual keys with least privilege models",
+      "Configure fallbacks for primary model outages",
+      "Propagate user/project metadata for spend attribution",
+      "Monitor proxy latency, error rate, DB log growth",
+      "Use acompletion/async clients from FastAPI"
+    ],
+    "dont": [
+      "Don't commit master_key or provider keys",
+      "Don't unbounded database logging without retention",
+      "Don't call 10 providers without timeouts/circuit breakers",
+      "Don't dual-write conflicting router logic in every app and the proxy",
+      "Don't assume Enterprise SSO features without checking license"
+    ]
+  },
+  "code_skeleton": "# --- litellm_config.yaml (proxy) ---\n# model_list:\n#   - model_name: chat-primary\n#     litellm_params:\n#       model: openai/gpt-4o-mini\n#       api_key: os.environ/OPENAI_API_KEY\n#   - model_name: chat-primary\n#     litellm_params:\n#       model: anthropic/claude-sonnet-4-5-20250929\n#       api_key: os.environ/ANTHROPIC_API_KEY\n# litellm_settings:\n#   master_key: os.environ/LITELLM_MASTER_KEY\n#   # database_url: os.environ/LITELLM_DATABASE_URL  # for spend/virtual keys\n\n# docker run -v $PWD/litellm_config.yaml:/app/config.yaml -p 4000:4000 \\\n#   -e OPENAI_API_KEY -e ANTHROPIC_API_KEY -e LITELLM_MASTER_KEY \\\n#   docker.litellm.ai/berriai/litellm:main-latest --config /app/config.yaml\n\n# --- FastAPI consumer ---\nfrom openai import AsyncOpenAI\nfrom pydantic_settings import BaseSettings\n\nclass Settings(BaseSettings):\n    llm_base_url: str = \"http://litellm:4000\"\n    llm_api_key: str  # virtual key\n    llm_model: str = \"chat-primary\"\n\nsettings = Settings()  # type: ignore[call-arg]\nclient = AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)\n\nasync def complete(prompt: str) -> str:\n    resp = await client.chat.completions.create(\n        model=settings.llm_model,\n        messages=[{\"role\": \"user\", \"content\": prompt}],\n        timeout=60.0,\n    )\n    return resp.choices[0].message.content or \"\"\n\n# --- In-process SDK alternative ---\n# from litellm import acompletion\n# await acompletion(model=\"openai/gpt-4o-mini\", messages=[...])\n",
+  "failure_modes": [
+    "Proxy becomes SPOF without HA/replicas and health checks",
+    "Spend DB/log table growth degrades request latency (known LiteLLM scaling pain)",
+    "Misconfigured model_name aliases → silent wrong model / cost spike",
+    "Virtual key leak = billable access to all routed providers",
+    "Fallback storms amplify load during provider outage",
+    "Python GIL/latency under extreme concurrent streaming fan-out",
+    "Enterprise-only features assumed available in OSS proxy"
+  ],
+  "anti_patterns": [
+    "Every microservice embeds raw OPENAI_API_KEY + ANTHROPIC_API_KEY",
+    "Public 0.0.0.0 LiteLLM with master_key=sk-1234",
+    "No timeout on client.chat.completions.create",
+    "Using proxy for non-LLM CRUD traffic",
+    "Ignoring cost attribution (one shared key for all users)",
+    "Pinning :latest image in production without digest"
+  ],
+
+  "tools": {
+    "primary": ["LiteLLM Proxy", "litellm Python SDK"],
+    "clients": ["openai Python SDK (AsyncOpenAI)", "httpx"],
+    "obs": ["Langfuse", "LiteLLM callbacks", "OpenTelemetry"],
+    "alts_2026": ["Bifrost (Go)", "WSO2 AI Gateway (Envoy)", "Portkey", "cloud provider gateways"]
+  },
+  "versions_as_of": {
+    "as_of": "2026-07-13",
+    "litellm": "1.92.0 (requires Python >=3.10,<3.14)",
+    "openai": "2.45.0",
+    "httpx": "0.28.1",
+    "note": "Pin litellm image digest in deploy; OSS vs Enterprise feature split for SSO/RBAC"
+  },
+  "config_snippets": {
+    "pyproject_app": "[project]\ndependencies = [\n  \"openai>=2.45,<3\",\n  \"httpx>=0.28,<0.29\",\n  # only if in-process SDK:\n  # \"litellm>=1.92,<2\",\n]\n",
+    "env": "LLM_BASE_URL=http://litellm:4000\nLLM_API_KEY=sk-virt-service-ai\nLLM_MODEL=chat-primary\n# proxy side:\n# OPENAI_API_KEY=...\n# ANTHROPIC_API_KEY=...\n# LITELLM_MASTER_KEY=...\n# LITELLM_DATABASE_URL=postgres://...\n",
+    "proxy_cli": "uv tool install 'litellm[proxy]'\n# or Docker: docker.litellm.ai/berriai/litellm:main-latest --config /app/config.yaml\n"
+  },
+  "deprecation_watch": [
+    "Hardcoding provider-specific SDKs in every service without a gateway plan at multi-service scale",
+    "LiteLLM as public edge without WAF/auth",
+    "Relying solely on in-process SDK when finance needs centralized spend",
+    "Unmaintained custom multi-provider shims"
+  ],
+
+  "ts_boundary": "Next can call the same OpenAI-compatible proxy with server-side key (Route Handler only). Prefer Python AI service as the product-facing AI API; TS should not hold provider master keys. Vercel AI Gateway is an alternative for TS-centric apps — if Python owns RAG, still route completions via internal LiteLLM or Python service.",
+  "rust_boundary": "If gateway hop is the bottleneck at high RPS, evaluate Go/Envoy AI gateways; keep Python services as clients of whatever gateway. Do not rewrite app orchestration in Rust just to avoid LiteLLM.",
+  "supabase_boundary": "Store spend mirrors or usage ledgers in Postgres if product billing needs it; LiteLLM's own DB is ops-facing. Never put provider keys in Supabase client config. Optional: log request_id to messages table for support.",
+  "boundary_contracts": [
+    "OpenAI-compatible /v1/chat/completions (and embeddings) URL",
+    "Virtual key auth header Authorization: Bearer",
+    "Model alias names stable in config (chat-primary)",
+    "Env LLM_BASE_URL, LLM_API_KEY, LLM_MODEL for apps",
+    "Optional metadata headers for user/project spend tags"
+  ],
+  "decision_matrix_row": {
+    "problem_class": "Multi-provider LLM access + spend control",
+    "python": "LiteLLM Proxy default; SDK for single-app; app uses AsyncOpenAI base_url",
+    "ts": "Server-only OpenAI client to same proxy or call Python AI service",
+    "rust": "Only if replacing gateway hop for performance/ops standards"
+  },
+
+  "threats": [
+    "Stolen virtual key → unauthorized spend",
+    "SSRF if proxy can be pointed at internal URLs via malicious model config",
+    "Prompt/PII retention in gateway logs",
+    "Privilege escalation via overly broad master_key distribution",
+    "Supply-chain risk on litellm dependency (large surface)"
+  ],
+  "mitigations": [
+    "Network-isolate proxy; mTLS or private mesh",
+    "Rotate virtual keys; least-privilege model allowlists",
+    "Log retention + PII redaction policies",
+    "Separate master_key from app keys; secrets in vault/1Password",
+    "uv lock + version pin; monitor CVEs",
+    "Budget hard limits and alerts"
+  ],
+  "agent_codegen_policy": {
+    "must_generate": [
+      "Settings for LLM_BASE_URL + virtual key",
+      "AsyncOpenAI or httpx with timeouts against gateway",
+      "Model name from config not hardcoded strings in 10 places",
+      "Note whether proxy vs in-process SDK is chosen"
+    ],
+    "must_not_generate": [
+      "Provider master keys in application code",
+      "Public unauthenticated proxy config",
+      "timeout=None on completions",
+      "Sync litellm.completion on async request path without thread offload"
+    ]
+  },
+
+  "tests_required": [
+    "Unit test client wrapper with respx/mock OpenAI API",
+    "Contract: base_url and model alias from settings",
+    "Timeout behavior under mock hang",
+    "Optional integration against local proxy in compose profile"
+  ],
+  "ci_gates": [
+    "No sk- provider keys in repo",
+    "Config yaml validated in CI if present",
+    "Dependency pin audit for litellm when used"
+  ],
+  "skill_scan_signals": {
+    "positive": [
+      "LLM_BASE_URL / litellm proxy client",
+      "AsyncOpenAI(base_url=...)",
+      "model_list in litellm config",
+      "virtual key env separate from OPENAI_API_KEY in apps"
+    ],
+    "negative": [
+      "OPENAI_API_KEY + ANTHROPIC_API_KEY in every service without gateway",
+      "litellm master_key in source",
+      "completion( without timeout in request handlers",
+      "public ingress to proxy without auth middleware"
+    ]
+  },
+
+  "skill_module_bullets": [
+    "Default multi-service: LiteLLM Proxy OpenAI-compatible gateway",
+    "Apps use virtual keys + AsyncOpenAI(base_url=proxy); provider keys only on proxy",
+    "SDK acompletion OK for single-app simplicity",
+    "Router fallbacks + budgets + spend callbacks",
+    "Watch log/DB growth and latency; consider Go gateways only when measured",
+    "Pin litellm 1.92.x as_of 2026-07-13; isolate network"
+  ],
+  "action_items": [
+    "Document proxy vs SDK decision in python.md",
+    "Compose snippet for litellm service",
+    "Scan for multi-provider keys scattered in services",
+    "Link py-ai-service-boundary consumers"
+  ],
+  "checklist": [
+    "Proxy or SDK mode explicitly chosen",
+    "Virtual keys for apps",
+    "Provider keys only on gateway",
+    "Timeouts configured",
+    "Fallbacks for primary model",
+    "Spend/usage observability",
+    "Private network + auth",
+    "Image/version pinned",
+    "Log retention policy"
+  ],
+
+  "source_tier": "official",
+  "confidence": "high",
+  "conflicts_noted": [
+    "2026 vendor posts push Bifrost/WSO2 as LiteLLM replacements citing GIL and issue count — valid at high scale; LiteLLM remains pragmatic default for Python shops",
+    "Enterprise SSO/RBAC often paid — OSS proxy features must not be assumed",
+    "In-process SDK vs proxy: blogs blur 'use LiteLLM' without ops model"
+  ],
+  "as_of": "2026-07-13",
+  "review_by": "2027-01-13",
+  "primary_sources": [
+    "https://docs.litellm.ai/",
+    "https://docs.litellm.ai/docs/simple_proxy",
+    "https://github.com/BerriAI/litellm",
+    "https://pypi.org/project/litellm/",
+    "https://www.getmaxim.ai/articles/top-5-litellm-alternatives-in-2026/",
+    "https://inworld.ai/resources/best-litellm-alternatives"
+  ],
+  "local_sources": [
+    "./research/python/outline.yaml",
+    "./research/python/results/py_ai_service_boundary.json",
+    "./research/python/results/py_http_clients.json",
+    "./references/api-data-flows.md"
+  ]
+}
