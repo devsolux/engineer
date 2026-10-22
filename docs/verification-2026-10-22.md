@@ -127,3 +127,16 @@ Codex CLI 0.163.0-alpha.11 installed locally.
 Not executed for this release: the local-marketplace install into throwaway Claude Code and Codex
 profiles, the Codex `codex plugin` registration, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and
 any live model run. The 66 modules past their review cadence stay recorded under "Not re-verified".
+
+## Publication
+
+| Check | Result |
+|---|---|
+| `make github-push` | `main` pushed to `origin` as a fast-forward, 5ac51a3..2713d00 |
+| `make github-release` | Release "Engineer 1.1.0" published 2026-10-22T07:44:59Z, not a draft or prerelease, with `engineer-1.1.0-plugin.zip` and its SHA-256 sidecar |
+| `git ls-remote --tags origin` | `v1.1.0` → 2713d00; `v1.0.0` → 5ac51a3 (created outside this review, after the baseline above) |
+| Release assets | The uploaded ZIP digest `3377003801c512f49f27123b4a5049b445299b64ae2db101f7f6e6ebd8a4fffe` and the sidecar equal the locally packaged files |
+| GitHub Actions | The first push-triggered "Validate Engineer" run on 2713d00 was still in progress when this was recorded |
+
+Not executed: installing 1.1.0 from GitHub into Claude Code and Codex to confirm both hosts resolve
+`engineer@devsolux-engineer` at the new version (release procedure step 6).
