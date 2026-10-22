@@ -140,3 +140,23 @@ any live model run. The 66 modules past their review cadence stay recorded under
 
 Not executed: installing 1.1.0 from GitHub into Claude Code and Codex to confirm both hosts resolve
 `engineer@devsolux-engineer` at the new version (release procedure step 6).
+
+## Install from GitHub into throwaway profiles
+
+This supersedes the "Not executed" line under Publication. Same machine; Claude Code 2.1.282 and
+Codex CLI 0.163.0-alpha.11. Every command ran under `env -i` with `HOME`, `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME` and the XDG directories pointing at a fresh scratch directory, with auto-update off.
+Both hosts install from the default branch, so they received 817b950, which differs from the
+`v1.1.0` tag (2713d00) only in this ledger and its plugin copy.
+
+| Check | Result |
+|---|---|
+| `claude plugin marketplace add https://github.com/devsolux/engineer` → `claude plugin install engineer@devsolux-engineer` | Marketplace cloned at 817b950; `claude plugin list` shows `engineer@devsolux-engineer` at version 1.1.0, user scope, enabled |
+| Installed Claude Code tree (`plugins/cache/devsolux-engineer/engineer/1.1.0`) | Identical to `plugins/engineer` apart from Claude Code's own `.in_use` marker; `SKILL.md` version 1.1.0; 51 commands including `engineer-security-audit` |
+| `codex plugin marketplace add devsolux/engineer` → `codex plugin add engineer@devsolux-engineer` | Marketplace cloned at 817b950; `codex plugin list` shows `engineer@devsolux-engineer` installed and enabled at 1.1.0 |
+| Installed Codex tree (`plugins/cache/devsolux-engineer/engineer/1.1.0`) | Identical to `plugins/engineer` |
+| `codex debug prompt-input` (renders the prompt, no model call) | Skill registered as `engineer:engineer` from the 1.1.0 cache |
+| Real host profiles | Claude Code marketplace catalog, installed-plugin record and settings, and the Codex config, had the same SHA-256 before and after. The throwaway Claude Code profile wrote its own state file. The shared `~/.claude.json` changed during the run but holds no reference to the throwaway directory; running desktop sessions write it |
+
+Not exercised: the update and removal commands, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and
+any live model run.
