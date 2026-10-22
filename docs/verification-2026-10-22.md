@@ -105,3 +105,25 @@ path kept its verdicts; an old-versus-new comparison over 40,000 random mutation
 Not established: no live 2026-07-28 server or SDK capture was observed; the fixtures are
 synthetic. URL-mode elicitation receipts still carry the 2025-11-25 `completion_ids_validated`
 control, although 2026-07-28 removed `elicitationId` in favour of retries with `requestState`.
+
+## Release gates on the final 1.1.0 tree
+
+The 1.1.0 release folds in both follow-ups: the MCP 2026-07-28 stateless evidence above and
+`engineer fix --findings` (remediation from a validated `findings.json`, with
+`validate-security-findings.py --remediated`). Both were merged on `main` before 1.1.0 was
+published, so their changelog entries sit under 1.1.0. Same machine; Claude Code 2.1.282 and
+Codex CLI 0.163.0-alpha.11 installed locally.
+
+| Check | Result |
+|---|---|
+| `make fixtures` | Skill-eval chain already bound to the merged tree (bundle and 216-scenario bank digests); grader-verified |
+| `make build` → `make lint` | No generated drift; source lint passed |
+| `make release-check JOBS=4` | Static gates passed (216 static eval scenarios); 55/55 isolated offline suites passed; no bundle drift |
+| `make host-validate` | `claude plugin validate --strict` passed for the marketplace and the plugin on Claude Code 2.1.282 |
+| `python3 scripts/scan-doc-supply-chain.py` | Passed |
+| `scripts/check-oss-leaks.sh --ref origin/main..HEAD` and the staged changeset | Clean (marker layer off: no private marker file on this machine) |
+| `scripts/check-oss-leaks.sh --all` | 4 critical and 31 major findings, all in files unchanged since the public 1.0.0 commit: the deliberately fake key in the failing scan fixture, the exec-sink taxonomy row in `malware-detection.md`, and Python decorators in the `research/` corpus read as e-mail addresses |
+
+Not executed for this release: the local-marketplace install into throwaway Claude Code and Codex
+profiles, the Codex `codex plugin` registration, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and
+any live model run. The 66 modules past their review cadence stay recorded under "Not re-verified".

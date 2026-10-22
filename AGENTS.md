@@ -14,6 +14,9 @@ and isolated homes. No authenticated model calls, host installs, network package
 installs, destructive operations, commits, pushes, publishing, or deployment
 without explicit authorization. `make setup` and `make install-*` are opt-in.
 
+Work only on `main`. Do not create branches, worktrees, or worktree-isolated
+agent sessions for this repository; make every change in the main checkout.
+
 Run `make lint`, `make check`, `make test`, and `make verify-build`. Runtime source
 edits invalidate illustrative skill-eval hashes: review changes, use the explicit
 `make fixtures`, then rerun tests and `make build`. Do not manufacture captured
