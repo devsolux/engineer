@@ -1,6 +1,6 @@
 # Python: services, workers, and AI boundary
 
-**Last verified**: 2026-07-13 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -16,7 +16,7 @@
 | `enforcement.md` | CI + scan PY-* |
 | `project-detect.md` | Detect uv / FastAPI / `services/**` |
 
-Default stack: **CPython 3.13 / uv / ruff / basedpyright / FastAPI / Pydantic v2 / SQLAlchemy 2 async / uvicorn**.
+Default stack: **CPython 3.14 / uv / ruff / basedpyright / FastAPI / Pydantic v2 / SQLAlchemy 2 async / uvicorn**.
 Pins: § [Default stack snapshot](#default-stack-snapshot). **Match the existing service before applying defaults.**
 
 ## Contents
@@ -57,23 +57,23 @@ Greenfield product surface stays **Next + Supabase**. Add Python when the proble
 
 ## Default stack snapshot
 
-**as_of 2026-07-13** · re-verify by **2026-10-13**
+**as_of 2026-10-22** · re-verify by **2027-01-22**
 
 | Component | Pin / policy |
 |---|---|
-| CPython | **3.13** (`.python-version` + `requires-python = ">=3.13"`); **3.12** only for max-compat |
+| CPython | **3.14** (`.python-version` + `requires-python = ">=3.14"`); **3.13** (security-only) only for max-compat |
 | Free-threading | Opt-in only (3.14t / measured); default **GIL + asyncio** |
-| Package manager | **uv** 0.11.x · commit `uv.lock` · CI `uv sync --locked` |
-| Format + lint | **ruff** 0.15.x only (no Black/isort/flake8) |
-| Typecheck | **basedpyright** 1.39.x CI · **ty** optional editor (beta) |
-| API | **FastAPI** 0.139.x · **uvicorn** 0.51.x |
-| Validation | **Pydantic** 2.13.x · **pydantic-settings** 2.14.x |
-| HTTP | **httpx** 0.28.x |
-| DB | **SQLAlchemy** 2.0.x · **asyncpg** 0.31.x · Alembic only if Python owns DB |
-| Auth JWT | **PyJWT** 2.13.x (+ cryptography) - not python-jose |
+| Package manager | **uv** 0.13.x · commit `uv.lock` · CI `uv sync --locked` |
+| Format + lint | **ruff** 0.17.x only (no Black/isort/flake8) |
+| Typecheck | **basedpyright** 1.40.x CI · **ty** optional editor (beta) |
+| API | **FastAPI** 0.159.x · **uvicorn** 0.54.x |
+| Validation | **Pydantic** 2.14.x · **pydantic-settings** 2.16.x |
+| HTTP | **httpx** 0.28.x (no release since 2024-12; Pydantic's `httpx2` fork exists - evaluate) |
+| DB | **SQLAlchemy** 2.1.x (`[asyncio]` extra) · **asyncpg** 0.32.x · Alembic only if Python owns DB |
+| Auth JWT | **PyJWT** 2.15.x (+ cryptography) - not python-jose |
 | Jobs | **Taskiq** (greenfield async) · Celery if already present · **Temporal** for durable sagas |
-| Obs | **structlog** · OTel FastAPI/httpx/SQLAlchemy · Sentry |
-| Supply chain | `uv audit` + `UV_MALWARE_CHECK=1` · prefer `exclude-newer` cooldown |
+| Obs | **structlog** · OTel (FastAPI built-in) + httpx/SQLAlchemy · Sentry |
+| Supply chain | `uv audit` + `UV_MALWARE_CHECK=1` (both preview) · prefer `exclude-newer` cooldown |
 | Optional | Granian after measure · msgspec after profile · LiteLLM proxy · supabase-py for Auth/Storage |
 
 **Avoid for greenfield:** Poetry, pip-tools as sole lock, Black/isort, mypy-only, python-jose, arq new systems, SA 1.4 `Query`, Pydantic v1, notebooks as product.
@@ -108,20 +108,20 @@ Rules:
 ```toml
 # pyproject.toml (excerpt)
 [project]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
- "fastapi>=0.139",
- "uvicorn[standard]>=0.51",
- "pydantic>=2.13",
- "pydantic-settings>=2.14",
+ "fastapi>=0.159",
+ "uvicorn[standard]>=0.54",
+ "pydantic>=2.14",
+ "pydantic-settings>=2.16",
  "httpx>=0.28",
 ]
 
 [dependency-groups]
-dev = ["pytest>=9", "pytest-asyncio>=1.4", "basedpyright>=1.39", "ruff>=0.15", "httpx"]
+dev = ["pytest>=9", "pytest-asyncio>=1.4", "basedpyright>=1.40", "ruff>=0.17", "httpx"]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -229,11 +229,11 @@ Auth is **Depends**, not middleware that swallows 401 semantics.
 - Shared `httpx.AsyncClient` on lifespan - never per-request client in hot paths
 - Explicit `Timeout(connect=…, read=…, write=…, pool=…)`; never `timeout=None` in prod
 - Retries only on **idempotent** methods with budgeted backoff
-- LLM tokens: **SSE** (`EventSourceResponse` / sse-starlette); events `token | error | done`; cancel upstream on disconnect; disable proxy buffering
+- LLM tokens: **SSE** (`fastapi.sse.EventSourceResponse` 0.135+ / sse-starlette); events `token | error | done`; cancel upstream on disconnect; disable proxy buffering
 
 ## Data layer (SQLAlchemy)
 
-- SQLAlchemy **2.0** + asyncpg: `async_sessionmaker`, request-scoped session, `select()` only
+- SQLAlchemy **2.1** (`sqlalchemy[asyncio]`; 2.0 is maintenance) + asyncpg: `async_sessionmaker`, request-scoped session, `select()` only
 - `expire_on_commit=False`; explicit `selectinload` / `joinedload`; prefer `lazy="raise"`
 - **Pool budget:** `workers × (pool_size + max_overflow) < DB/pooler limit`
 - Supabase transaction pooler (`:6543`): **NullPool** + unique prepared-statement names / disable statement cache
@@ -279,7 +279,7 @@ Auth is **Depends**, not middleware that swallows 401 semantics.
 ## Observability
 
 - **structlog** JSON + contextvars (`request_id`, user id when safe)
-- OTel: FastAPI + httpx + SQLAlchemy/asyncpg
+- OTel: FastAPI built-in (0.142+; exporter auto-setup opt-in) + httpx + SQLAlchemy/asyncpg
 - Split **`/health/live`** (process) vs **`/health/ready`** (deps)
 - No secrets/PII in logs; Sentry for exceptions
 
@@ -357,7 +357,7 @@ Browser → Next (session, UI, CRUD, RLS) → Postgres
 
 ## Production checklist
 
-- [ ] `requires-python` + `.python-version` pinned (3.13 preferred)
+- [ ] `requires-python` + `.python-version` pinned (3.14 preferred)
 - [ ] `uv.lock` committed; deploy `uv sync --locked --no-dev`
 - [ ] ruff format/check + basedpyright + pytest green
 - [ ] `uv audit` (+ malware check) in CI

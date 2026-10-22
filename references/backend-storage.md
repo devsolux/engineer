@@ -1,6 +1,6 @@
 # Backend storage: Supabase files and uploads
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 File uploads, avatars, documents, and signed URLs via Supabase Storage.
 Database RLS overview: `backend-database.md`. Auth: `backend-auth.md`.
@@ -41,7 +41,8 @@ Rules:
 - One bucket per access pattern (public vs private vs org-scoped)
 - Path convention: `{ownerId}/{resourceId}/{filename}` or `{orgId}/...`
 - No user-controlled bucket names
-- Max file size at bucket level + Zod validation server-side
+- Max file size at bucket level (capped by the project global limit: Free 50 MB,
+  Pro/Team up to 500 GB) + Zod validation server-side
 
 ```sql
 -- Create bucket (migration or dashboard - prefer migration for reproducibility)
@@ -124,6 +125,8 @@ create table public.files (
 );
 
 alter table public.files enable row level security;
+-- new public tables are no longer auto-granted to Data API roles (all projects from 2026-10-30)
+grant select, insert, delete on public.files to authenticated;
 -- mirror owner policies on user_id
 ```
 
@@ -145,6 +148,7 @@ Client selects file
 
 ```typescript
 "use server";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { uploadSchema } from "./schema";
 
@@ -155,7 +159,7 @@ export async function uploadAvatar(formData: FormData) {
 
  const file = formData.get("file");
  const parsed = uploadSchema.safeParse({ file });
- if (!parsed.success) return { error: parsed.error.flatten() };
+ if (!parsed.success) return { error: z.flattenError(parsed.error) }; // Zod 4; .flatten() deprecated
 
  const ext = parsed.data.file.name.split(".").pop() ?? "bin";
  const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
@@ -178,15 +182,20 @@ export async function uploadAvatar(formData: FormData) {
 }
 ```
 
+Server Action request bodies cap at 1 MB by default (`experimental.serverActions.bodySizeLimit`);
+raise it deliberately or use a signed upload URL for anything larger.
+
 ### Signed upload URL (large files)
 
-For files > few MB, use **signed upload URL** from server after auth:
+Supabase recommends standard uploads only up to 6 MB; above that, use a **signed upload URL**
+from server after auth, with TUS resumable upload for large files:
 
 ```typescript
 const { data, error } = await supabase.storage
  .from("documents")
- .createSignedUploadUrl(`${orgId}/${fileId}`);
-// Client PUTs to signed URL; webhook or client callback confirms → insert metadata
+ .createSignedUploadUrl(`${orgId}/${fileId}`); // valid 2 hours
+// Client: uploadToSignedUrl(path, token, file) (PUT) or TUS with token in `x-signature`;
+// webhook or client callback confirms → insert metadata
 ```
 
 Never expose service role to client for uploads.
@@ -211,18 +220,22 @@ Rules:
 
 ## Image transforms
 
-Use Supabase image transformation for thumbnails:
+Use Supabase image transformation for thumbnails (Pro plan and above; width/height
+1-2500 px, source up to 25 MB / 50 MP; usage beyond the plan quota is billed per origin image):
 
 ```
 /storage/v1/render/image/public/avatars/{path}?width=200&height=200&resize=cover
 ```
 
-Pair with `next/image` remotePatterns for allowed Storage host.
+Pair with a `next/image` custom loader (`images.loader: 'custom'`, per Supabase's Next.js
+guide) or `remotePatterns` for the allowed Storage host.
 
 ## Delete and GDPR
 
 On account delete or file remove:
-1. Delete `storage.objects` row (via API or cascade policy)
+1. Remove objects via the Storage API (`remove([...paths])`) before deleting the auth user;
+   SQL deletes on `storage.objects` are blocked by the `storage.protect_delete()` trigger
+   and would orphan the file
 2. Delete `public.files` metadata
 3. Log for compliance if required - see `compliance-privacy.md`
 

@@ -1,6 +1,6 @@
 # Implementation completeness and anti-placeholder contract
 
-**Last verified**: 2026-07-16 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `prd-to-evidence.md`, `code-quality.md`, `workflows.md`, `system-assurance.md`
 
 Production implementation is the default. Unless the user explicitly requests a prototype, mockup,
@@ -66,16 +66,16 @@ review and outcome-level evidence, not only implementation-authored tests.
 ## Independent verification (grader ≠ doer)
 
 The failure this closes is structural: an agent verifies only against the checks it can see, and
-drifts from investigating to "wrapping up" as its turn budget runs down — so it declares success
-against a subset and is confidently wrong on the rest. Countermeasures, in order of leverage:
+drifts from investigating to "wrapping up" as its context runs out (or seems to) — so it declares
+success against a subset and is confidently wrong on the rest. Countermeasures, in order of leverage:
 
 1. **Independent re-run.** The completion sweep's checks are re-run by a pass that did not write the
    code — a fresh-context reviewer subagent, or at minimum an execution the implementer did not author
    and cannot have tuned. The writer's own "all tests pass" is evidence to re-verify, never
    self-certification. Self-verification alone is unreliable: a large share of trajectories that
-   self-verify still fail, and forcing an agent to write its own tests yields little — agent
-   self-tests are mostly observation (print-style) with few real assertions. Correctness comes from
-   *independent/hold-out execution*, not from the author grading their own work.
+   self-verify still fail, and prompting an agent to write more of its own tests yields little —
+   agent self-tests are mostly print-style observation, with far fewer real assertions. Correctness
+   comes from *independent/hold-out execution*, not from the author grading their own work.
 2. **Hold-out check.** Keep at least one acceptance check the implementer did not see or edit; where
    feasible, commit acceptance tests before the implementation so any later edit to them shows in the
    diff and can be reverted. A visible-pass-only run is not the honest measure.

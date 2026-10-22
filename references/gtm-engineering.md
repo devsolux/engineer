@@ -1,6 +1,6 @@
 # GTM engineering for product teams
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `product-marketing.md`, `web-discovery-engineering.md`, `product-analytics.md`, `growth-funnels.md`, `compliance-privacy.md`
 
 GTM engineering connects product behavior to acquisition, activation, sales, revenue,

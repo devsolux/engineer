@@ -1,6 +1,6 @@
 # Rust: services, APIs, and infra
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -131,7 +131,8 @@ pub struct AppState {
 
 SQLx rules:
 - Migrations in `migrations/` - run at startup or deploy step
-- Parameterized queries always - no string concat SQL
+- Parameterized queries always - no string concat SQL (SQLx 0.9 `query*()` take
+ `impl SqlSafeStr`: a `&'static str`, or an `AssertSqlSafe(..)` to review)
 - Explicit pool limits: `max_connections`, acquire timeout
 - `query_as!` / `query!` macros for compile-time checked SQL when feasible
 
@@ -139,15 +140,17 @@ Timeouts on all external I/O (DB, HTTP clients, Redis).
 
 ## Middleware and observability
 
-Standard Tower layers (outermost first):
+Standard `tower-http` layers via `tower::ServiceBuilder` (runs top to bottom, so
+outermost first; chained `Router::layer` calls run bottom to top):
 
 ```rust
 Router::new()
  .route(/* ... */)
- .layer(TraceLayer::new_for_http()) // request id, latency, status
- .layer(CompressionLayer::new())
- .layer(CorsLayer::new() /* configured */)
- .layer(TimeoutLayer::new(Duration::from_secs(30)))
+ .layer(ServiceBuilder::new()
+   .layer(TraceLayer::new_for_http()) // method, uri, latency, status (ids: SetRequestIdLayer)
+   .layer(CompressionLayer::new())
+   .layer(CorsLayer::new() /* configured */)
+   .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(30))))
 ```
 
 - **`tracing` + `tracing-subscriber`** - JSON logs in production

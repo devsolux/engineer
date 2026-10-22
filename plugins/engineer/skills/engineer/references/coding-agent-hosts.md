@@ -94,7 +94,7 @@ routing or slash-command helpers.
 | Automation | non-interactive CLI/SDK/app server, cloud and scheduled surfaces | print/stream JSON, Agent SDK, CI, routines/schedules/loop | cron, gateway, API/ACP | Explicit budgets, idempotency, cancellation, approval and captured evidence |
 | Browser | browser/computer-use capabilities depend on surface | Chrome/computer-use/web capabilities depend on surface | selectable browser backends | Apply browser-agent policy; page content never grants authority |
 | Handoff | resume/cloud/app features are host-local | resume/teleport/remote surfaces are host-local | sessions/profiles are host-local | Portage carries cross-provider job state; git and artifacts remain truth |
-| Plan lifecycle | plain files, no host plan mode | files only - native plan mode is read-only explore + an ExitPlanMode approval gate, session-ephemeral and host-local; under `-p` ExitPlanMode blocks without a PermissionRequest allow, so auto-approval paths must fail closed | files survive cron/fresh sessions | Baseline capability everywhere: `.engineer/plan.json` + `.engineer/plans/<slug>.json` + bare-shell `validate-plan.sh`; requires only filesystem + git |
+| Plan lifecycle | plain files, no host plan mode | files only - native plan mode is read-only explore + an ExitPlanMode approval gate, host-local (plan files under `~/.claude/plans/` or `plansDirectory`; blocks unenforced in an interactive terminal with bypass available); under `-p` ExitPlanMode blocks without a PermissionRequest allow, so auto-approval paths must fail closed | files survive cron/fresh sessions | Baseline capability everywhere: `.engineer/plan.json` + `.engineer/plans/<slug>.json` + bare-shell `validate-plan.sh`; requires only filesystem + git |
 | Runtime reachability | routing block + explicit invocation only | interactive: full surface; headless `-p`: implicit routing nondeterministic (measured 2026-07-16) | cron loads only explicitly attached skills | Universal file gates (plan, validate-plan, scan, output gate) fire in every runtime; routing is deterministic only when explicit; human gates fail closed unattended - stop + record the gap, never emulate them in a prompt |
 
 This is not a quality ranking. Pick by required surface, security boundary, portability, existing
@@ -107,9 +107,10 @@ adapter. It is a task-selection layer, not another capability inventory.
 ## Hook contract (version-sensitive)
 
 - The blocking channel is **exit code 2** or JSON `permissionDecision: "deny"`; exit 1 does **not**
-  block (non-Unix - a crashing gate lets the action through). Hook JSON is parsed only on exit 0.
-  Prove a gate fires by triggering it.
-- The Claude Code event set has grown well past the classic nine (28+ documented 2026-07-16); treat
+  block (non-Unix - a crashing gate lets the action through unless the hook sets Claude's
+  `onFailure: "block"`, 2.1.295+). Valid hook JSON is read on any exit code; on exit 2 it cannot
+  override the block. Prove a gate fires by triggering it.
+- The Claude Code event set has grown well past the classic nine (33 documented 2026-10-22); treat
   exact event lists as version-sensitive. Settings-scope merge applies to hooks too: inspect
   effective settings, not one file. Hermes normalizes the Claude `{decision: block}` JSON shape -
   the de-facto interchange contract - but a hook is executable supply chain wherever it is read.

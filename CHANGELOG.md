@@ -22,6 +22,50 @@ All notable changes to this project are documented here. The project follows
   from a date suffix in the requested name misreported current dateless model ids.
 - `make test` accepts `TEST_TIMEOUT` (seconds per suite, default 180). CI runs with 600 seconds, a
   30-minute job limit, and uploads `.build/tests/` suite logs when the fixtures step fails.
+- Module currency (2026-10-22 module ledger): sixty-four past-due reference modules re-verified
+  against primary sources and redated — the host and agent-security modules
+  (`coding-agent-capability-playbooks.md`, `hermes-agent-integration.md`,
+  `web-discovery-engineering.md`, `agent-red-teaming.md`, `implementation-completeness.md`,
+  `skill-supply-chain.md`, `malware-detection.md`), the language modules (`python.md`,
+  `typescript.md`, `rust.md`), the three-month stack modules (`backend-supabase.md`,
+  `backend-database.md`, `billing-seats.md`, `billing-metered.md`, `deploy-ops.md`,
+  `frontend-performance.md`, `frontend-state.md`, `frontend-testing.md`, `seo-metadata.md`,
+  `observability.md`) and the backend and growth modules (`api-data-flows.md`,
+  `backend-api.md`, `backend-storage.md`, `backend-webhooks.md`, `backend-testing.md`,
+  `code-quality.md`, `growth-funnels.md`, `audit-log.md`, `backend-multitenant.md`,
+  `background-jobs.md`) and the AI, admin and product modules (`ai-agents.md`,
+  `ai-boundary.md`, `ai-evals.md`, `ai-security.md`, `backend-admin.md`, `backend-fts.md`,
+  `backend-pgvector.md`, `email-notifications.md`, `feature-flags.md`,
+  `product-onboarding.md`) and the process and product modules
+  (`autonomous-experimentation.md`, `decision-engineering.md`, `coding-principles.md`,
+  `developer-experience.md`, `engineer-telemetry.md`, `prd-to-evidence.md`,
+  `git-signing-deploy.md`, `gtm-engineering.md`, `product-analytics.md`,
+  `product-marketing.md`) and the architecture, security, agent and operations modules
+  (`system-architecture.md`, `infra-security.md`, `enforcement.md`, `oss-maintainer.md`,
+  `long-horizon-agents.md`, `prompt-optimization.md`, `skill-behavior-evals.md`,
+  `capability-promotion.md`, `system-assurance.md`, `root-cause-engineering.md`,
+  `epistemic-honesty.md`, `company-operating-system.md`, `portfolio-context.md`,
+  `product-business-engineering.md`). Corrections include current Claude Code hook, fallback and plan-file
+  behaviour, Hermes v0.22.4 approval defaults, Python 3.14 as the default with refreshed pins,
+  Supabase's explicit Data API grants (all projects from 2026-10-30), secret keys and Storage
+  upload limits, Stripe meter events and thin events, Next 16 `preload`, async `params`, Proxy
+  and `allowedOrigins` behaviour, MSW 3, Inngest v4, the Sentry wizard 8 / SDK v11 setup,
+  Vercel Global Config (ex-Edge Config) and the `flags` package, React Email 6, Gmail / Yahoo /
+  Outlook bulk-sender rules, pgvector filtered ANN, the renamed Claude Code Agent tool and
+  `AGENTS.md` loading, the OWASP agentic and MCP lists, GitHub's "Partially verified" trigger,
+  Claude Code OTel identity attributes,
+  retired FAQ and HowTo rich results, re-sourced growth benchmarks, llms.txt v2,
+  re-attributed incident figures, GitHub's workflow dependency lockfile, SSH keyboard-interactive
+  authentication, npm 12 `allowScripts` and pnpm 11 `allowBuilds`, `actions/checkout` v7's
+  fork-checkout guard, OSPS Baseline v2026.08.28 and Fly `fm2_` tokens, tool search without a
+  beta header, RULER and METR horizon figures, `--bare` runs that send no skill list, and the
+  sycophancy figures from Sharma et al.
+- Review cadence: `implementation-completeness.md`, `audit-log.md`, `backend-multitenant.md`, `backend-fts.md`,
+  `ai-boundary.md`, `product-onboarding.md`, the eight version-insensitive batch-five modules
+  (all but `engineer-telemetry.md` and `git-signing-deploy.md`), `capability-promotion.md`,
+  `system-assurance.md`, `root-cause-engineering.md`, `company-operating-system.md`,
+  `portfolio-context.md` and `product-business-engineering.md` move to a 6-month cadence and
+  `web-discovery-engineering.md` to 2 months.
 
 ### Fixed
 
@@ -31,6 +75,29 @@ All notable changes to this project are documented here. The project follows
 - Shell suites asserted with bare `[[ … ]]` and `! grep` statements that never failed on macOS
   (bash 3.2) or, for `!`, anywhere. All 25 now end in an explicit failure; the activation test
   fails before the fix above and passes after it.
+- Wrong code samples: a whitespace-accepting Zod schema, a deprecated tower-http
+  `TimeoutLayer::new` with reversed layer order, a removed Stripe `createUsageRecord` call, a
+  synchronous Next 16 `params` read, a webhook handler that marked events processed before
+  processing them, pgTAP tests with wrong plans and unmatchable `throws_ok` messages, a
+  Route Handler that answered 409 to every insert error, a multi-tenant helper in an exposed
+  schema with a hijackable `search_path`, an Inngest v3 call shape, a feature-flag table whose
+  primary key made global rows impossible and whose one-byte bucket put 58.6% of users in a
+  "50%" rollout, a non-IMMUTABLE email-log index, a FastAPI union return type that fails at
+  startup, and an RLS explanation that misdescribed `WITH CHECK`.
+- `coding-agent-hosts.md`: hook JSON is read on any exit code, `onFailure: "block"` fails
+  closed, native plan files persist, and the hook event count is 33. `billing-stripe.md` reads
+  the period end from the subscription item; `frontend.md` uses `z.flattenError()`.
+- `backend-testing.md` and `enforcement.md` run the RLS migration gate on the migrations
+  directory; the documented file glob and the lint-staged entry passed file paths, which made it
+  skip with exit 0.
+- `backend-security.md` names npm 12's `allowScripts` and pnpm 11's `allowBuilds` for dependency
+  lifecycle scripts; eval 186 expects RULER's "half or less" effective context; the onboarding
+  event `growth-funnels.md` gained is named `onboarding_step_completed`.
+- `malware-detection.md` no longer claims the leak gate stays clean on this tree or that a
+  path pattern passed to `--allow` exempts it.
+- `COMPAT.md` records that Python 3.10, still the maintainer floor, reached end-of-life on
+  2026-10-01, and that Next 15's 2026-10-21 end date follows from the support policy's
+  two-year window.
 
 ## 1.1.0 — 2026-10-22
 

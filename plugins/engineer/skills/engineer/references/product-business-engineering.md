@@ -1,6 +1,6 @@
 # Product-business engineering
 
-**Last verified**: 2026-07-17 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `product-analytics.md`, `gtm-engineering.md`, `billing-*`, `growth-funnels.md`, `composition.md`
 
 engineer is a product-engineering skill. This module makes stated business goals

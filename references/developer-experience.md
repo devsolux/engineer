@@ -1,6 +1,6 @@
 # Developer experience engineering
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Scope**: SDK, API, CLI, plugin, integration, and contributor onboarding as product surfaces
 **Related**: `product-analytics.md`, `api-data-flows.md`, `oss-maintainer.md`, `browser-qa.md`, `output-quality.md`
 

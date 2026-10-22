@@ -1,6 +1,6 @@
 # Web discovery engineering: SEO, SEA, and AI answers
 
-**Last verified**: 2026-08-19 · **Review cadence**: monthly for crawler/ads policy, quarterly otherwise
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months (crawler user agents and ad-crawler guidance drift; recheck those first)
 **Related**: `seo-metadata.md`, `product-marketing.md`, `product-analytics.md`, `compliance-privacy.md`, `output-quality.md`
 
 Load this module for organic search, paid search landing systems, AI answer discovery, crawler
@@ -27,7 +27,7 @@ brief. It does not invent keyword demand, proof, budgets, or legal consent.
 | `rel=canonical` | Search-engine-supported hint | Preferred duplicate URL, not an access control and does not ensure selection |
 | Schema.org JSON-LD | Shared vocabulary | Machine-readable facts; rich-result eligibility depends on engine-specific support and policy |
 | IndexNow | Participating-engine protocol | Change notification for added, updated, or deleted URLs, not a Google indexing control |
-| `/llms.txt` | Community proposal | Optional curated navigation aid; not RFC/W3C, access control, crawler permission, or ranking signal |
+| `/llms.txt` | Community proposal (v2, Aug 2026) | Optional curated navigation aid; not RFC/W3C, access control, crawler permission, or ranking signal |
 | AI-answer optimization | Ordinary crawl/index/quality systems plus engine controls | No secret AI schema, assured citation, or universal crawler switch |
 
 ## Discovery architecture
@@ -110,7 +110,8 @@ Rules:
 - derive it from canonical public facts; use absolute canonical links and short factual descriptions;
 - never include secrets, hidden endpoints, private docs, prompt instructions, unsupported claims,
   keyword blocks, or content different from what humans can open;
-- return plain UTF-8 Markdown at `/llms.txt`; monitor access logs before claiming adoption or value;
+- return plain UTF-8 Markdown at `/llms.txt` (v2 also allows path-scoped files such as
+  `/docs/llms.txt`; the most specific applies); monitor access logs before claiming adoption or value;
 - do not use it instead of `robots.txt`, sitemaps, metadata, internal links, or accessible HTML;
 - treat `llms-full.txt` and vendor extensions as optional experiments with owners and removal criteria.
 

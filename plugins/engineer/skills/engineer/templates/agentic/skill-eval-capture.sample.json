@@ -4,7 +4,7 @@
   "run_id": "engineer-routing-smoke-001",
   "job": {
     "path": "templates/agentic/skill-eval-job.sample.json",
-    "sha256": "cba057697bc4e574e9ed4669453438e9c896de24f059c5f36c855bb6fe9fec98"
+    "sha256": "c2fe1ab6689ded27308859c2df1f4fa624622332d4ed6ef0b3a94f3de2c351eb"
   },
   "host": "codex",
   "model": "default",
@@ -24,7 +24,7 @@
     "reason": "Illustrative host binding used only to validate manifest structure."
   },
   "skill_binding": {
-    "sha256": "7a3e7957a64f49f2c7bf82708c09446ecb310a60390a7cf9cc3d076025653d81",
+    "sha256": "ffe03195eda349be50c29288ec891d6e4de4bcbb7139a436e75aae06ddfe84f0",
     "version": "1.1.0",
     "expectations_excluded": true,
     "runtime_supplied": true,

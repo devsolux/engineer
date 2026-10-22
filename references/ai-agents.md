@@ -1,6 +1,6 @@
 # AI agents: prompting, context, and efficient workflows
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 How to work effectively with Claude Code, Cursor, Codex, and coding agents.
 Full research: `research/ai-agents-research.md`
@@ -26,10 +26,10 @@ AI tools/MCP: **`ai-security.md`**. Handoffs: **`composition.md`** (portage).
 
 | Type | Tools | Best for |
 |---|---|---|
-| **Terminal-native** | Claude Code, Aider | Multi-file refactors, backend, shell, CI |
-| **IDE-native** | Cursor, Windsurf, Continue | Inline edits, frontend iteration, @ file context |
-| **Cloud autonomous** | Devin, background agents | Long-running scoped tasks (with review) |
-| **UI generators** | v0, Bolt | Scaffolding - always integrate into real stack after |
+| **Terminal-native** | Claude Code, Codex CLI, Aider | Multi-file refactors, backend, shell, CI |
+| **IDE-native** | Cursor, Devin Desktop (ex-Windsurf) | Inline edits, frontend iteration, @ file context |
+| **Cloud autonomous** | Devin, Cursor Cloud Agents (ex-Background Agents), Codex cloud | Long-running scoped tasks (with review) |
+| **App/UI generators** | v0, Bolt | Scaffolding - always integrate into real stack after |
 
 **2026 practical split** (common team pattern):
 - **Claude Code** - substantial multi-file features, migrations, refactors
@@ -79,7 +79,8 @@ Load rules once; don't repeat in every prompt.
 `references/*.md` only when the task needs them - saves context window.
 
 Rules:
-- Keep `CLAUDE.md` / `AGENTS.md` **short** - pointers to skills, not encyclopedias
+- Keep `CLAUDE.md` / `AGENTS.md` **short** (under 200 lines) - pointers to skills, not encyclopedias
+- Claude Code (2.1.277+) reads `AGENTS.md` only when no `CLAUDE.md` exists; with both, put `@AGENTS.md` in `CLAUDE.md`
 - **Don't paste** entire files if `@` reference or skill module exists
 - **Project detect first** - agent reads `package.json`, `supabase/`, etc. before generating
 
@@ -91,20 +92,20 @@ Rules:
 - One purpose per prompt; chain only when needed
 - Use **skills** (`engineer`, gstack `/autoplan`) for workflows
 - **Subagents** for repo exploration - keeps main thread clean
-- Spawn hint: `Load gstack. Run /autoplan` (see root `AGENTS.md`)
+- Spawn hint: `Load gstack. Run /autoplan` (gstack install adds a `## gstack` section to `CLAUDE.md`)
 
 ### Cursor
 
 - Use **`@files` / `@folders`** for precise context - not whole-repo dumps
 - **Agent mode** for multi-file; **Ask** for understanding only
-- Invoke skills by name: `engineer - build signup flow`
+- Invoke skills via `/engineer` or by name: `engineer - build signup flow`
 - **Plan mode** for architecture before large diffs
-- Pin critical files in context for long sessions
+- Re-`@` critical files in long sessions
 
 ### Codex / OpenAI agents
 
 - Same four-part spec format
-- `AGENTS.md` at repo root for persistent instructions
+- `AGENTS.md` at repo root for persistent instructions (root → cwd chain; 32 KiB default cap)
 - Explicit verify commands in acceptance section
 - Scope boundaries critical - agents over-refactor without them
 
@@ -126,7 +127,7 @@ gstack pipeline for high-stakes work:
 
 ## Subagents and delegation
 
-Use subagents / Task tool when work is:
+Use subagents (Agent tool; `Task` before Claude Code 2.1.63) when work is:
 - **Noisy** - lots of search/read before a small output
 - **Bounded** - clear deliverable (report, file list, security scan)
 - **Parallelizable** - independent research tracks
@@ -139,12 +140,12 @@ Stay in main thread when:
 Subagent config best practices:
 - Sharp **description** (action-oriented, not vague)
 - **Minimal tools** - read-only for reviewers
-- **`background: true`** when no clarifying questions needed
-- **`isolation: worktree`** for parallel edits that might collide
+- **`background: true`** to stay async even when Claude asks to wait (spawned subagents already start in background)
+- **`isolation: worktree`** for parallel edits that might collide (branches from the default branch, not `HEAD`)
 
 Example delegation:
 ```
-Task: Explore subagent - map all Server Actions missing getUser(); return file list only.
+Agent: Explore subagent - map all Server Actions missing getUser(); return file list only.
 Main thread: fix each file using backend-api.md gates.
 ```
 
@@ -200,8 +201,8 @@ engineer - build Stripe webhook handler
 | vercel `react-best-practices` | React/Next performance pass |
 | gstack `/autoplan` | Plan review pipeline before big builds |
 | gstack `/cso` | Security before auth/payment webhooks |
-| gstack `/qa` | Browser QA on URL |
-| gstack `/ship` | Pre-deploy checklist |
+| gstack `/qa` | QA running app/API + fix (`/qa-only` = report) |
+| gstack `/ship` | Test, push, open PR (needs push approval) |
 
 **Rule**: read and follow skill instructions immediately - don't announce without doing.
 

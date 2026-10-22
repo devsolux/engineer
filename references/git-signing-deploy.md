@@ -1,6 +1,6 @@
 # Git commit signing and verified deploys
 
-**Last verified:** 2026-07-15 · **Review cadence:** 3 months
+**Last verified:** 2026-10-22 · **Review cadence:** 3 months
 
 Use this module whenever commit provenance, GitHub's Verified badge, co-authors, branch protection, rulesets, or deploy authorization matters.
 
@@ -18,7 +18,7 @@ Never describe a commit as GitHub Verified from local output alone.
 
 - `Co-authored-by:` trailers provide attribution. They do not add a second signature to the commit object and do not prove the co-author reviewed or approved the exact diff.
 - One commit has one embedded commit signature. If every contributor must approve, use protected reviews or CODEOWNERS in addition to signing.
-- Under vigilant mode, GitHub can label a signed commit “Partially verified” when a co-author has not signed. GitHub's required-signed-commits rule can still accept partially verified commits, so do not treat that rule as unanimous co-author approval.
+- GitHub labels a validly signed commit “Partially verified” when it has an author other than the committer who has enabled vigilant mode; the one signature does not guarantee that author's consent. GitHub's required-signed-commits rule still permits partially verified commits, so do not treat that rule as unanimous co-author approval.
 
 ## Diagnostic flow
 
@@ -37,7 +37,7 @@ After repairing account/key association, create a new signed commit and verify t
 
 For protected release branches, prefer a GitHub ruleset or branch protection rule with **Require signed commits**. Also require pull requests, approvals/CODEOWNERS where appropriate, status checks, conversation resolution, and protection from force pushes and deletions.
 
-Native repository enforcement is the primary trust boundary because a workflow stored in the candidate commit can itself be modified. Pin third-party Actions by immutable SHA and give workflows least privilege.
+Native repository enforcement is the primary trust boundary because a workflow stored in the candidate commit can itself be modified. Pin third-party Actions by immutable SHA (GitHub's workflow dependency lockfile, `.github/workflows/actions.lock`, public preview, supersedes SHA pins where adopted) and give workflows least privilege.
 
 ## Deployment enforcement
 
@@ -64,3 +64,4 @@ Required evidence for a verified-source deployment:
 - [GitHub: Available rules for rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
 - [GitHub REST: commits](https://docs.github.com/en/rest/commits/commits)
 - [GitHub: Deployments and environments](https://docs.github.com/en/actions/concepts/workflows-and-actions/deployment-environments)
+- [GitHub: Workflow dependency lockfiles](https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles)

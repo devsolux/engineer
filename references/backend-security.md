@@ -160,8 +160,8 @@ posture in **`oss-maintainer.md`**.
 - **Deny install scripts by default.** Lifecycle hooks (`preinstall`/`postinstall`/`prepare`)
   are the dominant execution primitive - Nx s1ngularity (2025-08) harvested tokens from a
   `postinstall`; Shai-Hulud 2.0 (2025-11) moved to a `preinstall`. Run `npm ci --ignore-scripts`
-  (npm v12, 2026, disables auto scripts by default), pnpm `onlyBuiltDependencies` allowlist, or
-  Bun `trustedDependencies`. Read a build script for shell-spawn/network/env-read before
+  (npm 12 blocks dependency scripts unless the root `allowScripts` policy allows them), pnpm
+  `allowBuilds` (replaced `onlyBuiltDependencies` in pnpm 11), or Bun `trustedDependencies`. Read a build script for shell-spawn/network/env-read before
   allowlisting it. Note the bypasses: native-addon rebuild (`binding.gyp`/node-gyp) and a
   dependency-shipped `.npmrc` still execute.
 - **Frozen lockfile everywhere.** `npm ci` / `--frozen-lockfile` / `--immutable` with committed

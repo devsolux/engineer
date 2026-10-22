@@ -1,6 +1,6 @@
 # TypeScript: types, APIs, and boundaries
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -21,9 +21,11 @@
 
 ## Compiler standards
 
-Compiler update checked 2026-10-11: TypeScript 7.0.2 is current. Preserve the
-consumer lockfile and compiler-API compatibility; do not force a major migration.
-See `docs/verification-2026-10-11.md` in the skill package for the source ledger.
+Compiler update checked 2026-10-22: TypeScript 7.0.2 is npm `latest`; 7.1 is in beta.
+7.0 ships no compiler API, so API tools (typescript-eslint peers `typescript <6.1`)
+stay on 6.x. Preserve the consumer lockfile and compiler-API compatibility; do not
+force a major migration.
+See `docs/verification-2026-10-22-modules.md` in the skill package for the source ledger.
 
 - `strict: true` always - no weakening for convenience
 - `noUncheckedIndexedAccess` when project allows (safer arrays/records)
@@ -86,7 +88,7 @@ Prevents passing wrong ID types - use when codebase already patterns this way.
 import { z } from "zod";
 
 export const createProjectSchema = z.object({
-  name: z.string().min(1).max(100).trim(),
+  name: z.string().trim().min(1).max(100), // trim first: checks run in order
   description: z.string().max(2000).optional(),
 });
 
@@ -111,7 +113,7 @@ Share schemas between client (form) and server when possible - single source.
 | APIs that differ | Prefer `safeParse`; re-check error shape helpers when upgrading |
 | Monorepo | Align workspace packages on the same major |
 
-COMPAT.md allows Zod v3 or v4. Agents must not "helpfully" upgrade Zod as a drive-by change.
+COMPAT.md adapts Zod examples to the app's installed major. Agents must not "helpfully" upgrade Zod as a drive-by change.
 
 ## API handler patterns
 

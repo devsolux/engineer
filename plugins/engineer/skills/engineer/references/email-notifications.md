@@ -1,6 +1,6 @@
 # Email & notifications: transactional and lifecycle
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Strategy: `growth-funnels.md` (activation event first). Auth emails: Supabase Auth templates.
 Jobs: `background-jobs.md` for durable send workers.
@@ -30,10 +30,11 @@ Developer builds: templates + send API + webhook hooks. Founder owns copy/sequen
 ## React Email + Resend
 
 ```typescript
-// emails/welcome.tsx
-import { Html, Body, Text, Button } from "@react-email/components";
+// emails/welcome.tsx (React Email 6+: components ship in `react-email`;
+// `@react-email/components` is deprecated)
+import { Html, Body, Text, Button } from "react-email";
 
-interface WelcomeEmailProps {
+export interface WelcomeEmailProps {
  name: string;
  activationUrl: string;
 }
@@ -55,17 +56,20 @@ export function WelcomeEmail({ name, activationUrl }: WelcomeEmailProps) {
 // lib/email/send.ts
 import "server-only";
 import { Resend } from "resend";
-import { WelcomeEmail } from "@/emails/welcome";
+import { WelcomeEmail, type WelcomeEmailProps } from "@/emails/welcome";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function sendWelcomeEmail(to: string, props: WelcomeEmailProps) {
- await resend.emails.send({
+ // SDK returns { data, error } instead of throwing - surface failures to the job
+ const { data, error } = await resend.emails.send({
  from: "Product <hello@example.com>",
  to,
  subject: "Finish setting up your account",
  react: WelcomeEmail(props),
  });
+ if (error) throw new Error(`resend: ${error.message}`);
+ return data?.id;
 }
 ```
 
@@ -77,8 +81,10 @@ Customize in Supabase Dashboard → Auth → Email Templates:
 - Confirm signup
 - Magic link
 - Reset password
+- Also: invite, change email, reauthentication; opt-in security notifications (password/email changed)
 
-Use custom SMTP (Resend) for branded deliverability in production.
+Custom SMTP (Resend, Postmark, SES...) is required in production: the built-in sender only
+delivers to project team addresses at ~2 emails/hour. Custom SMTP starts at 30/hour; raise it under Auth rate limits.
 
 ## Lifecycle templates
 
@@ -93,7 +99,8 @@ Use custom SMTP (Resend) for branded deliverability in production.
 
 **Principle:** every onboarding email drives the **single activation event** from `growth-funnels.md`. Not three CTAs. Behavior beats pure time drips: suppress remaining onboarding once `activation_completed` fires.
 
-Idempotency: track sends in DB (unique on user + template + window).
+Idempotency: track sends in DB (unique on user + template + window); on retries also pass
+Resend's `idempotencyKey` (second arg to `emails.send`, kept 24h).
 
 ```sql
 create table public.email_log (
@@ -104,9 +111,10 @@ create table public.email_log (
  sent_at timestamptz not null default now()
 );
 
--- prevent double-send of same template within a day
+-- prevent double-send of same template within a UTC day
+-- (bare sent_at::date is STABLE, not IMMUTABLE, so Postgres rejects it in an index)
 create unique index email_log_user_template_day
- on public.email_log (user_id, template, (sent_at::date));
+ on public.email_log (user_id, template, ((sent_at at time zone 'UTC')::date));
 
 alter table public.email_log enable row level security;
 -- no client policies; service role / server only
@@ -159,11 +167,14 @@ Don't email AND in-app spam the same event within minutes.
 
 ## Deliverability
 
-- Verify domain (SPF, DKIM, DMARC) in Resend
+- Verify a sending subdomain in Resend (SPF + DKIM records), then publish DMARC (`p=none` minimum)
 - `hello@` or `notifications@` - not no-reply without reason
 - One primary CTA per email
 - Plain-text fallback (Resend auto)
 - Unsubscribe link on marketing; transactional exempt but include preferences link
+- Bulk senders (~5,000+/day to Gmail or Outlook.com; Yahoo too): SPF **and** DKIM pass, DMARC aligned
+ with the From domain. Gmail/Yahoo: marketing mail needs one-click unsubscribe (`List-Unsubscribe` +
+ `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, RFC 8058) honored within 2 days; spam rate < 0.3% (aim < 0.1%)
 - Test with [mail-tester.com](https://www.mail-tester.com) before launch
 
 ## Anti-patterns

@@ -1,6 +1,6 @@
 # Backend testing: RLS, actions, and integration
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Database and server integration tests beyond frontend RTL/Playwright.
 Frontend tests: `frontend-testing.md`. CI wiring: `enforcement.md`.
@@ -40,7 +40,7 @@ supabase/
  tests/
  rls_projects.test.sql
  rls_storage_avatars.test.sql
- helpers.sql # optional fixtures
+ helpers.sql # optional; pg_prove runs every .sql/.pg here, so it needs a plan too
 ```
 
 ### Run locally
@@ -68,7 +68,7 @@ Template: `templates/supabase/tests/rls_projects.test.sql`
 
 ```sql
 begin;
-select plan(2);
+select plan(1);
 
 set local role anon;
 
@@ -105,15 +105,15 @@ Prefer **`supabase test db`** fixtures over testing against production.
 
 ```sql
 begin;
-select plan(2);
+select plan(1);
 
 set local role authenticated;
 -- set jwt claim to user id
 
 select throws_ok(
- $$ insert into storage.objects (bucket_id, name, owner, metadata)
- values ('avatars', 'other-user-id/photo.png', auth.uid(), '{}'::jsonb) $$,
- 'new row violates row-level security policy',
+ $$ insert into storage.objects (bucket_id, name, owner_id, metadata)
+ values ('avatars', 'other-user-id/photo.png', auth.uid()::text, '{}'::jsonb) $$,
+ '42501', null, -- match the code: SQLERRM also names the table
  'cannot upload to another user folder'
 );
 
@@ -174,7 +174,7 @@ For full Action integration, use `@playwright/test` against running dev server.
 Stripe webhooks - use Stripe CLI + local tunnel or fixture:
 
 ```typescript
-import { constructEvent } from "@/app/api/webhooks/stripe/route";
+import { POST } from "@/app/api/webhooks/stripe/route";
 
 it("rejects invalid signature", async () => {
  const req = new Request("http://localhost", {
@@ -194,9 +194,10 @@ Idempotency: insert same `event.id` twice → second call no-ops.
 `scripts/check-rls-migration.sh` - run on every migration PR:
 
 ```bash
-bash scripts/check-rls-migration.sh supabase/migrations/*.sql
+bash scripts/check-rls-migration.sh supabase/migrations
 ```
 
+Takes a directory (default `supabase/migrations`); a file glob skips with exit 0.
 Fails if new `create table public.*` without `enable row level security`.
 
 ## What to test when

@@ -1,6 +1,6 @@
 # Decision engineering
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months (process guidance; recheck the optional Council protocol features first)
 
 Use structured deliberation only for consequential choices with genuine ambiguity: architecture,
 security posture, irreversible migrations, agent autonomy, build-versus-buy, major performance
@@ -23,9 +23,9 @@ asserted, not after — a load-bearing unknown blocks the call and is resolved, 
    reviewer to name one specific disagreement, one useful insight, and the evidence that would
    change their position.
 5. Run a dissent and counterfactual check. Agreement is not evidence; repeated claims do not gain
-   weight without independent support. Models are trained to agree and will flip a correct answer under
-   content-free pushback — the sycophancy mechanism and the correction-flip evidence are why blind-first
-   positions and this dissent check exist (`epistemic-honesty.md`).
+   weight without independent support. Preference training partly rewards agreement, and models will
+   flip a correct answer under content-free pushback — the sycophancy mechanism and the correction-flip
+   evidence are why blind-first positions and this dissent check exist (`epistemic-honesty.md`).
 6. Separate empirical, mechanistic, strategic, ethical, and heuristic claims. Link empirical
    claims to sources or repository evidence.
 7. Synthesize with a reviewer who did not author a position when practical. Record the decision,

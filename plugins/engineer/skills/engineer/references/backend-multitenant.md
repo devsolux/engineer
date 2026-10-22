@@ -1,6 +1,6 @@
 # Multi-tenant orgs: memberships, roles, invites
 
-**Last verified**: 2026-07-13 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 SaaS default: **org (workspace) + memberships + roles**. Complements
 `backend-auth.md` (identity), `backend-database.md` (RLS), `billing-stripe.md`
@@ -57,29 +57,34 @@ Keep roles few. Fine-grained permissions later via capabilities table if needed.
 ## RLS patterns
 
 ```sql
--- helper: is member of org
-create or replace function public.is_org_member(p_org uuid)
+-- helper: is member of org (private schema, not exposed to the Data API)
+create or replace function private.is_org_member(p_org uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
  select exists (
- select 1 from memberships m
- where m.org_id = p_org and m.user_id = auth.uid()
+ select 1 from public.memberships m
+ where m.org_id = p_org and m.user_id = (select auth.uid())
  );
 $$;
+revoke all on function private.is_org_member(uuid) from public;
+grant usage on schema private to authenticated;
+grant execute on function private.is_org_member(uuid) to authenticated;
 
 -- example resource policy
 create policy "org members read projects"
-on projects for select
-using (public.is_org_member(org_id));
+on public.projects for select
+to authenticated
+using (private.is_org_member(org_id));
 ```
 
 Rules:
 
-- `SECURITY DEFINER` helpers must pin `search_path` and only check membership
+- `SECURITY DEFINER` helpers: non-exposed schema, `search_path = ''` + schema-qualified names, membership check only
+- Session-variable tenancy (`set_config('app.org_id', …, true)` read via `current_setting`) stays transaction-local; session `SET` is unsafe under transaction pooling (Supavisor/PgBouncer)
 - Never trust `org_id` from the client without membership
 - Service role only in workers/admin jobs (`background-jobs.md`)
 

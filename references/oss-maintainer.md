@@ -1,6 +1,6 @@
 # Open-source GitHub maintainer operations
 
-**Last verified:** 2026-07-17 · **Review cadence:** 3 months
+**Last verified:** 2026-10-22 · **Review cadence:** 3 months
 
 Use this module for public repositories, contributor workflows, governance, triage, releases, community health, project succession, and OSS supply-chain posture. Compose with `git-signing-deploy.md`, `skill-supply-chain.md`, `enforcement.md`, and `output-quality.md`.
 
@@ -20,16 +20,17 @@ internal hostnames, SSH targets, and — since 2026-08 — cloud identifiers tha
 topology: AWS ARNs/account ids/ECR/RDS/S3 hosts, GCP service accounts and `run.app`/`gs://`,
 Vercel `prj_`/`team_` ids and `*.vercel.app` previews, Cloudflare/Fly/Railway/Render/Netlify/
 Azure/Supabase hosts and 32-hex account/zone ids. Provider tokens (AWS temporary keys,
-`sb_secret_`, `fo1_`, `nfp_`, `dop_v1_`, Azure storage keys, GCP key ids) are SECRET; credential
+`sb_secret_`, legacy Fly `fo1_`, `nfp_`, `dop_v1_`, Azure storage keys, GCP key ids) are SECRET
+(Fly's current `FlyV1 fm2_` tokens are not matched yet); credential
 dot-dirs under the home directory (aws, kube, gcloud, azure, docker credential folders) are PATH. Documented
 placeholders (`example`, `my-app`, `<project>`, AWS's sample account) never match. Real
 identifiers belong in local config or a private markers file, not in a public tree.
 
 Public repositories leak by accretion: a hardcoded corpus path in a test, a private venture name in a fixture, a working note with a real deal term. On 2026-07-17 an unmachined pull request initially shipped personal corpus paths and private repo/venture names into a public repo; a manual sanitize pass caught it only after review. This gate makes that check deterministic and mandatory.
 
-Before any commit or push to a public repository, run the changeset through `scripts/check-oss-leaks.sh` (staged diff by default; `--all` for the full tree; `--ref <range>` for commit ranges). Finding classes: SECRET (CRITICAL: private-key blocks, credential-shaped assignments, known token prefixes, connection strings with embedded passwords, JWT shapes, credential-named env lines), PATH (personal home paths, ssh/aws dot-dirs), INFRA (private IPv4 ranges, internal hostname suffixes, ssh destinations), PERSONAL (emails beyond the repo's git identity, phone shapes), and MARKER (operator-specific names). CRITICAL always fails; MAJOR fails unless `--warn-only`; `--allow <ere>` admits reviewed public-identity exceptions such as a maintainer handle or attribution email.
+Before any commit or push to a public repository, run the changeset through `scripts/check-oss-leaks.sh` (staged diff by default; `--all` for the full tree; `--ref <range>` for commit ranges). Finding classes: SECRET (CRITICAL: private-key blocks, credential-shaped assignments, known token prefixes, connection strings with embedded passwords, JWT shapes, credential-named env lines), PATH (personal home paths, ssh/aws dot-dirs), INFRA (private IPv4 ranges, internal hostname suffixes, ssh destinations), PERSONAL (emails beyond the repo's git identity, phone shapes), and MARKER (operator-specific names). CRITICAL always fails; MAJOR fails unless `--warn-only`; `--allow <ere>` admits reviewed public-identity exceptions such as a maintainer handle or attribution email. It drops every finding whose matched line text (not path) matches, CRITICAL classes included, so keep each pattern narrow and reviewed.
 
-The gate also catches obfuscated code-execution droppers from poisoned starter templates (class DROPPER, CRITICAL): a deobfuscation stage (base64, hex, `String.fromCharCode`, `\x`/`\u` escape runs, string-reversal, custom-alphabet or XOR) feeding a dynamic-execution sink (`eval`, `new Function`, `vm`, dynamic `import`, `child_process`, Python `exec`/`compile`, PowerShell encoded-command execution), fetch-then-exec shapes, decode-of-env/argv reaching a sink, and base64 blobs parked under env-var keys in committed env files. A finding needs the sink and an encoder/fetcher to co-occur, so a lone base64 blob, lone `eval`, or lone config never matches. This is a live starter-template supply-chain pattern, found in public repos on 2026-07-17. The gate adds an INVISIBLE_UNICODE class (CRITICAL) for zero-width, bidi, PUA, tag, and supplementary variation-selector codepoints - the GlassWorm (2025-10) class that hides executable text from human review and token scanners.
+The gate also catches obfuscated code-execution droppers from poisoned starter templates (class DROPPER, CRITICAL): a deobfuscation stage (base64, hex, `String.fromCharCode`, `\x`/`\u` escape runs, string-reversal, custom-alphabet or XOR) feeding a dynamic-execution sink (`eval`, `new Function`, `vm`, dynamic `import`, `child_process`, Python `exec`/`compile`, PowerShell encoded-command execution), fetch-then-exec shapes, decode-of-env/argv reaching a sink, and base64 blobs parked under env-var keys in committed env files. A finding needs the sink and an encoder/fetcher to co-occur, so a lone base64 blob, lone `eval`, or lone config never matches. This is a live starter-template supply-chain pattern, found in public repos on 2026-07-17. The gate adds an INVISIBLE_UNICODE class (CRITICAL) for zero-width, bidi, PUA, tag, and supplementary variation-selector codepoints - the GlassWorm (2025-10) class that hides executable text from human review and token scanners. The WORM class (CRITICAL) catches a JS payload appended to a committed build/CSS config (`postcss.config.mjs`, `tailwind.config.js`, `vite.config.*`): a `global['x']='N-dddd'` campaign-tag assignment, a 200+ space/tab run hiding code on one line, a 1000+ character config line, a javascript-obfuscator `_0x` scaffold, or a unicode-escaped `require()` module name.
 
 **Known Tier-1 limitation (deliberate, documented).** `check-oss-leaks.sh` is a *same-file* regex gate. The 2026-07-17 anchor incident's real payload was *cross-file* - a base64 URL parked in a committed `.env` under an env-var key, decoded and executed by a *separate* vite/vitest config. A single-file pattern cannot bridge that split, and the gate does not fake cross-file detection with a brittle heuristic: ENVB64 flags the `.env` carrier in isolation, and the config-side decode-to-sink is caught only when both stages share a file. Closing the config-to-`.env` gap is the job of Tier 2 - AST/dataflow taint that follows a decode source to an exec sink across files (Semgrep Pro / CodeQL), named as the future closure in `references/malware-detection.md` (dropper taxonomy, method-tiering, and false-positive doctrine) and `references/enforcement.md` (CI tiers). State the boundary; do not claim the regex closed it.
 
@@ -74,7 +75,7 @@ Human and AI-assisted contributions have the same acceptance contract: attributa
 
 ## Vulnerability operations
 
-- Publish `SECURITY.md` and enable private vulnerability reporting for eligible public repositories.
+- Publish `SECURITY.md` and enable private vulnerability reporting for eligible public repositories. A `.github/VULNERABILITY_REPORT.yml` form (issue-form syntax, 2026-10) can require the fields triage needs.
 - Triage privately, preserve reporter credit preference, establish affected versions, develop and validate the fix in the advisory/private fork, request a CVE when appropriate, and coordinate disclosure with a patched release.
 - Do not ask for exploit details in a public issue. Do not promise a response SLA the maintainer team cannot sustain.
 - Enable the dependency graph, Dependabot alerts/security updates, secret scanning/push protection and CodeQL/dependency review where available and proportionate. Document unavailable paid features rather than claiming coverage.
@@ -101,7 +102,7 @@ Use trends for decisions, not individual performance: untriaged issue age by sev
 
 ## Sources
 
-- [OpenSSF OSPS Baseline 2026.02.19](https://baseline.openssf.org/)
+- [OpenSSF OSPS Baseline 2026.02.19; current release v2026.08.28](https://baseline.openssf.org/)
 - [OpenSSF Scorecard checks](https://github.com/ossf/scorecard/blob/main/docs/checks.md)
 - [GitHub: repository security quickstart](https://docs.github.com/en/code-security/getting-started/quickstart-for-securing-your-repository)
 - [GitHub: CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)

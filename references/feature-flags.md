@@ -1,6 +1,6 @@
 # Feature flags: rollout and kill switches
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Controlled rollout without redeploy. Observability on flag evals:
 `observability.md`. Deploy process: `deploy-ops.md`.
@@ -13,7 +13,7 @@ Entitlements (paid plan): `billing-stripe.md` - **do not** use flags as the only
 - [Database flags (per org / user)](#database-flags-per-org--user)
 - [Percentage rollout](#percentage-rollout)
 - [Kill switch](#kill-switch)
-- [Vercel Flags / Edge Config](#vercel-flags--edge-config)
+- [Vercel Flags / Global Config](#vercel-flags--global-config)
 - [Flag lifecycle](#flag-lifecycle)
 - [Flags vs entitlements](#flags-vs-entitlements)
 - [Testing](#testing)
@@ -73,9 +73,10 @@ export async function DashboardPage() {
 create table public.feature_flags (
  key text not null,
  scope text not null check (scope in ('global', 'org', 'user')),
- scope_id uuid,
+ scope_id uuid, -- null only for global
  enabled boolean not null default false,
- primary key (key, scope, scope_id)
+ check ((scope = 'global') = (scope_id is null)),
+ unique nulls not distinct (key, scope, scope_id) -- PG15+; a primary key forces scope_id not null
 );
 
 alter table public.feature_flags enable row level security;
@@ -88,18 +89,23 @@ Server evaluation:
 ```typescript
 export async function isEnabled(key: string, ctx: { orgId?: string; userId: string }) {
  const supabase = await createClient();
+ const scopes = ["scope.eq.global", `and(scope.eq.user,scope_id.eq.${ctx.userId})`]; // ids from server auth only
+ if (ctx.orgId) scopes.push(`and(scope.eq.org,scope_id.eq.${ctx.orgId})`);
  const { data } = await supabase
  .from("feature_flags")
  .select("enabled")
  .eq("key", key)
- .or(`scope.eq.global,and(scope.eq.user,scope_id.eq.${ctx.userId})`)
+ .or(scopes.join(","))
+ .order("scope", { ascending: false }) // most specific wins: user > org > global
  .limit(1)
  .maybeSingle();
  return data?.enabled ?? false;
 }
 ```
 
-Cache with `unstable_cache` or React `cache()` - flags change rarely.
+Dedupe per request with React `cache()`. Cross-request: `'use cache'` + `cacheLife` (Next.js 16
+Cache Components; replaces `unstable_cache`) cannot read cookies - cache only cookie-free reads
+(e.g. global rows) and keep the TTL under the kill-switch SLA.
 
 ## Percentage rollout
 
@@ -108,7 +114,7 @@ Deterministic bucket by user id (stable across sessions):
 ```typescript
 function bucket(userId: string, key: string): number {
  const hash = crypto.createHash("sha256").update(`${key}:${userId}`).digest();
- return hash[0] % 100;
+ return hash.readUInt32BE(0) % 100; // not hash[0] % 100: one byte puts 58.6% in a "50%" rollout
 }
 
 export function isInRollout(userId: string, key: string, percent: number): boolean {
@@ -130,7 +136,7 @@ An ops flag default **on** (feature live) that can flip **off** without redeploy
 
 | Requirement | Detail |
 |---|---|
-| Fast read path | Edge Config / DB / flag SaaS - not a slow third-party on every request without cache |
+| Fast read path | Global Config / DB / flag SaaS - not a slow third-party on every request without cache |
 | Server enforce | Kill switch checked server-side for mutations, not only UI hide |
 | Owner + runbook | Who flips it; link from incident doc |
 | Default safe | Prefer fail-closed for money/AI spend paths when config missing |
@@ -144,13 +150,15 @@ if (!(await isEnabled("ai_export_v2", ctx))) {
 
 Do not wait for a full Vercel redeploy to stop a bleeding feature.
 
-## Vercel Flags / Edge Config
+## Vercel Flags / Global Config
 
 For Next.js on Vercel:
-- Define flags in dashboard or `flags.ts` with Vercel Flags SDK
-- Evaluate in middleware for route gating or in RSC for UI
-- Overrides via toolbar in preview deployments
-- Edge Config for low-latency kill switches
+- Define flags in the Vercel Flags dashboard (provider, GA 2026-04) or in `flags.ts` with the
+  Flags SDK (`flags` package, `flag()` from `flags/next`; `@vercel/flags` is the deprecated name)
+- Evaluate in Proxy (`proxy.ts`; Next.js 16 renamed `middleware`) for route gating and
+  `precompute`, or in RSC for UI
+- Overrides via Flags Explorer (Vercel Toolbar, needs `FLAGS_SECRET`) in preview deployments
+- Global Config (Edge Config until 2026-07; `@vercel/global-config`) for low-latency kill switches
 
 Use when non-engineers need instant kill without redeploy.
 

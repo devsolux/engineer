@@ -1,6 +1,6 @@
 # Company operating-system engineering
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `product-business-engineering.md`, `system-assurance.md`, `product-analytics.md`, `audit-log.md`, `compliance-privacy.md`
 
 Use this module when software, data, automation, or AI touches how a company is governed, led, staffed, financed, marketed, sold, secured, or held accountable. Engineer models the whole company so it can build the right system. It does not replace executives, the board, HR, finance, or qualified counsel.

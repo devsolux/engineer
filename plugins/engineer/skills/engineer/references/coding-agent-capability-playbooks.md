@@ -1,6 +1,6 @@
 # Coding-agent capability playbooks
 
-**Last verified**: 2026-08-19 · **Review cadence**: monthly
+**Last verified**: 2026-10-22 · **Review cadence**: monthly
 **Scope**: task-to-surface selection for Codex, Claude Code, and Hermes Agent
 **Related**: `coding-agent-hosts.md`, `multi-agent-orchestration.md`, `skill-behavior-evals.md`, `ai-security.md`
 
@@ -39,8 +39,8 @@ scope, authority, evidence, tests, cancellation, and completion.
 | Parallel independent work | native subagents or cloud tasks when exposed | background agents, worktrees, tmux, agent teams | subagents, worktrees, batch, kanban | Isolate writes and runtime identities; deterministic join |
 | Continue away from terminal | app/cloud/remote-control surface when exposed | Remote Control | gateway, API/ACP, persistent session | Remote client inherits local authority; authenticate and add a kill switch |
 | Deep pre-merge review | local `review`; cloud task only when justified | local review; UltraReview for substantial high-risk change | independent reviewer profile or bounded subagents | Reproduce findings; cloud data, cost, entitlement, and retention approved |
-| Clean-room diagnosis | ephemeral run, ignored user config/rules, strict config | safe mode or bare mode, depending on what must be removed | safe mode, ignored config/rules, isolated profile | Record what was excluded; clean configuration is not OS isolation |
-| Provider resilience | explicit profile/model; local provider only when intended | explicit model and print fallback | credential pools and fallback chain | Never silently change an eval, security boundary, cost class, or data destination |
+| Clean-room diagnosis | ephemeral run, ignored user config/rules, strict config | safe, bare, or restricted mode, depending on what must be removed | safe mode, ignored config/rules, isolated profile | Record what was excluded; clean configuration is not OS isolation |
+| Provider resilience | explicit profile/model; local provider only when intended | explicit model, `--fallback-model` chain, and `switchModelsOnFlag` | credential pools and fallback chain | Never silently change an eval, security boundary, cost class, or data destination |
 | Reusable extension | skill, plugin, MCP, rules/instructions, hooks | skill, plugin, MCP, subagent, hook, project memory | skill, bundle, plugin, MCP, hook, toolset | Pick by ownership and lifecycle; admit executable supply chain |
 
 Names describe currently observed or documented surfaces. Probe the installed version before use.
@@ -53,7 +53,7 @@ requirements genuinely force custom: a non-terminal/gateway surface, multi-provi
 persistent server-side sessions, or a product-embedded agent. Vendor guidance is interested on both
 sides; the neutral local datum is the deliberate split - engineer rides hosts, hermes builds custom -
 and hermes also shows what "full" costs (a large security surface plus monthly upgrade churn).
-Managed Agents and OSS harnesses now occupy the middle, so raw custom is rarely the first answer.
+Managed Agents (beta) and OSS harnesses now occupy the middle, so raw custom is rarely the first answer.
 Write the forcing requirement as one sentence and check it against the extension-surface table
 first; keep state in files/git and behavior in skills/MCP so the decision stays reversible.
 
@@ -61,18 +61,19 @@ first; keep state in files/git and behavior in skills/MCP so the decision stays 
 
 | Pattern | Event | Return channel |
 |---|---|---|
-| Format-on-edit, lint gate | PostToolUse (Edit\|Write) | exit 2 blocks; JSON parsed on exit 0 |
-| Dangerous-command deny, protected-path guard | PreToolUse (Bash/Edit) | `permissionDecision: "deny"` |
+| Format-on-edit, lint gate | PostToolUse (Edit\|Write) | exit 2 or `decision: "block"` returns feedback; the tool already ran |
+| Dangerous-command deny, protected-path guard | PreToolUse (Bash/Edit) | `permissionDecision: "deny"` or exit 2; Claude `onFailure: "block"` fails closed |
 | Context injection | SessionStart | stdout on exit 0 |
-| Completion gate - no "done" until verify + scan pass | Stop / SubagentStop | `decision: "block"` until green; no hook surface → same gate in CI |
+| Completion gate - no "done" until verify + scan pass | Stop / SubagentStop | `decision: "block"` until green (Claude caps Stop at 8 continuations in a row without a tool call); no hook surface → same gate in CI |
 
 ### Skill composition and plan surfaces
 
 Four composition shapes: skill→reference router (engineer itself), skill→skill delegation, command
 chain (the research → research-deep → research-report pipeline is the worked example), and the
-one-plugin bundle. Plan surface: native plan mode is read-only explore + approve and
-session-ephemeral; a file plan (`.engineer/plans/<slug>.json`) is the durable record for multi-file,
-cron, or cross-host work - carry plan-file references, never native plan state, in Portage packets.
+one-plugin bundle. Plan surface: native plan mode is read-only explore + approve with host-local plan
+files (Claude: `~/.claude/plans/`; unenforced where interactive bypass is available); a file plan
+(`.engineer/plans/<slug>.json`) is the durable record for multi-file, cron, or cross-host work -
+carry plan-file references, never native plan state, in Portage packets.
 
 ## Review ladder
 
@@ -86,7 +87,8 @@ cron, or cross-host work - carry plan-file references, never native plan state, 
    consensus are not proof.
 
 Never upload an unreviewed dirty tree, secrets, regulated data, customer content, or private fixtures to
-a remote review surface. Confirm the exact target and service policy first.
+a remote review surface; a branch UltraReview bundles uncommitted and staged changes. Confirm the exact
+target and service policy first.
 
 ## Long-running and remote continuation
 
@@ -119,9 +121,11 @@ Parallelize only when the critical path shrinks enough to justify coordination a
 
 Use a clean run to answer whether customization caused a failure.
 
-- Codex: pair ignored user configuration with strict parsing and ephemeral persistence where supported.
-- Claude: safe mode disables customizations broadly; bare mode is a minimal automation context. Treat
-  them as distinct experiment variants and record the effective instructions and tools.
+- Codex: pair ignored user configuration/rules with strict parsing and ephemeral persistence where
+  supported; `exec --worktree` rejects `--ephemeral` and `--ignore-user-config`.
+- Claude: safe mode disables customizations broadly; bare mode is a minimal automation context;
+  restricted mode also removes command-running tools and reads only managed and `--settings` settings.
+  Treat them as distinct experiment variants and record the effective instructions and tools.
 - Hermes: use safe/ignored-config modes plus an isolated profile or external terminal backend when the
   test also requires credential or filesystem separation.
 
@@ -155,8 +159,10 @@ Fallback improves availability but changes the evaluated system.
 4. For benchmarks and prompt optimization, pin one provider/model per paired arm. A fallback is an
    infrastructure event, not a valid substitute trial.
 5. Hermes credential pools may rotate credentials within one provider; fallback chains may change
-   providers. Both require redacted attempt evidence and quota-aware backoff. Claude's print fallback
-   and Codex profiles likewise need explicit binding.
+   providers and fire immediately on 401/403. Both require redacted attempt evidence and quota-aware
+   backoff. Claude's `--fallback-model` chain (per turn, subagents included) and Codex profiles
+   likewise need explicit binding. Claude also re-runs safety-flagged requests on another model and
+   stays there unless `switchModelsOnFlag: false` (`-p` then ends with a refusal; subagents still switch).
 
 ## Structured automation receipt
 

@@ -1,6 +1,6 @@
 # Product onboarding: activation UI patterns
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 Strategy: define activation event in `growth-funnels.md`. UX patterns: `design-patterns.md`.
 Emails: `email-notifications.md` (suppress onboarding when activated). Motion: `design-motion.md`.
@@ -27,7 +27,8 @@ Signup → minimal gate (email/OAuth)
  → celebrate + suggest next habit action
 ```
 
-Target: activation in **first session** (<15 min TTV). See growth-funnels benchmarks.
+Target: activation in **first session** for simple tools (<15 min TTV is a heuristic, not a
+benchmark; Userpilot measures ~1.5 days for PLG and SLG). Tiers and benchmarks: `growth-funnels.md`.
 
 ## Empty states as primary surface
 
@@ -84,7 +85,8 @@ const items = [
 // complete when server state true - not localStorage-only checkmarks
 ```
 
-Research cue: many users activate without finishing checklists - measure **activation**, not checklist 100%.
+Research cue: average checklist completion is ~19% (Userpilot), well below typical activation
+rates (`growth-funnels.md`) - measure **activation**, not checklist 100%.
 
 ## Setup wizard vs checklist
 
@@ -144,7 +146,7 @@ Fire events at onboarding boundaries:
 ```typescript
 track(Events.SIGNUP_COMPLETED);
 track(Events.ACTIVATION_COMPLETED, { method: "create_project" });
-track(Events.ONBOARDING_STEP, { step: "invite_teammate", completed: true });
+track(Events.ONBOARDING_STEP_COMPLETED, { step: "invite_teammate" });
 ```
 
 Define activation event with growth/founder before building UI.

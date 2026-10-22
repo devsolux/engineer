@@ -1,6 +1,6 @@
 # PRD to evidence
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 Use this module when a request is large enough that implementation can drift from intent.
 

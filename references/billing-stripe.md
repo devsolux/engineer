@@ -169,7 +169,7 @@ if (!canUseFeatureX) return <UpgradePrompt feature="Feature X" />;
 | Event | Action |
 |---|---|
 | `checkout.session.completed` | Link customer, create subscription row |
-| `customer.subscription.updated` | Sync status, period_end, price |
+| `customer.subscription.updated` | Sync status, price, and period end from the subscription item (`items.data[].current_period_end` since `2025-03-31.basil`) |
 | `customer.subscription.deleted` | Mark canceled |
 | `invoice.payment_failed` | Mark past_due, notify user |
 

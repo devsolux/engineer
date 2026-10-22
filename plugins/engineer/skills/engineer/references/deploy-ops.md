@@ -1,6 +1,6 @@
 # Deploy & operations: Vercel, envs, releases
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Compose with gstack `/ship` for PR/release ritual and `/canary` for post-deploy watch.
 See `enforcement.md` for CI; `workflows.md` for ship loop always-ask on prod.
@@ -51,9 +51,9 @@ vercel env pull .env.local
 ```
 
 Build settings:
-- Node 26 (Active LTS from 2026-10-28) or Node 24 (Maintenance LTS until 2028-04-30); Node 20 is end-of-life. Confirm the provider runtime supports the pinned major before changing it
+- Node 24 (Maintenance LTS until 2028-04-30; Vercel's default, 22.x also offered) or Node 26 (Active LTS from 2026-10-28) only once the provider runtime lists it (Vercel Builds/Functions do not yet); Node 20 is end-of-life (Vercel deprecated it 2026-10-01). Confirm the provider runtime supports the pinned major before changing it
 - `npm run build` must pass locally first
-- Enable Vercel Analytics / Speed Insights for CWV
+- Enable Vercel Speed Insights for CWV (per-metric vitals need Speed Insights Plus); Web Analytics for traffic
 
 ## Database migrations on deploy
 
@@ -76,11 +76,11 @@ Never deploy code requiring new columns before migration runs.
 
 Preview deploys:
 - Use Supabase **branch** or isolated staging project
-- Stripe **test mode** keys only
+- Stripe **sandbox** (`*_test_`) keys only
 - Disable or sandbox outbound email
 - Don't use production webhook endpoints (Stripe CLI for local)
 
-Protect preview URLs if sensitive: Vercel authentication or IP allowlist.
+Protect preview URLs if sensitive: Deployment Protection with Vercel Authentication (all plans), Password Protection (Pro add-on) or Trusted IPs (Enterprise).
 
 ## Rust service deploy
 
@@ -102,7 +102,7 @@ Env: `DATABASE_URL`, JWT secret for auth from Next gateway.
 
 ## Rollback
 
-Vercel: **instant rollback** to previous deployment in dashboard.
+Vercel: **Instant Rollback** to a previous production deployment in dashboard (Hobby: immediately previous only). It serves that build with its original env vars and turns off production-domain auto-assignment; undo the rollback or `vercel promote` before pushes go live again.
 
 If migration was applied:
 - App rollback alone may be insufficient
@@ -117,7 +117,7 @@ Post-deploy smoke (5-15 min):
 - [ ] Login / signup works
 - [ ] Critical API/Action path works (activation path if product change)
 - [ ] Stripe webhook endpoint healthy (signed test or dashboard deliveries)
-- [ ] Security headers present (securityheaders.com)
+- [ ] Security headers present (`curl -sI <prod-url>`; CSP, HSTS)
 - [ ] No spike in Sentry errors / new issue cluster (observability.md)
 - [ ] Health endpoints if any: /api/health or service /health/ready
 - [ ] gstack /canary against production URL when available

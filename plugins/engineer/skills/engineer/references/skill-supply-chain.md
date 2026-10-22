@@ -1,6 +1,6 @@
 # Agent skill supply chain
 
-**Last verified**: 2026-07-16 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months
 
 Use this module before installing or trusting a third-party skill, plugin, hook, MCP server,
 package runner, installer, or bundled model. A skill is executable influence, even when it contains
@@ -52,14 +52,18 @@ spec-to-code comparison - then reproduce findings in the project test and threat
 - Never pipe a network response into a shell or interpreter.
 - Prefer `pnpm exec`, `npm exec --offline`, or equivalent local locked binaries.
 - Do not use floating `latest` package runners in instructions or CI.
-- Pin GitHub Actions to a full 40-character commit SHA and annotate the reviewed release.
+- Pin GitHub Actions to a full 40-character commit SHA and annotate the reviewed release. GitHub's
+  workflow dependency lockfile (`.github/workflows/actions.lock`, public preview) also pins transitive
+  actions and supersedes SHA pins where adopted; the repository gate below still requires SHA pins.
 - Treat installer signatures, checksums, and attestations as provenance evidence, not behavior proof.
 - A scanner pass is one layer. Semantic instruction review and runtime observation remain required.
-- Plugins bundle `hooks/hooks.json` and `.mcp.json` that run code behind the project trust gate -
-  personal-scope plugins have no such gate, and `allowed-tools` is not enforced on every host, so
-  admission reviews the bundled code itself. Cross-host exposure is real: Grok executes cross-read
-  Claude-format hooks/plugins, making a Claude-scoped hook Grok attack surface too. Symlinked skills
-  can bypass digest-walk admission gates (measured locally, 2026-07-16); pin gates must resolve symlinks.
+- Plugins bundle `hooks/hooks.json`, `.mcp.json`, `.lsp.json`, monitors, and `bin/` executables that
+  run code behind the project trust gate - personal-scope plugins have no such gate, and `allowed-tools`
+  is not enforced on every host, so admission reviews the bundled code itself. Cross-host exposure is
+  real: Grok Build reads and runs Claude-format hooks and plugins, and Cursor imports
+  `.claude/settings*.json` hooks by default, so a Claude-scoped hook is their attack surface too.
+  Hosts such as Codex follow symlinked skill folders, so symlinked skills can bypass digest-walk
+  admission gates (measured locally, 2026-07-16); pin gates must resolve symlinks.
 
 Run the repository gate:
 
@@ -79,7 +83,8 @@ out of scope so warnings remain actionable.
   over a cloned template as part of admission (`malware-detection.md` for the taxonomy).
 - **Always-read scan surfaces** (read in full, do not skim): build/test config (`vite`/`vitest`/
   `webpack`/`rollup`/`next`), test setup, `.husky/*` + `.git/hooks/*`, `package.json` scripts,
-  `.github/workflows/*`, `.vscode/`, `.devcontainer`, `.cursor/rules`, `AGENTS*`, `.mcp.json`.
+  `.github/workflows/*`, `.vscode/`, `.devcontainer`, `.claude/settings*.json`, `.cursor/rules` +
+  `.cursor/hooks.json`, `.grok/hooks/`, `AGENTS*`, `.mcp.json`.
 - **Tool-description linter class**: a tool description that should be declarative but carries
   imperatives, credential/file-path references, hidden unicode/ANSI, or another server's tool
   names is a poisoning/shadowing signal - flag it (see `mcp-security.md`).

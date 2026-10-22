@@ -1,6 +1,6 @@
 # Frontend state: what goes where (2026)
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -53,7 +53,8 @@ const { data } = useQuery({
 
 Rules:
 - Don't duplicate RSC-fetched data in Query unless client needs live updates
-- Invalidate via `queryClient.invalidateQueries` after Server Action mutations
+- Invalidate via `queryClient.invalidateQueries` after Server Action mutations;
+ the action still expires cached server reads (`updateTag` / `revalidateTag`)
 - Never store API responses in `useState` without Query/cache layer
 
 ## URL state
@@ -115,7 +116,7 @@ interface UiStore {
  toggleSidebar: () => void;
 }
 
-export const useUiStore = create<UiStore>((set) => ({
+export const useUiStore = create<UiStore>()((set) => ({
  sidebarOpen: true,
  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 }));

@@ -1,6 +1,6 @@
 # Behavioral skill evaluations
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Use this module when a skill change needs evidence that a real agent followed the skill. Static
 bank validation remains useful, but it is specification lint, not a behavioral result.
@@ -154,7 +154,8 @@ Captured execution uses direct API-key automation only: `CODEX_API_KEY` for Code
 `CLAUDE_CONFIG_DIR`, never passes the real home/config location, cached OAuth state, keyring access,
 other provider credentials, or unrelated environment values, and deletes the temporary home after the
 process exits. Codex also keeps `shell_environment_policy.inherit=none`, disables cached web
-search explicitly, and installs the bundle at `$CODEX_HOME/skills/engineer`. Claude bare mode skips
+search explicitly, and installs the bundle at `$CODEX_HOME/skills/engineer` (a deprecated user root
+Codex still scans for compatibility; current docs list `$HOME/.agents/skills`). Claude bare mode skips
 keychain reads. Missing API-key auth fails before model launch. The provider process necessarily receives
 its own API key; use a short-lived, least-privilege project key and external runner isolation for stronger
 credential guarantees.
@@ -162,7 +163,7 @@ credential guarantees.
 Claude jobs expose exactly Read, Glob, and Grep as logical tools, but the CLI must not receive bare
 `Read`, `Glob`, or `Grep` allow rules. Bare `Read` means all file reads. The adapter instead grants
 `Read(./**)`; Claude applies Read rules best-effort to Glob and Grep, checks both symlink and resolved
-target, and `dontAsk` denies access that is not pre-approved. Bash, Edit, Write, web tools, Agent, and
+target, and `dontAsk` denies any call that would otherwise prompt. Bash, Edit, Write, web tools, Agent, and
 NotebookEdit are denied. The only explicit plugin is a temporary `engineer-eval` package invoked as
 `/engineer-eval:engineer`; hooks, auto-memory, unrelated plugins, MCP discovery, keychain reads, and session
 persistence remain absent under the bare adapter. It is a host-enforced tool boundary,
@@ -217,6 +218,8 @@ required response marker. An implicit arm contains no `$engineer`, `/engineer`, 
 The marker must occur exactly once in final output or capture fails. A valid occurrence proves the reviewed body was
 loaded under the local compiler contract; it does not prove provider honesty, instruction compliance
 beyond the marker, or task quality. Evaluate task behavior separately and compare paired arms.
+From Claude Code 2.1.286, `--bare` sends the model no system reminders, so it never receives the skill
+list; a Claude implicit arm under this bare adapter has nothing to route from and is not routing evidence.
 
 The launcher emits a schema-v5 `capture.json` and immediately invokes
 `validate-skill-eval-capture.py`. That validator binds the exact job, host evidence, execution result,

@@ -1,6 +1,6 @@
 # Autonomous experimentation
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Scope**: bounded, measurable code or configuration experiments run by an agent
 **Related**: `prompt-optimization.md`, `agentic-engineering.md`, `workflows.md`, `ai-security.md`
 

@@ -172,4 +172,6 @@ from the run logs and a local reproduction:
 | Linux (three lanes) | `test-host-activation.sh` | `install-host-activation.py --remove` leaves 1-byte files behind. The test's `[[ ! -e … ]]` assertion catches it under the runners' bash 5; this Mac's bash 3.2.57 does not stop on a failing `[[ … ]]` under `set -e`, so the suite passed locally |
 | macOS | `test-repo-validation.sh` | Exceeded the 180-second per-suite limit on the GitHub macOS runner (about 57 seconds on this machine) |
 
-The fixes are recorded in the CHANGELOG "Unreleased" section. CI on the fixed tree has not run yet.
+The fixes are recorded in the CHANGELOG "Unreleased" section. CI run 39758633347 on 022fdf5 passed on
+all four lanes: Ubuntu with Python 3.10, TypeScript 5.8.3 and Node 24; Ubuntu with Python 3.13,
+TypeScript 7.0.2 and Node 24 or Node 26; macOS with Python 3.13, TypeScript 7.0.2 and Node 24.

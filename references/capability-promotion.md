@@ -1,6 +1,6 @@
 # Capability promotion: turn recurring work into the right reusable asset
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 Load for recurring workflows, repeated corrections, capability gaps, requests to create or improve
 a skill, or telemetry showing a stable failure cluster. Compose with `skill-authoring.md`,
@@ -151,7 +151,8 @@ Next action: [continue task, draft, build, evaluate, install, or retire]
 ## Primary sources
 
 - OpenAI Skills: reusable workflows, automatic relevance selection, skill-creator composition, and
-  Agent Skills portability: https://help.openai.com/en/articles/20001066-skills-in-chatgpt
+  Agent Skills portability: https://help.openai.com/en/articles/20001066-skills-in-chatgpt and
+  https://learn.chatgpt.com/docs/build-skills
 - Anthropic Agent Skills overview and progressive disclosure:
   https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview
 - Anthropic enterprise skill governance: trigger, isolation, coexistence, instruction, output,

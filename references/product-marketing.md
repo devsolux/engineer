@@ -1,6 +1,6 @@
 # Product marketing implementation
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `conversion-ui.md`, `seo-metadata.md`, `web-discovery-engineering.md`, `growth-funnels.md`, `product-analytics.md`
 
 This module turns an accepted positioning/offer into product surfaces and evidence.

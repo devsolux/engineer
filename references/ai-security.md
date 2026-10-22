@@ -1,12 +1,12 @@
 # AI security boundary (tools, MCP, skills, traces)
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Complements `backend-security.md` (headers/CSP/app hardening) and `backend-auth.md`.
 For deep archaeology before high-risk ship, also run **gstack cso**.
 
 Research: `research/security-research.md` + `research/mcp-security-2026-07.md`
-Industry: [OWASP MCP Top 10](https://cycode.com/blog/owasp-mcp-top-10/), OWASP LLM Top 10 (LLM01:2025 Prompt Injection), and **OWASP Top 10 for Agentic Applications 2026** (ASI01 Goal Hijack, published 2025-12-09) - the agentic taxonomy, not just the LLM one.
+Industry: [OWASP MCP Top 10](https://owasp.org/www-project-mcp-top-10/), OWASP LLM Top 10 (LLM01:2025 Prompt Injection), and **OWASP Top 10 for Agentic Applications for 2026** (ASI01 Agent Goal Hijack, published 2025-12-09) - the agentic taxonomy, not just the LLM one.
 
 ## Contents
 - [When to load](#when-to-load)
@@ -45,11 +45,12 @@ App RLS and `getUser()` still apply. AI is **not** a security boundary by itself
 Treat indirect prompt injection as an open security problem. Do not depend on instruction
 wording or a single content classifier. Engineer against the **lethal trifecta** by name
 (Willison 2025: private data + untrusted content + external-comms sink) and apply **Meta's
-Agents Rule of Two** as a per-session capability budget - grant at most two of those three at
-once. Reduce the dangerous intersection with sandboxing, network policy, scoped credentials,
-explicit destinations, confirmation at trust-boundary crossings, and adversarial trajectory
-evals. Concrete 2025 defenses that operationalize this: CaMeL, spotlighting / Prompt Shields,
-and Trail of Bits `mcp-context-protector`.
+Agents Rule of Two** as a per-session capability budget - grant at most two of untrusted input,
+sensitive data/systems, and state change or external comms at once. Reduce the dangerous
+intersection with sandboxing, network policy, scoped credentials, explicit destinations,
+confirmation at trust-boundary crossings, and adversarial trajectory evals. Concrete defenses
+that operationalize this: CaMeL (2025), spotlighting (2024 paper) / Prompt Shields, and Trail
+of Bits `mcp-context-protector` (2025).
 
 **Coordination-bus injection surface.** The user's own `~/.claude/CLAUDE.md` can wire in a
 notification-ring `bus pull` step. Any ring/mailbox/tool output is an untrusted channel: wrap it as

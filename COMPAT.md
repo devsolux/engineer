@@ -15,7 +15,8 @@
 Re-checked 2026-10-22: Node 24 moved to Maintenance LTS on 2026-10-20 and Node 26 becomes
 Active LTS on 2026-10-28 (both run in CI); Claude Code 2.1.307 and Codex 0.164.0-alpha.10 are
 current upstream, while the strict host validation below was last executed on the versions
-listed. See the 2026-10-22 ledger for sources.
+listed. See the 2026-10-22 ledger for sources. Python 3.10 reached end-of-life on 2026-10-01
+(devguide.python.org); the 3.10 floor and CI lane stay until a maintainer raises them.
 
 GNU Make 3.81 ignores `.SHELLFLAGS`; recipes still fail on any nonzero command, but
 3.82+ additionally applies `set -euo pipefail` inside each recipe line.
@@ -42,7 +43,8 @@ web, mobile, account tier, or execution mode. See the verification source ledger
 
 ## Consumer guidance, not bundled runtime dependencies
 
-Next.js 16.x is Active LTS; 15.x reached end-of-life on 2026-10-21 (checked 2026-10-22).
+Next.js 16.x is Active LTS; 15.x reached end-of-life on 2026-10-21 (checked 2026-10-22), the end of
+the support policy's two-year Maintenance LTS window; the policy page still listed 15.x that day.
 Detected Next 15 apps keep their conventions and get an upgrade item; their request
 boundaries should not be renamed blindly to Next 16's `proxy.ts`. React, Tailwind, Supabase, Zod, Stripe, and Playwright examples must be
 adapted to the target application's installed and patched versions.
@@ -73,5 +75,6 @@ stubs, not an installed browser or production application. Model quality,
 marketplace review, host permissions, and live workflow success need separate
 captured evidence. `research/` dates are not refreshed by a release bump.
 
-Sources and exact review scope: [2026-10-11 ledger](docs/verification-2026-10-11.md) and
-[2026-10-22 ledger](docs/verification-2026-10-22.md).
+Sources and exact review scope: [2026-10-11 ledger](docs/verification-2026-10-11.md),
+[2026-10-22 ledger](docs/verification-2026-10-22.md) and
+[2026-10-22 module ledger](docs/verification-2026-10-22-modules.md).

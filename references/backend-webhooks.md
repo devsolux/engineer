@@ -1,6 +1,6 @@
 # Backend webhooks: Stripe, idempotency, Edge Functions
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Inbound webhooks are untrusted until verified. Process fast, side effects safely.
 
@@ -85,7 +85,11 @@ Rules:
 - **Raw body** for signature verification
 - **Webhook secret** from env - never client-exposed
 - Return **500** on processing failure (Stripe retries)
-- Return **400** on bad signature (don't retry junk)
+- Return **400** on bad signature (Stripe retries every non-2xx, so a steady 400 from real
+  Stripe traffic means a wrong `whsec_` or a mutated body)
+- Signature tolerance defaults to 300 s; never pass `0` (disables the replay check)
+- `constructEvent` handles **snapshot** destinations; **thin** destinations (Stripe's
+  recommendation for new integrations) use `stripe.parseEventNotification()` + `fetchRelatedObject()`
 - Handle events you subscribe to; ignore unknown types safely
 
 ## Idempotency
@@ -105,21 +109,24 @@ export async function processStripeEvent(event: Stripe.Event) {
 
  if (existing) return; // already processed
 
- await supabase.from("stripe_events").insert({
- event_id: event.id,
- type: event.type,
- });
-
  switch (event.type) {
  case "checkout.session.completed":
  await handleCheckoutCompleted(event);
  break;
  // ...
  }
+
+ // Log only after success: a throw → 500 → Stripe retry reprocesses.
+ // unique(event_id) + upsert-style handlers absorb concurrent duplicates.
+ await supabase.from("stripe_events").insert({
+ event_id: event.id,
+ type: event.type,
+ });
 }
 ```
 
-Alternative: Redis `SET event.id NX EX 86400` for short TTL lock.
+Alternative: Redis `SET evt:<event.id> 1 NX EX 259200` as an in-flight lock (delete on
+failure; TTL covers Stripe's 3-day live retry window).
 
 For Stripe **API calls** (not webhooks), pass `idempotencyKey` on mutating requests.
 
@@ -127,10 +134,13 @@ For Stripe **API calls** (not webhooks), pass `idempotencyKey` on mutating reque
 
 ```
 checkout.session.completed → create/update subscription row
-customer.subscription.updated → sync status, period_end
+customer.subscription.updated → sync status, items.data[].current_period_end (since 2025-03-31.basil)
 customer.subscription.deleted → mark canceled
 invoice.payment_failed → notify + grace period logic
 ```
+
+Stripe does not guarantee delivery order, and `created` cannot order events: re-fetch the
+subscription before writing state instead of trusting arrival order.
 
 Single source of truth: Stripe for billing state; Supabase for app entitlements.
 Sync via webhooks - don't poll Stripe from client.
@@ -155,15 +165,16 @@ Use when:
 
 ```typescript
 // supabase/functions/process-job/index.ts
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 Deno.serve(async (req) => {
  const authHeader = req.headers.get("Authorization");
  // Verify service token or signed payload - never open endpoint
 
+ const secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS")!); // legacy: SUPABASE_SERVICE_ROLE_KEY
  const supabase = createClient(
  Deno.env.get("SUPABASE_URL")!,
- Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+ secretKeys["default"]
  );
 
  // ... job logic
@@ -174,14 +185,18 @@ Deno.serve(async (req) => {
 ```
 
 Rules:
-- Verify caller (JWT, shared secret, Supabase signed request)
-- Service role in Edge Function env only - never in client bundle
+- Verify caller (JWT: `verify_jwt` is on by default; set it `false` only for a third-party
+  webhook and verify its signature instead, e.g. Standard Webhooks for Supabase Auth hooks)
+- Stripe in Deno: `await stripe.webhooks.constructEventAsync(body, sig, secret, undefined,
+  Stripe.createSubtleCryptoProvider())` (Web Crypto is async-only; sync `constructEvent` throws)
+- Secret key (legacy service role) in Edge Function env only - never in client bundle
 - CORS locked if browser-accessible (prefer server-to-server)
 
 ## Other webhook providers
 
 Same pattern:
-- Verify signature (provider-specific)
+- Verify signature (provider-specific; Standard Webhooks senders sign
+  `webhook-id.webhook-timestamp.body` into `webhook-signature` and keep `webhook-id` stable across retries)
 - Zod validate payload subset you use
 - Idempotency on provider event ID
 - 200 fast; async for heavy work
@@ -202,7 +217,7 @@ Delegate gstack `/cso` before shipping payment webhooks. See `enforcement.md`.
 - `req.json()` before Stripe signature verify (breaks HMAC)
 - No idempotency (double charges, duplicate emails)
 - 200 on processing failure (Stripe won't retry)
-- Service role key in Edge Function exposed to browser
+- Secret (service role) key in Edge Function exposed to browser
 - Syncing subscription state from client Stripe calls
 - Webhook endpoint with no auth/signature verification
 - Storing full card data (PCI - use Stripe Elements/Checkout)

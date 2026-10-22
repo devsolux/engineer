@@ -1,6 +1,6 @@
 # System assurance: goals to runtime truth
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `product-business-engineering.md`, `prd-to-evidence.md`, `api-data-flows.md`,
 `frontend-testing.md`, `backend-testing.md`, `browser-qa.md`, `observability.md`
 

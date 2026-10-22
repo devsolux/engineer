@@ -1,6 +1,6 @@
 # Postgres full-text search (FTS)
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 Keyword search with `tsvector` / `tsquery` on Supabase/Postgres.
 Load with `backend-database.md` (RLS), `backend-multitenant.md` (org scope),
@@ -10,7 +10,7 @@ Load with `backend-database.md` (RLS), `backend-multitenant.md` (org scope),
 
 | Need | Prefer |
 |---|---|
-| Exact tokens, product names, emails, codes | **FTS** (or `ILIKE` only for tiny tables) |
+| Exact tokens, product names, emails, codes | **FTS** (substrings: `ILIKE` + `pg_trgm` GIN index; unindexed `ILIKE` only for tiny tables) |
 | Synonyms / natural language questions | **pgvector** RAG |
 | Both keyword and meaning | Hybrid: FTS filter/rank + vector re-rank (or RRF) |
 
@@ -43,7 +43,7 @@ create index articles_search_vector_gin
 -- RLS already on articles; search does not bypass it
 ```
 
-If the table is huge and writes are hot, a trigger-maintained column is fine; generated columns keep the mental model simple.
+If the table is huge and writes are hot, a trigger-maintained column is fine; generated columns keep the mental model simple (keep `stored`: PostgreSQL 18 defaults generated columns to virtual).
 
 ## Query sketch
 
@@ -85,13 +85,13 @@ App rules:
 ## Security
 
 - FTS results still go through **RLS**
-- Do not expose rows from other orgs via a SECURITY DEFINER search RPC without membership checks
+- Keep search RPCs `security invoker` (the Postgres default) so RLS applies; never a SECURITY DEFINER search RPC in an exposed schema or without membership checks
 - Rate-limit search endpoints (abuse + cost)
-- Avoid reflecting raw query strings unescaped into HTML headlines
+- `ts_headline` output is not XSS-safe: sanitize it; never reflect raw query strings unescaped into HTML
 
 ## Caching
 
-- Shared public search: possible with `use cache` + query hash tags
+- Shared public search: possible with `use cache` + query hash tags (setup and flags: `data-layer.md`)
 - Private tenant search: pass `orgId` into cache keys or skip shared cache
 - Invalidate content tags on article write (`cache-tags.ts` `content` / `ragSource`)
 
@@ -103,7 +103,7 @@ App rules:
 
 ## Anti-patterns
 
-- `ILIKE '%q%'` on large tables as the long-term search plan
+- Unindexed `ILIKE '%q%'` (no `pg_trgm` index) on large tables as the long-term search plan
 - Computing `to_tsvector` on every request over multi-column expressions
 - Unbounded result sets without `LIMIT`
 - Elasticsearch for a 10k-row catalog "because search"

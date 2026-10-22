@@ -1,6 +1,6 @@
 # Enforcement: how to make engineer rules stick
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 **Related**: `enforcement-rules.md` (the exact rule catalog: scanner rules, lint configs, grep gates, rule→enforcement maps)
 
 Rules without enforcement decay. Use **four tiers** - each catches what the
@@ -96,7 +96,7 @@ Copy-paste starter: `templates/package-scripts.snippet.json`
 ### Husky + lint-staged
 
 ```bash
-npm install --save-dev --save-exact husky@9.1.7 lint-staged@17.0.8
+npm install --save-dev --save-exact husky@9.1.7 lint-staged@17.6.0
 npm exec --offline -- husky init
 ```
 
@@ -107,9 +107,6 @@ npm exec --offline -- husky init
  "*.{ts,tsx}": [
  "eslint --fix --max-warnings=0",
  "prettier --write"
- ],
- "supabase/migrations/*.sql": [
- "bash scripts/check-rls-migration.sh"
  ]
  }
 }
@@ -119,8 +116,12 @@ npm exec --offline -- husky init
 # .husky/pre-commit
 npm run typecheck
 npm exec --offline -- lint-staged
+bash scripts/check-rls-migration.sh supabase/migrations
 npm run engineer:scan
 ```
+
+`check-rls-migration.sh` takes the migrations **directory**. Do not put it in lint-staged or pass
+a `*.sql` glob: both hand it file paths, and it skips with exit 0 ("No migrations dir").
 
 ```bash
 # .husky/pre-push (heavier checks)
@@ -157,24 +158,30 @@ Server Action auth grep for this pipeline: `enforcement-rules.md`.
 
 ### Supply-chain job (2025-2026 attack class)
 
-- Install with a **frozen lockfile** and `--ignore-scripts` (pnpm `onlyBuiltDependencies` /
-  Bun `trustedDependencies` equivalents); fail on any lifecycle script not on a committed
+- Install with a **frozen lockfile** and `--ignore-scripts` (npm `allowScripts`, default-deny
+  since npm 12 / pnpm `allowBuilds`, which replaced `onlyBuiltDependencies` in pnpm 11 / Bun
+  `trustedDependencies` equivalents); fail on any lifecycle script not on a committed
   allowlist.
 - Provenance-verify step: `npm audit signatures` / `gh attestation verify`; report coverage and
   flag an unexpected build path or a newly-absent attestation on a critical dep. Do not fail on
   mere absence.
-- SHA-pin every third-party Action to a full 40-char commit (not a mutable tag); forbid
-  `pull_request_target`/`workflow_run` workflows that check out fork code or reference repository
-  secrets (`scan-doc-supply-chain.py` rules `privileged-trigger-fork-checkout` and
+- SHA-pin every third-party Action to a full 40-char commit (not a mutable tag). GitHub's
+  workflow dependency lockfile (`.github/workflows/actions.lock`, public preview since
+  2026-10-14) also pins transitive actions; `scan-doc-supply-chain.py` still requires SHA pins.
+- Forbid `pull_request_target`/`workflow_run` workflows that check out fork code or reference
+  repository secrets (`scan-doc-supply-chain.py` rules `privileged-trigger-fork-checkout` and
   `privileged-trigger-secrets`; `GITHUB_TOKEN`, bounded by `permissions:`, is exempt). Move secret
   use to a separate approval-gated job. Each YAML fence in docs is scanned as its own workflow.
+  `actions/checkout` v7 refuses that checkout unless `allow-unsafe-pr-checkout: true`; treat that
+  input as a blocking review finding.
 - Dependency hygiene rationale and package-manager defaults: `backend-security.md`.
 
 ### Layer the secrets job (a clean scan does not clear a public push)
 
 Pre-commit (`check-oss-leaks.sh` SECRET class / gitleaks, network-free) -> CI (gitleaks in the
-template's `secrets` job; TruffleHog `--only-verified` as an optional second scanner that fails
-on live secrets) -> server-side (GitHub push protection). A clean SECRET
+template's `secrets` job, which needs a free `GITLEAKS_LICENSE` secret on organization-owned
+repos; TruffleHog `--results=verified --fail` as an optional second scanner that fails on live
+secrets) -> server-side (GitHub push protection). A clean SECRET
 scan does **not** clear a public push: the anchor's base64 URL is a *dropper indicator, not a
 credential* - run the DROPPER/ENVB64/INVISIBLE_UNICODE pass (`check-oss-leaks.sh`) too.
 
@@ -192,10 +199,13 @@ is a gated triage signal - path-excluded, capability-correlated, allowlisted - n
 ### Bundle budget (optional)
 
 ```yaml
- - run: ANALYZE=true npm run build
+ - run: npm run build
  - name: Check bundle size
  run: npx size-limit
 ```
+
+To see what grew: `next analyze` (Turbopack, Next.js 16.1+); `ANALYZE=true` with
+`@next/bundle-analyzer` covers webpack builds only.
 
 ---
 
@@ -203,7 +213,7 @@ is a gated triage signal - path-excluded, capability-correlated, allowlisted - n
 
 | Signal | Tool | Action |
 |---|---|---|
-| CWV regression | Vercel Analytics / CrUX | Alert on LCP/INP/CLS threshold breach |
+| CWV regression | Vercel Speed Insights / CrUX | Alert on LCP/INP/CLS threshold breach |
 | Runtime errors | Sentry / Axiom | Pager on mutation failure spike |
 | Auth anomalies | Supabase Auth logs | Alert on failed login burst |
 | RLS bypass attempt | Postgres logs | Audit service_role usage |

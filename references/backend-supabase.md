@@ -1,6 +1,6 @@
 # Backend: Supabase, auth, API - router
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Router for backend implementation. Deep dives in sibling modules:
 
@@ -26,7 +26,7 @@ Full research corpus: `research/backend-research.md`
 ### Stack layout
 
 ```
-lib/supabase/ # client, server, middleware
+lib/supabase/ # client, server, proxy (Next <=15: middleware)
 lib/dal/ # server-only data access (optional)
 features/*/actions.ts # Server Actions colocated
 features/*/schema.ts # Zod shared client + server
@@ -42,14 +42,14 @@ Rate limit (if sensitive)
  → getUser() / verify token
  → Authorize (RLS + explicit)
  → Mutate
- → updateTag (Action) or revalidateTag (Handler)
+ → updateTag (Action) or revalidateTag(tag, profile) (Handler)
 ```
 
 ### Security layers (defense in depth)
 
 | Layer | Enforces |
 |---|---|
-| Middleware | Session refresh; optional route gate |
+| Proxy (`middleware.ts` before Next 16) | Session refresh; optional route gate |
 | Server Action/Handler | Auth + validation + rate limit |
 | Supabase RLS | Row access in Postgres |
 | Zod | Input shape at TS boundary |
@@ -57,10 +57,11 @@ Rate limit (if sensitive)
 ### Hard gates
 
 - RLS on every `public` table (+ storage buckets)
-- `getUser()` on server mutations - not `getSession()` alone
-- Middleware `getAll` + `setAll` on cookies
+- Explicit per-role `grant`s in the RLS migration (new `public` tables are not auto-exposed to the Data API; all projects from 2026-10-30)
+- `getUser()` on server mutations (`getClaims()` for gates) - not `getSession()` alone
+- Proxy/middleware `getAll` + `setAll` on cookies; forward `setAll` cache headers
 - Zod on every external input
-- Service role server-only
+- Secret key (`sb_secret_`; legacy `service_role`) server-only
 - Webhook signature verify before parse
 - Idempotency on payment/subscription events
 

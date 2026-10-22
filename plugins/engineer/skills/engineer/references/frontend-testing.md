@@ -1,6 +1,6 @@
 # Frontend testing: Vitest, RTL, Playwright
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -59,7 +59,7 @@ Ready-made fail-closed lane projects live in **`templates/playwright/`**:
 | `auth.setup.ts` | Login once → `playwright/.auth/user.json` (Supabase cookie style) |
 | `public/smoke.spec.ts` | Unauth marketing / login reachable |
 | `auth/read/app.spec.ts` | Parallel-safe logged-in dashboard/settings skeleton |
-| `auth/write/*.spec.ts` | Explicit single-worker shared-account mutations |
+| `auth/write/*.spec.ts` | App-authored (none shipped); explicit single-worker shared-account mutations |
 | `fixtures.ts` | per-worker test namespace for isolated data |
 | `safe-browser.ts` | enforce browser-agent origins, secret-free URLs, and unexpected-event evidence |
 | `visual-a11y.spec.ts` | axe WCAG 2.2 AA serious/critical gate |
@@ -92,7 +92,7 @@ Query priority (accessible first):
 
 1. `getByRole`
 2. `getByLabelText`
-3. `getByPlaceholderText` (last resort - labels preferred)
+3. `getByPlaceholderText` (labels preferred), then `getByText`, `getByDisplayValue`, `getByAltText`, `getByTitle`
 4. Never `getByTestId` unless no accessible alternative
 
 ```tsx
@@ -118,10 +118,10 @@ it("shows validation error on blur", async () => {
 
 ## Mocking server/API
 
-**MSW** for HTTP boundaries in integration tests:
+**MSW** 3 (Node >= 22.12) for HTTP boundaries in integration tests; 2.x imports `http`/`HttpResponse` from `msw`:
 
 ```typescript
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse } from "msw/http";
 import { setupServer } from "msw/node";
 
 const server = setupServer(
@@ -173,7 +173,7 @@ Full lane and evidence rules: `browser-qa.md`.
 
 ## Server Component testing
 
-RSC don't run in jsdom directly. Options:
+Vitest does not support async Server Components (Next.js docs); sync Server and Client Components can be unit-tested. Options:
 
 1. **Test the leaf** - extract pure logic to testable functions
 2. **Integration via E2E** - full render path in Playwright
@@ -186,7 +186,7 @@ Don't fight RSC in unit tests - test at the right boundary.
 - [ ] Vitest on every PR (schemas, utils, client components)
 - [ ] RTL on forms and interactive components
 - [ ] Playwright on 5-15 smoke flows (staging)
-- [ ] a11y lint: eslint-plugin-jsx-a11y in CI
+- [ ] a11y lint: eslint-plugin-jsx-a11y in CI (6.10.2 peers ESLint <= 9; confirm before ESLint 10)
 - [ ] Optional: axe in Playwright for critical pages
 
 ## Anti-patterns

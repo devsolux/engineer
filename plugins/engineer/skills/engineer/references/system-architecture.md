@@ -1,6 +1,6 @@
 # System architecture: patterns, scaling, and decisions
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 How systems are shaped - not folder layout (see `architecture.md` for that).
 Full research: `research/coding-research.md`
@@ -152,7 +152,7 @@ For deployable apps:
 5. **Build/release/run** - separate stages; CI builds artifact
 6. **Processes** - stateless web tier; state in Postgres
 7. **Port binding** - self-contained HTTP services
-8. **Concurrency** - scale processes, not threads in app code
+8. **Concurrency** - scale out via the process model (in-process threads/async still fine)
 9. **Disposability** - fast startup, graceful shutdown
 10. **Dev/prod parity** - local Supabase mirrors prod schema
 11. **Logs** - stdout structured events

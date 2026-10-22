@@ -1,6 +1,6 @@
 # Seat billing (org quantity)
 
-**Last verified**: 2026-07-13 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Org-level Stripe seats tied to **membership counts**. Requires
 `backend-multitenant.md` + `billing-stripe.md` + webhook unlock discipline.
@@ -11,7 +11,7 @@ Pricing-model fit (seat vs usage vs outcome, packaging, WTP) is business-knowled
 
 ```
 org → stripe_customer_id
-org → subscription (quantity = paid seats)
+org → subscription (item quantity = paid seats)
 memberships (active) ≤ paid seats (or soft-warn overage)
 ```
 
@@ -19,7 +19,7 @@ memberships (active) ≤ paid seats (or soft-warn overage)
 |---|---|
 | Who is in the org | `memberships` table |
 | Who pays | Stripe customer on **org** |
-| How many seats paid | Subscription `quantity` (webhook-synced) |
+| How many seats paid | Subscription item `quantity` (`items.data[].quantity`, webhook-synced) |
 
 ## Checkout quantity
 
@@ -46,7 +46,8 @@ const session = await stripe.checkout.sessions.create({
 On `customer.subscription.updated` / `created`:
 
 1. Read `metadata.org_id` (or map customer → org)
-2. Upsert `subscriptions` row: status, price_id, **quantity**, period end
+2. Upsert `subscriptions` row: status, item `price.id`, item **quantity**, item `current_period_end`
+ (period fields left the Subscription object in API `2025-03-31.basil`)
 3. Optional: job to email owner if members > quantity
 
 ```sql
@@ -80,7 +81,10 @@ export async function inviteMember(orgId: string, email: string) {
 ## Portal
 
 - Billing Portal session for **org owner / billing role** only
-- Quantity changes via Portal or in-app “add seats” → Checkout/update subscription API
+- Quantity changes via Portal (enable **Update quantities**; off by default) or in-app “add seats”
+ → Subscriptions update API (`items[].quantity`) or Portal `subscription_update_confirm` flow
+- API `2025-09-30.clover`+ defaults new subscriptions to `billing_mode: flexible` (changes
+ proration math); test seat changes on the pinned API version
 - Always re-read quantity from webhook-updated DB
 
 ## Anti-patterns

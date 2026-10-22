@@ -1,6 +1,6 @@
 # engineer evaluation telemetry
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 **Scope**: measuring engineer behavior, reliability, cost, and regressions without surveillance
 
 Telemetry is useful only when it changes a decision. Engineer defaults to an explicit, local-only,
@@ -55,7 +55,7 @@ promotion evidence.
 
 - Local only; no endpoint, SDK, daemon, account, or device identifier.
 - No prompt/output/tool/file/URL content, even when a provider can expose it.
-- No raw run ID; the event ID is derived from the capture digest and schema domain.
+- No raw run ID; the event ID is derived from the source artifact digest and schema domain.
 - Retain raw capture artifacts under the stricter behavioral-eval policy; keep telemetry only as long
   as it supports comparison, then delete it.
 - Treat model names and timestamps as potentially sensitive operational metadata.
@@ -67,14 +67,15 @@ promotion evidence.
 
 Use OTel only when an organization already operates a collector and needs cross-system correlation.
 Keep content gates disabled. Map stable metadata to existing semantic conventions where they fit and
-use a versioned `engineer.*` namespace for the evaluation fields. GenAI conventions are still evolving;
-pin the convention version and do not make an unstable attribute a promotion oracle.
+use a versioned `engineer.*` namespace for the evaluation fields. GenAI conventions are still evolving
+(Development status, now in a separate repository with no tagged release yet); pin the convention
+version or commit and do not make an unstable attribute a promotion oracle.
 
 Claude Code can export OTel metrics, events, and beta traces, but some standard attributes include
-account or email identity and content flags can expose prompts, tool arguments, file contents, and API
-bodies. Filter at the collector before storage. OpenAI Agents SDK tracing captures generations and tool
-calls; set sensitive-data capture off or replace its processor when using engineer evidence. Neither
-provider-native telemetry is a host-neutral quality score.
+account or email identity and content flags can expose prompts, responses, tool arguments, file
+contents, and API bodies. Filter at the collector before storage. OpenAI Agents SDK tracing captures
+generations and tool calls; set sensitive-data capture off or replace its processor when using engineer
+evidence. Neither provider-native telemetry is a host-neutral quality score.
 
 ## Core dashboard
 

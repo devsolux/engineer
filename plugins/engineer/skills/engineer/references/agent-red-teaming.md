@@ -1,6 +1,6 @@
 # Defensive agent red-teaming
 
-**Last verified**: 2026-07-15 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months
 
 Use this module to test an agent you own or are explicitly authorized to assess. Work only in
 isolated fixtures with synthetic data, inert canaries, disabled destructive actions, and denied
@@ -27,21 +27,25 @@ Cover the whole agent system, not only the chat boundary:
 
 ### Named 2025-2026 classes (coverage items)
 
-The categories above hold; name these live classes so coverage is explicit:
+The categories above hold (they span the OWASP Top 10 for Agentic Applications for 2026, released
+2025-12-09); name these live classes so coverage is explicit:
 
 - **Coding-/IDE-agent RCE** - rules-file / agent-config injection (Pillar "Rules File Backdoor"
-  2025-03: hidden-unicode `.cursorrules`/`.cursor/rules`/`copilot-instructions.md`), CurXecute
-  (CVE-2025-54135), MCPoison (CVE-2025-54136), Claude Code (CVE-2025-54794/54795). Scan the
-  config surfaces (`.vscode`, `.cursor`/rules, `AGENTS*`, `.mcp.json`) for hidden unicode +
-  imperatives before the agent trusts them.
-- **CI-agent / auto-PR-review abuse** - Comment-and-Control, PromptPwnd, GhostAction; the
+  2025-03: hidden-unicode instructions in Cursor/Copilot rule files such as `.cursor/rules`,
+  `.cursorrules`, `copilot-instructions.md`), CurXecute (CVE-2025-54135), MCPoison
+  (CVE-2025-54136), Claude Code (CVE-2025-54794 path-restriction bypass, CVE-2025-54795
+  approval-prompt bypass). Scan the config surfaces (`.vscode`, `.cursor`/rules, `AGENTS*`,
+  `.mcp.json`) for hidden unicode + imperatives before the agent trusts them.
+- **CI-agent / auto-PR-review abuse** - Comment-and-Control, PromptPwnd; GhostAction (non-agent
+  malicious workflows exfiltrating runner secrets) shows the blast radius; the
   `pull_request_target`-with-secrets pitfall (arguably the highest-impact 2026 class). Never let
   an auto-review agent fire on attacker-authored events with repo secrets in the runner env.
-- **Denial-of-wallet** - OWASP LLM10:2025 Unbounded Consumption; real cost incidents (LLMjacking
-  ~$46k/day). Enforce step/loop/spend budgets.
+- **Denial-of-wallet** - OWASP LLM10:2025 Unbounded Consumption; LLMjacking cost exposure (Sysdig
+  2024 estimates: >$46k/day of victim spend, >$100k/day on top-tier models). Enforce
+  step/loop/spend budgets.
 - **MINJA memory poisoning** (NeurIPS 2025) - query-only, leaves **no install-time artifact** and
-  fires later on an unrelated query, so admission-time scanning does not cover it; treat durable
-  memory/RAG as a standing surface.
+  fires later on another user's query, so admission-time scanning does not cover it; treat
+  durable memory/RAG as a standing surface.
 
 ## Safe test construction
 

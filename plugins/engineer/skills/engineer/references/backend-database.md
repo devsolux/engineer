@@ -1,6 +1,6 @@
 # Backend database: schema, migrations, RLS
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Postgres via Supabase. **Migrations are source of truth.** RLS is the security
 boundary - client-side filters are convenience, not protection.
@@ -29,13 +29,15 @@ Naming: `{timestamp}_{verb}_{subject}.sql`
 
 Checklist per migration:
 - [ ] RLS enabled on new `public` tables
+- [ ] Explicit `grant`s to `anon`/`authenticated`/`service_role` for Data API tables
+  (Supabase drops default grants: new projects from 2026-05-30, existing ones 2026-10-30)
 - [ ] Policies for SELECT/INSERT/UPDATE/DELETE as needed
 - [ ] Indexes on FK columns and policy filter columns
 - [ ] `updated_at` trigger if rows are edited
 - [ ] Types regenerated after apply
 
 ```bash
-supabase db push # local/dev
+supabase db push # linked project; --local for the local stack
 supabase gen types typescript --linked > types/database.ts
 ```
 
@@ -101,8 +103,8 @@ create policy "Users delete own projects"
  using ((select auth.uid()) = user_id);
 ```
 
-**Always pair `USING` + `WITH CHECK` on UPDATE.** Without `WITH CHECK`, users
-can reassign `user_id` to hijack rows.
+**Always pair `USING` + `WITH CHECK` on UPDATE.** Postgres reuses `USING` when
+`WITH CHECK` is omitted; write both so the new-row rule blocks `user_id` reassignment.
 
 ### Multi-tenant / org
 
@@ -147,13 +149,14 @@ create policy "Authors manage own posts"
 ```sql
 -- Helper for complex membership (security definer, private schema)
 create or replace function private.is_org_member(org uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = '' as $$
  select exists (
- select 1 from memberships
+ select 1 from public.memberships
  where org_id = org and user_id = (select auth.uid())
  );
 $$;
 revoke all on function private.is_org_member(uuid) from public;
+grant usage on schema private to authenticated;
 grant execute on function private.is_org_member(uuid) to authenticated;
 ```
 
@@ -212,10 +215,10 @@ Test with pgTAP - `backend-testing.md` + `templates/supabase/tests/`.
 Database ship gate:
 - [ ] RLS enabled on all public tables (+ storage buckets)
 - [ ] SELECT/INSERT/UPDATE/DELETE policies as needed
-- [ ] USING + WITH CHECK paired on UPDATE/INSERT
+- [ ] WITH CHECK on INSERT; USING + WITH CHECK paired on UPDATE
 - [ ] auth.uid() wrapped in (select ...)
 - [ ] Policy columns indexed
-- [ ] Service role never in client
+- [ ] Secret / service_role key never in client
 - [ ] Migrations applied; types regenerated
 - [ ] RLS tested with impersonation matrix
 - [ ] Views use security_invoker = true

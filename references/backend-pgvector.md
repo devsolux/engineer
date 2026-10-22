@@ -1,6 +1,6 @@
 # pgvector + RAG (Supabase / Postgres)
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Semantic search and retrieval-augmented generation on the default stack.
 Load with `backend-database.md` (RLS), `ai-boundary.md` (where models live),
@@ -44,7 +44,7 @@ Load with `backend-database.md` (RLS), `ai-boundary.md` (where models live),
 
 ```sql
 -- migration (illustrative)
-create extension if not exists vector;
+create extension if not exists vector with schema extensions; -- Supabase: not public
 
 create table public.document_chunks (
  id uuid primary key default gen_random_uuid(),
@@ -52,13 +52,14 @@ create table public.document_chunks (
  source_id uuid not null, -- parent doc
  chunk_index int not null,
  content text not null,
- embedding vector(1536) not null, -- must match model dimension
+ embedding extensions.vector(1536) not null, -- must match model dimension
  metadata jsonb not null default '{}',
  created_at timestamptz not null default now()
 );
 
 create index document_chunks_org_id_idx on public.document_chunks (org_id);
--- HNSW example (cosine). Adjust lists/ef later under load.
+-- HNSW example (cosine; vector indexes cap at 2,000 dims). Tune m / ef_construction
+-- (build) and hnsw.ef_search (query, default 40) under load; `lists` is IVFFlat-only.
 create index document_chunks_embedding_hnsw
  on public.document_chunks
  using hnsw (embedding vector_cosine_ops);
@@ -67,19 +68,19 @@ alter table public.document_chunks enable row level security;
 
 create policy "members read chunks"
  on public.document_chunks for select
- using (public.is_org_member(org_id));
+ using (private.is_org_member(org_id));
 
 -- writes via service role worker or authenticated member with insert policy
 create policy "members insert chunks"
  on public.document_chunks for insert
- with check (public.is_org_member(org_id));
+ with check (private.is_org_member(org_id));
 ```
 
 Rules:
 - **One embedding dimension per column** - never mix model sizes without a migration
 - Index tenant filters (`org_id`) for pre-filter + vector search patterns
 - RLS on every public table - embeddings are still user data
-- Prefer membership helpers from `backend-multitenant.md`
+- Prefer membership helpers from `backend-multitenant.md` (security definer in `private`, never an exposed schema)
 
 ## Ingest pipeline
 
@@ -90,7 +91,7 @@ upload / sync source
  -> chunk (stable size + overlap)
  -> embed via AI boundary (timeouts, no client keys)
  -> upsert chunks + embedding
- -> revalidateTag / updateTag if UI lists sources
+ -> revalidateTag(tag, "max") via a Route Handler if UI lists sources (updateTag: Server Actions only)
 ```
 
 | Rule | Why |
@@ -106,7 +107,7 @@ Expose a **security invoker** or carefully audited **security definer** function
 
 ```sql
 create or replace function public.match_document_chunks(
- query_embedding vector(1536),
+ query_embedding extensions.vector(1536),
  match_org uuid,
  match_count int default 8
 )
@@ -126,7 +127,7 @@ as $$
  1 - (c.embedding <=> query_embedding) as similarity
  from public.document_chunks c
  where c.org_id = match_org
- and public.is_org_member(match_org)
+ and private.is_org_member(match_org)
  order by c.embedding <=> query_embedding
  limit least(match_count, 32);
 $$;
@@ -143,7 +144,8 @@ App flow:
 
 | Tip | Detail |
 |---|---|
-| Pre-filter | `where org_id = $org` before or with ANN (avoid full-table vector scan) |
+| Pre-filter | `where org_id = $org` + B-tree on `org_id` (exact search for small tenants) |
+| Filtered ANN | HNSW/IVFFlat filter *after* the scan (fewer rows than `limit`); pgvector 0.8+: `set hnsw.iterative_scan = relaxed_order`, or partial index / partition big tenants |
 | Cap `match_count` | Hard ceiling in SQL (e.g. 32) |
 | Batch embed | Worker batches; respect provider rate limits |
 | Re-embed jobs | Version embeddings; dual-write during model upgrades |
@@ -152,7 +154,7 @@ App flow:
 ## Security
 
 - Retrieved text is **untrusted** - can inject instructions into the model (`ai-security.md`)
-- Service role only in workers, never browser
+- Secret / service-role key (bypasses RLS) only in workers, never browser
 - Do not return other tenants' chunks even if similarity is high (RLS + org filter)
 - Rate-limit search/RAG endpoints (cost amplification)
 

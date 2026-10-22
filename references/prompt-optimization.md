@@ -1,6 +1,6 @@
 # Prompt and loop optimization
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Optimize the system that produces behavior: instructions, context selection, tools, loop,
 model, and graders. Do not attribute every failure to prompt wording.
@@ -30,10 +30,11 @@ safe or repair a grader that rewards the wrong outcome.
 
 Measure first, then pull in order: cache-hit rate → single-step tool reliability → context budgets,
 tool-schema design, and subagent isolation. Required harness telemetry: per-turn
-`cache_read`/`cache_write`, tool-call success rate, activation rate, and cost per task. Tool schemas
-are a behavior lever - names and descriptions drive selection; return concise high-signal responses;
-write error messages that state the fix; consolidate multi-step operations; budget the tool count.
-Advanced tool use (beta `advanced-tool-use-2025-11-20`, verified 2026-07-16): Tool Search /
+`cache_read_input_tokens`/`cache_creation_input_tokens`, tool-call success rate, activation rate,
+and cost per task. Tool schemas are a behavior lever - names and descriptions drive selection;
+return concise high-signal responses; write error messages that state the fix; consolidate
+multi-step operations; budget the tool count.
+Advanced tool use (no beta header since 2026-02-17, verified 2026-10-22): Tool Search /
 `defer_loading` (~85% tool-token reduction - vendor benchmark, unreplicated) and programmatic tool
 calling keep intermediate results out of context. Eval-driven tuning treats the harness as the
 system under test: frozen task set, paired with-lever/baseline arms, activation-marker plus

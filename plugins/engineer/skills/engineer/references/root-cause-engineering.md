@@ -1,6 +1,6 @@
 # Root-cause engineering: fix the cause, not the symptom
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `system-assurance.md`, `coding-principles.md`, `refactoring.md`,
 `implementation-completeness.md`, `agent-incident-response.md`, `security-audit.md`
 

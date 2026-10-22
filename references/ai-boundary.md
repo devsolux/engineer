@@ -1,6 +1,6 @@
 # AI boundary (product ↔ model)
 
-**Last verified**: 2026-07-14 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 How generative features sit in the stack. Load with `python.md` (service details),
 `ai-security.md` (threats), `ai-evals.md` (measurement), `observability.md` (traces).
@@ -53,7 +53,7 @@ Greenfield product UI stays Next. Add `services/ai-api/` when AI is a real subsy
 
 ```python
 # services/ai-api - illustrative; match repo layout
-@router.post("/v1/complete")
+@router.post("/v1/complete", response_model=None)  # Model | Response union needs this
 async def complete(
  body: CompleteIn,
  user: Annotated[User, Depends(require_user)],

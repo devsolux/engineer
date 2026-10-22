@@ -1,6 +1,6 @@
 # Code quality: ship gates, enforcement, review
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Full enforcement playbook: **`enforcement.md`**
 Scanner: **`scripts/engineer-scan.sh`**
@@ -35,7 +35,7 @@ Ship gate:
 - [ ] npm run typecheck && npm run lint:ci && npm run engineer:scan -- --strict
 - [ ] Types compile; no unjustified `any`
 - [ ] Design: semantic tokens; 8pt spacing; 16px body min
-- [ ] a11y: WCAG 2.2 AA contrast, focus visible, 44px targets, labels on inputs
+- [ ] a11y: WCAG 2.2 AA contrast, focus visible, 44px targets (house default; AA floor 24px), labels on inputs
 - [ ] Forms: on-blur validation, errors below field, multi-signal errors
 - [ ] Zod validation on all external inputs
 - [ ] Auth checked on mutations (getUser)

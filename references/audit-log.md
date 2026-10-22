@@ -1,6 +1,6 @@
 # Audit log pattern (B2B / compliance)
 
-**Last verified**: 2026-07-13 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 Append-only activity trail for security-sensitive actions. Complements
 `backend-multitenant.md`, `compliance-privacy.md`, `background-jobs.md`.
@@ -47,7 +47,8 @@ using (
  )
 );
 
--- no update/delete for authenticated roles (append-only)
+-- no update/delete for authenticated roles (append-only); RLS does not cover TRUNCATE
+revoke update, delete, truncate on public.audit_events from anon, authenticated;
 -- inserts via service role or SECURITY DEFINER writer after authz
 ```
 
@@ -64,7 +65,7 @@ export async function writeAudit(event: {
  metadata?: Record<string, unknown>;
 }) {
  const admin = createServiceClient(); // server only
- await admin.from("audit_events").insert({
+ const { error } = await admin.from("audit_events").insert({
  org_id: event.orgId,
  actor_id: event.actorId,
  action: event.action,
@@ -72,6 +73,7 @@ export async function writeAudit(event: {
  entity_id: event.entityId,
  metadata: event.metadata ?? {},
  });
+ if (error) throw error; // supabase-js returns errors; caller picks fail-open or fail-closed
 }
 ```
 

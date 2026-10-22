@@ -121,12 +121,13 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 // actions.ts - Server Action
 "use server";
 
+import { z } from "zod";
 import { profileSchema } from "./schema";
 import { createClient } from "@/lib/supabase/server";
 
 export async function updateProfile(formData: FormData) {
  const parsed = profileSchema.safeParse(Object.fromEntries(formData));
- if (!parsed.success) return { error: parsed.error.flatten() };
+ if (!parsed.success) return { error: z.flattenError(parsed.error) }; // Zod 4; .flatten() deprecated
 
  const supabase = await createClient();
  const { data: { user } } = await supabase.auth.getUser();

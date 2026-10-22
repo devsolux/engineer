@@ -1,6 +1,6 @@
 # Infrastructure security: cloud, network, containers, nodes
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Hardening **below the app layer**. Complements `backend-security.md` (headers/CSP/HTTP),
 `ai-security.md` (LLM tools/MCP), `deploy-ops.md` (release mechanics), and
@@ -24,7 +24,7 @@ hyperscaler org policy now would be speculative. Revisit when a real deployment 
 | Surface | What it is here | Highest-value control |
 |---|---|---|
 | Vercel | App deploys, env vars, tokens | Scoped tokens; env separation per tier |
-| Supabase | DB, auth, storage, service keys | Service role server-side only; RLS stays on |
+| Supabase | DB, auth, storage, service keys | Secret/service-role keys server-side only; RLS stays on |
 | GitHub org | Source, Actions, releases | Fine-grained/OIDC credentials; signed deploys |
 | OrbStack (macOS) | Local/dev containers | Non-root, pinned digests, no socket mounts |
 | RPC edge-node fleet (VPS) | Exposed RPC endpoints in front of customers | Keys-only SSH, default-deny inbound, rate limiting |
@@ -35,8 +35,9 @@ scanning and abuse from day one, and a compromised edge node sits in front of cu
 ## Cloud IAM least privilege
 
 - **Scope every token to the job**: GitHub fine-grained PATs or GitHub App/OIDC per repo
-  and permission; Vercel tokens scoped to the team/project; Supabase service keys per
-  environment. No token that can touch everything.
+  and permission; Vercel tokens scoped to the team/project; Supabase secret keys
+  (`sb_secret_…`, replacing legacy `service_role`) per environment and backend component.
+  No token that can touch everything.
 - **No long-lived personal tokens in CI.** Prefer OIDC federation (GitHub Actions →
   cloud provider) so CI mints short-lived credentials; where a static secret is
   unavoidable, store it in the provider's secret store, scope it minimally, and rotate it.
@@ -65,8 +66,9 @@ scanning and abuse from day one, and a compromised edge node sits in front of cu
 
 Baseline for every edge node and any VPS:
 
-- **Keys only**: `PasswordAuthentication no`, `PermitRootLogin no`, per-operator keys
-  (1Password SSH agent on workstations — never private-key files copied around).
+- **Keys only**: `PasswordAuthentication no` and `KbdInteractiveAuthentication no` (both
+  default `yes`), `PermitRootLogin no`, per-operator keys (1Password SSH agent on
+  workstations — never private-key files copied around).
 - **fail2ban-class rate limiting** on SSH and exposed services.
 - Unattended security updates on; kernel/reboot window scheduled. Alert on sustained
   auth-failure clusters instead of ignoring them.
@@ -99,7 +101,8 @@ OrbStack-hosted (and any future runtime) containers:
 - **No secrets in images, layers, logs, or repos.** The existing hard gates stay binding:
   gitleaks + push protection in CI (`enforcement-rules.md`), no-secrets-in-logs (SKILL.md
   hard gates), and the `backend-security.md` § Secrets and env client/server split. Build
-  args and image layers are permanent — inject at runtime instead.
+  args and image layers are permanent — inject at runtime instead (secret mounts for
+  build-time needs).
 - Rotate on any suspected leak; "committed then force-pushed away" counts as leaked.
 
 ## Backup and DR security

@@ -1,6 +1,6 @@
 # Product analytics and KPI systems
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `growth-funnels.md`, `product-onboarding.md`, `gtm-engineering.md`, `observability.md`
 
 Product analytics measures whether software delivers user and business value. It is

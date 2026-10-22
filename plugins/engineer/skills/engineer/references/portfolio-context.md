@@ -1,6 +1,6 @@
 # Portfolio context: workspace and venture truth for cross-repo work
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 **Related**: `project-detect.md`, `composition.md`, `company-operating-system.md`,
 `hermes-agent-integration.md`, `coordination-transports.md`
 

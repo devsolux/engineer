@@ -1,6 +1,6 @@
 # AI / skill eval harness matrix
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Pick one measurement path; do not run five vendors on one app.
 
@@ -25,7 +25,7 @@ Research: `research/behavioral-skill-evals-2026-07.md` + `research/agent-traject
 | **engineer skill bank** (this repo) | `bash scripts/run-evals.sh --smoke` / `--full` | Always on CI (static structure; no model cost) |
 | **engineer observed behavior** | Captured run + `validate-skill-eval-run.py` | Before claiming a skill release improved agent behavior |
 | **Cross-host raw capture** | `capture-skill-eval.py` | Compile sealed Codex/Claude jobs; execution is explicit and cost-acknowledged |
-| **Product prompts** (your SaaS) | **promptfoo** (OSS, CI-friendly) or **Braintrust** (hosted traces+evals) | Choose one per app |
+| **Product prompts** (your SaaS) | **promptfoo** (OSS/MIT, CI-friendly; part of OpenAI since 2026-03) or **Braintrust** (hosted traces+evals) | Choose one per app |
 | **Agent trajectories** (multi-turn tools) | LangSmith trajectory / Harbor-class / custom path logs | After single-turn goldens exist |
 | **Copy / UI slop** | unmachined `scan_text` / `scan_ui` | Marketing surfaces |
 | **Plan / JSON contracts** | `validate-plan.sh`, JSON Schema, Zod | Non-LLM structure |
@@ -36,7 +36,7 @@ Research: `research/behavioral-skill-evals-2026-07.md` + `research/agent-traject
 
 | Repo type | Do this |
 |---|---|
-| engineer skill package | CI: `run-evals.sh --smoke` (already in validate.yml) |
+| engineer skill package | CI: `make check` runs `run-evals.sh --full --json` (validate.yml) |
 | Next product with light AI | promptfoo fixtures in CI **or** Braintrust if already on it |
 | Multi-agent coding workflows | Trajectory logs + fixture tasks; skill bank for routing |
 | No AI features | Skip model evals; keep typecheck/scan/tests |
@@ -45,7 +45,8 @@ Research: `research/behavioral-skill-evals-2026-07.md` + `research/agent-traject
 
 - **Static** - validates `evals/evals.json` shape and lists scenarios; does **not** call a model.
 - Smoke IDs: core routing / ship / schema scenarios.
-- Live model scoring is optional and out-of-band (mount SKILL in an agent; use `--list` prompts).
+- Live model scoring is optional and out-of-band (mount SKILL in an agent with `--list` prompts,
+  or the opt-in `run-evals.sh --live` runner, which spends tokens; never default CI).
 - A green bank means the specification is valid. It is not evidence that an agent executed it.
 - The live-eval pattern generalizes to any harness lever: frozen scenario bank, paired
   with-lever/baseline arms, activation-marker + assert/forbid grading, pass@N for nondeterministic

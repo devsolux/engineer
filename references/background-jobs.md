@@ -1,6 +1,6 @@
 # Background jobs: queues, workers, and async work
 
-**Last verified**: 2026-07-13 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Use when work must **outlive a single HTTP request**: email, webhooks fan-out,
 exports, embeddings, retries, multi-step money paths. Complements `python.md`
@@ -34,11 +34,11 @@ Research: `research/deep-2026-07.md` § jobs/workers · Gaps: `research/gap-audi
 ```
 Need async work?
 ├── Vercel-only TS app, light volume
-│ └── Inngest or Trigger.dev (hosted, TypeScript-native)
+│ └── Inngest, Trigger.dev, or Vercel Workflows (hosted, TypeScript-native)
 ├── Already on Supabase + Postgres, want fewer vendors
-│ └── pg-boss / Graphile Worker (jobs table in Postgres)
+│ └── pg-boss / Graphile Worker (jobs table in Postgres); Supabase Queues (pgmq, public alpha)
 ├── Python AI / heavy CPU service
-│ └── FastAPI + arq/celery/rq (see python.md)
+│ └── FastAPI + Taskiq/Celery/Temporal (see python.md; arq maintenance-only)
 └── High throughput / multi-service
  └── SQS / Cloud Tasks / NATS + workers
 ```
@@ -46,9 +46,9 @@ Need async work?
 | Tool | Pros | Cons |
 |---|---|---|
 | **Inngest** | DX, steps, retries, Vercel-friendly | Vendor |
-| **Trigger.dev** | Open-ish, good TS | Ops/hosting choices |
+| **Trigger.dev** | Apache-2.0, self-host option, good TS | Ops/hosting choices |
 | **pg-boss** | Postgres-only, simple | Ops on you; poll load |
-| **arq / Celery** | Python ecosystem | Separate process model |
+| **Taskiq / Celery** | Python ecosystem | Separate process model |
 
 ## Patterns
 
@@ -59,7 +59,7 @@ Need async work?
 export async function POST(req: Request) {
  const raw = await req.text(); // signature verify first
  const event = verifyStripe(raw, req.headers);
- await inngest.send({ name: "stripe/event", data: { id: event.id, type: event.type } });
+ await inngest.send({ id: event.id, name: "stripe/event", data: { id: event.id, type: event.type } }); // id: 24h dedupe
  return Response.json({ received: true }); // fast ACK
 }
 ```
@@ -69,10 +69,9 @@ Never do long work inside the webhook handler before ACK.
 ### Job handler (idempotent)
 
 ```typescript
-// jobs/stripe-event.ts
+// jobs/stripe-event.ts (Inngest SDK v4: triggers live in the options object)
 export const stripeEvent = inngest.createFunction(
- { id: "stripe-event", retries: 5 },
- { event: "stripe/event" },
+ { id: "stripe-event", retries: 5, triggers: { event: "stripe/event" } },
  async ({ event, step }) => {
  await step.run("dedupe", async () => {
  // insert event.id into processed_events UNIQUE - skip if exists
@@ -125,7 +124,7 @@ export async function requestExport(projectId: string) {
 - Fire-and-forget `fetch` to your own API without retries
 - Unbounded retries without backoff
 - Job payloads carrying PII unnecessarily
-- Using Server Actions as a free queue (timeout + no durability)
+- Using Server Actions or `after()` as a free queue (route max duration, no retries/durability)
 
 ## Ship checklist
 

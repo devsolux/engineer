@@ -1,6 +1,6 @@
 # Growth & funnels: acquire, activate, retain, convert
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Product and marketing mechanics beyond page layout. For **page execution** see
 `conversion-ui.md`. For **copy quality** compose `unmachined`. For **experiment
@@ -42,10 +42,14 @@ For PLG SaaS, optimize **sequentially** - fix the lowest conversion stage first:
 | Signup → Activation | 35-50%+ | Below 25% = structural onboarding leak |
 | Activation → Engagement | 60-70% | Retention curve doesn't flatten |
 | Engagement → Paid | 20-30% | Value clear but no upgrade path |
-| Free → Paid (trial) | 15-25% B2B | Below 10% = pricing/value mismatch |
+| Free → Paid (trial) | No card 4-6% good, 10-15% great; card required 25-35% | Below "good" = pricing/value mismatch |
+
+Anchors: activation (Userpilot 2025 avg 37.5%) and trial (ChartMogul/ProductLed
+SaaS Conversion Report, Feb 2026). Engagement rows are unsourced heuristics.
 
 **Highest ROI move**: activate users you already have before buying more traffic.
-A 25% activation lift ≈ 34% revenue lift (same signup volume).
+A 25% activation lift ≈ 34% MRR lift after 12 months in Appcues' illustrative model
+(same signup volume, other metrics held fixed).
 
 ## Define your activation event
 
@@ -63,8 +67,8 @@ Process:
 3. Instrument as `activation_completed` event
 4. Build onboarding to reach it in **first session** (target <15 min TTV)
 
-Benchmark: median activation ~37.5%; top PLG >50%. Checklist completion
-(19%) ≠ activation (37%) - users find value off-path; don't force linear wizards.
+Benchmark (Userpilot 2025, 62 B2B SaaS): average activation 37.5%; AI/ML tools 54.8%.
+Checklist completion (avg 19.2%) ≠ activation - users find value off-path; don't force linear wizards.
 
 ## Acquisition
 
@@ -106,13 +110,14 @@ Onboarding patterns:
 
 Remove every step that doesn't lead to activation event.
 
-Forms: max 3-5 fields at signup. HubSpot: 11→4 fields = +120% conversion.
+Forms: max 3-5 fields at signup. Imaginary Landscape (2008 before/after, 10→26 submits):
+11→4 fields = +120% conversion rate.
 Email + password or OAuth only at gate.
 
 ## Engagement & retention
 
 Retention = habit formation. Users with **3+ sessions in week 1** convert to
-paid at ~8× one-time users.
+paid far more often than one-time users (the quoted ~8× has no primary source; measure cohorts).
 
 | Loop type | Example |
 |---|---|
@@ -152,10 +157,11 @@ Pricing page (`conversion-ui.md`):
 |---|---|---|
 | Free trial | ~57% | B2B SaaS with clear TTV |
 | Freemium | ~26% | Viral/network products |
-| Reverse trial | ~7% (growing) | High feature depth; 4-12% conversion |
+| Reverse trial | ~7% | High feature depth; 4-12% conversion |
 | Sales-led | Enterprise | ACV >$25k, complex procurement |
 
-Reverse trial: full access → auto-downgrade. Good conversion 4-6%; great 8-12%.
+Shares: primary entry point, 200 products (ChartMogul/ProductLed/Poyar, Feb 2026).
+Reverse trial: full access → auto-downgrade. Good conversion 4-6%; great 8-12% (small sample).
 
 Freemium gate design:
 - Free tier must deliver **real value** (not crippled demo)
@@ -177,8 +183,9 @@ export function scorePql(events: UserEvents): number {
 }
 ```
 
-PQLs convert 2-4× vs MQLs. Push scores to CRM (HubSpot/Salesforce) via webhook
-or reverse ETL when sales-assist layer exists.
+PQLs convert well above MQLs (Tunguz 2013: ~25-30% when sales calls them; quoted
+PQL/MQL multipliers lack a primary source). Push scores to CRM (HubSpot/Salesforce)
+via webhook or reverse ETL when sales-assist layer exists.
 
 Developer hooks: emit events; marketing/sales owns thresholds.
 
@@ -215,6 +222,7 @@ export const Events = {
  SIGNUP_STARTED: "signup_started",
  SIGNUP_COMPLETED: "signup_completed",
  ACTIVATION_COMPLETED: "activation_completed",
+ ONBOARDING_STEP_COMPLETED: "onboarding_step_completed",
  CTA_CLICKED: "cta_clicked",
  UPGRADE_VIEWED: "upgrade_viewed",
  UPGRADE_COMPLETED: "upgrade_completed",

@@ -1,6 +1,6 @@
 # Long-horizon and ongoing agents
 
-**Last verified**: 2026-07-16 · **Review cadence**: 3 months (thresholds and pricing drift faster; re-check constants)
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months (thresholds and pricing drift faster; re-check constants)
 
 Session dynamics for agents that run long or run repeatedly: what degrades as context
 grows, when to compact vs restart vs hand off, and the externalized-state contract that
@@ -23,15 +23,16 @@ Long sessions fail through named, measured mechanisms — not vague "the model g
 
 | Mechanism | Evidence | Consequence |
 |---|---|---|
-| Context rot | Chroma 2025; NoLiMa (ICML 2025): ~50% relative drop by 32K on latent matching; RULER (COLM 2024): effective context commonly ~50-65% of advertised | Reliability falls with input length even on simple tasks, long before the window limit |
+| Context rot | Chroma 2025; NoLiMa (ICML 2025): ~50% relative drop by 32K on latent matching; RULER (COLM 2024): effective context commonly half or less of advertised | Reliability falls with input length even on simple tasks, long before the window limit |
 | Lost-in-the-middle | Liu et al. (TACL 2024) U-shaped recall; StreamingLLM attention sinks (ICLR 2024); dampened, not eliminated, in current models | Mid-context facts and instructions are the least reliably used |
 | Instruction/output drift | Laban et al. 2025: −39% and +112% unreliability on multi-turn; Multi-IF: adherence decays by turn 3; sycophancy (Sharma 2023) | Constraints silently drop; agreement replaces correctness |
-| Self-conditioning | Sinha et al. 2025 (arXiv 2509.09677): per-step accuracy falls once the model's own errors enter context; METR: 50%-reliability horizon ~minutes-to-hours, far shorter at 80% | Long-horizon failure is compounding execution error, not a reasoning ceiling |
-| Compaction loss | Harness docs: Claude Code auto-compacts near ~83.5% of usable window; summaries reliably drop paths, hashes, failed attempts, approvals, rationale | The exact detail needed to finish vanishes at the moment continuity mattered |
+| Self-conditioning | Sinha et al. 2025 (arXiv 2509.09677): per-step accuracy falls once the model's own errors enter context; METR (Time Horizon 1.1, May 2026): best 50%-reliability horizon ~12-17 h, only ~1-3 h at 80% | Long-horizon failure is compounding execution error, not a reasoning ceiling |
+| Compaction loss | Harness docs: Claude Code auto-compacts at or near the model's limit by default (~967K on 1M windows; `/autocompact` lowers it); summaries reliably drop paths, hashes, failed attempts, approvals, rationale | The exact detail needed to finish vanishes at the moment continuity mattered |
 
 Agents compound all of these: their context is self-generated and accretes tool output
 every loop. Tool sprawl is an independent axis — selection accuracy degrades past roughly
-10-20 exposed tools; mask or retrieve tools instead of registering everything.
+30-50 exposed tools (vendor docs advise tool search from ~10); mask or retrieve tools instead of
+registering everything.
 Benchmark-derived numbers are directional, and constants are version-sensitive.
 
 ## Context-budget discipline
@@ -51,7 +52,7 @@ Benchmark-derived numbers are directional, and constants are version-sensitive.
   shared mutable state or high merge cost (Cognition's conflict-at-merge failure).
   Worker contract: bounded brief, output schema, no inherited conversation — the parent
   keeps conclusions, not dumps. Mechanics live in `multi-agent-orchestration.md`.
-- **Keep the prefix cache-stable**: agent loops run near 100:1 input:output, and cache reads price ~0.1x vs ~1.25-2x writes, so KV-cache hit rate is a first-class production metric. No timestamps or volatile fields in the system prompt, deterministic serialization, strictly append-only context, mask tool availability rather than editing definitions. Compaction is a full cache bust — compact only when the smaller context recoups the re-write over the remaining turns.
+- **Keep the prefix cache-stable**: agent loops run near 100:1 input:output, and cache reads price 0.025-0.1x vs 1.25-2x writes, so KV-cache hit rate is a first-class production metric. No timestamps or volatile fields in the system prompt, deterministic serialization, strictly append-only context, mask tool availability rather than editing definitions. Compaction busts the whole conversation cache (only the system/project prefix survives) — compact only when the smaller context recoups the re-write over the remaining turns.
 
 ## Externalized-state contract
 

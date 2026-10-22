@@ -1,6 +1,6 @@
 # Coding principles: standards, craft, and pragmatism
 
-**Last verified**: 2026-07-15 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
 
 How to write code that survives teams, AI assistants, and year-two refactors.
 Full research: `research/coding-research.md`
@@ -21,7 +21,7 @@ Full research: `research/coding-research.md`
 
 ## Core philosophy
 
-1. **Optimize for change** - code is read and modified 10× more than written
+1. **Optimize for change** - code is read and modified far more often than written
 2. **Explicit over clever** - boring code beats smart code in production
 3. **Measure maintainability** - cycle time, defect rate, deploy frequency - not line count
 4. **Minimal diff** - smallest change that solves the problem; match repo conventions

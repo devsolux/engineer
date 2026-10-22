@@ -1,6 +1,6 @@
 # APIs and data flows
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 | Related | When |
 |---|---|
@@ -35,7 +35,7 @@ Example (create project):
  → Server Action (Zod)
  → getUser()
  → INSERT projects (RLS)
- → revalidateTag("projects")
+ → updateTag("projects")
  → Result<ProjectDto>
  → optimistic UI update
 ```
@@ -88,7 +88,7 @@ Rules:
 
 ```
 Client → Axum handler → validate → domain → SQLx → JSON response
- ↑ TraceLayer logs request_id + latency
+ ↑ TraceLayer (+ request-id layer) logs request_id + latency
 ```
 
 ### Streaming (gRPC / WebSocket)
@@ -144,7 +144,7 @@ Outbound events:
 | Layer | Tool | Invalidation |
 |---|---|---|
 | Per-request | `React.cache()` | automatic (request scope) |
-| Shared read | `use cache` + `cacheLife` | `updateTag` / `revalidateTag` |
+| Shared read | `use cache` + `cacheLife` + `cacheTag` | `updateTag` (Actions) / `revalidateTag(tag, "max")` |
 | HTTP | `Cache-Control` on Route Handler | explicit |
 | Rust | moka/redis in service | TTL + event invalidation |
 | Client | TanStack Query (if present) | query key + staleTime |
@@ -155,7 +155,7 @@ Document which layer owns freshness for each data type.
 
 | Layer | Check |
 |---|---|
-| Middleware | Session refresh; `getClaims()` for route gate |
+| Proxy (`middleware.ts` before Next 16) | Session refresh; `getClaims()` for route gate |
 | Server Action / RSC | `getUser()` |
 | Route Handler | Bearer/API key/JWT + scope |
 | Supabase RLS | `auth.uid()` on every row |

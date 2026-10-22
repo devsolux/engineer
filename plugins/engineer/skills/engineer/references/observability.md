@@ -1,6 +1,6 @@
 # Observability: logs, errors, traces
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 See `coding-principles.md` § observability.
 Research: `research/deep-2026-07.md` § observability (OTel) · Gaps: `research/gap-audit.md`.
@@ -20,7 +20,7 @@ Research: `research/deep-2026-07.md` § observability (OTel) · Gaps: `research/
 | Pillar | Question | Tools |
 |---|---|---|
 | **Logs** | What happened? | Axiom, Datadog, Vercel logs |
-| **Errors** | What broke? | Sentry, Bugsnag |
+| **Errors** | What broke? | Sentry, BugSnag |
 | **Traces** | Where was it slow? | OpenTelemetry, Vercel OTel |
 
 **60-second rule**: follow one request ID from browser → Server Action → DB.
@@ -70,9 +70,11 @@ cp "$ENGINEER/templates/lib/instrumentation.ts" ./instrumentation.ts
 |---|---|
 | `NEXT_RUNTIME === "nodejs"` | Load `@vercel/otel` / Node SDK |
 | `edge` | Return early or load edge-safe only - never NodeSDK |
-| Browser | No instrumentation.ts |
+| Browser | Not `instrumentation.ts`; client init goes in `instrumentation-client.ts` (Next 15.3+) |
 
-Template uses dynamic `import("@vercel/otel")` only on Node so Edge analysis does not pull Node-only packages.
+Template uses dynamic `import("@vercel/otel")` only on Node and skips Edge tracing (`@vercel/otel` is Edge-compatible; `NodeSDK` is not).
+
+`@vercel/otel` 2.1.3 peers OTel JS 2.x / experimental 0.2xx. OTel JS 3.0 / 0.300 (2026-10-20; Node >=22.15; `sdk-trace-base`/`-node` replaced by `sdk-trace`) is outside that range: keep OTel peers on 2.x / 0.2xx until `@vercel/otel` widens it.
 
 **Span / Sentry tag conventions:**
 
@@ -85,19 +87,22 @@ Template uses dynamic `import("@vercel/otel")` only on Node so Edge analysis doe
 | `app.job_id` | Background job (`background-jobs.md`) |
 | `app.trace_kind` | `request` \| `job` \| `webhook` |
 
-**Sentry ↔ trace:** set tag `trace_id` from the active OTel span so one ID follows browser → action → worker.
+Caveat: OTel semconv now owns an `app.*` namespace (Development: `app.build_id`, `app.screen.*`, ...) and its naming guide discourages custom keys under semconv namespaces. These six do not clash today; give new keys a reverse-domain prefix (`com.acme.*`). Next root spans already carry Stable `http.route`.
+
+**Sentry ↔ trace:** set tag `trace_id` from the active OTel span so one ID follows browser → action → worker. In `@sentry/nextjs` v11 scope tags reach errors only; put span data in span attributes. If `@vercel/otel` owns the tracer provider, set `enableOpenTelemetrySetup: false` in the server `Sentry.init` (default `true`) and follow Sentry's OpenTelemetry custom-setup guide.
 
 ## Error tracking (Sentry)
 
 ```bash
-npm install --save-dev --save-exact @sentry/wizard@6.13.0
+npm install --save-dev --save-exact @sentry/wizard@8.0.1
 npm exec --offline -- sentry-wizard -i nextjs
 ```
 
-Wraps:
-- Server Components / Actions
-- Client error boundaries
-- Edge middleware
+Wizard 8.x installs `@sentry/nextjs` ^11 (Next.js 14-16, Node >=20.19). It writes:
+- `instrumentation-client.ts` (browser), `sentry.server.config.ts`, `sentry.edge.config.ts`
+- `instrumentation.ts`: loads config by `NEXT_RUNTIME`, exports `onRequestError = Sentry.captureRequestError` (Next routes Server Component, Route Handler, Server Action and proxy errors there)
+- `app/global-error.tsx` (React render errors); `withSentryConfig` from `@sentry/nextjs/config`
+- Server Action spans still need `Sentry.withServerActionInstrumentation`
 
 User context:
 
@@ -105,19 +110,21 @@ User context:
 Sentry.setUser({ id: user.id }); // no email in high-security apps
 ```
 
+v11 replaced `sendDefaultPii` with `dataCollection`, whose defaults apply even when unset and mostly default to `true` (`userInfo`, `cookies`, `httpHeaders`, ...): set the keys to `false` explicitly in high-security apps.
+
 Source maps uploaded in CI for readable stack traces.
 
 ## Next.js integration
 
 ```tsx
-// app/global-error.tsx
+// app/global-error.tsx (Next 16.3+ `retry`; older: `reset`)
 "use client";
 
-export default function GlobalError({ error, reset }: { error: Error; reset: () => void }) {
+export default function GlobalError({ error, retry }: { error: unknown; retry: () => void }) {
  useEffect(() => {
  Sentry.captureException(error);
  }, [error]);
- return (/* user-safe UI */);
+ return (/* user-safe UI inside its own <html><body> */);
 }
 ```
 

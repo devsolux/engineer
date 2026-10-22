@@ -1,6 +1,6 @@
 # Backend API: Server Actions, Route Handlers, and gates
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Choose the simplest path that meets the client and integration needs.
 
@@ -93,7 +93,7 @@ Next.js provides structural CSRF (POST-only + Origin vs Host or `X-Forwarded-Hos
 const nextConfig = {
  experimental: {
  serverActions: {
- // Required behind reverse proxies / multi-host deploys
+ // Needed when a proxy/CDN does not forward the public host in X-Forwarded-Host
  allowedOrigins: ["myapp.com", "*.myapp.com"],
  },
  },
@@ -103,15 +103,15 @@ const nextConfig = {
 | Control | Detail |
 |---|---|
 | Framework | POST-only + Origin/Host match (default) |
-| Proxies | Set `serverActions.allowedOrigins` for real public hosts |
+| Proxies | Forward the public host in `X-Forwarded-Host`, else list it in `serverActions.allowedOrigins` |
 | Cookies | Session cookies `SameSite=Lax` or `Strict` (auth module) |
 | App code | `getUser()` + authorization + Zod + rate limit on every mutate |
 | Route Handlers | No free CSRF shield - verify Origin or use non-cookie auth |
 
 **Hardening notes (2026):**
 
-- Keep **Next.js patched** - CSRF validation bugs have appeared around opaque/`null` origins (e.g. sandboxed iframe cases). Do not assume "we use Server Actions" equals forever-safe CSRF.
-- Reject relying on missing Origin as "same-site" without framework updates.
+- Keep **Next.js patched** - CSRF validation bugs have appeared around opaque/`null` origins (sandboxed iframes; CVE-2026-27978, fixed in 16.1.7). Do not assume "we use Server Actions" equals forever-safe CSRF.
+- Do not treat a missing Origin as "same-site" - Next.js lets an Origin-less action request through with a warning.
 - Prefer short-lived sessions; re-auth for delete-account / billing changes (`compliance-privacy.md`, `billing-stripe.md`).
 
 ### Rate limiting
@@ -168,7 +168,8 @@ export async function POST(req: NextRequest) {
  .single();
 
  if (error) {
- return Response.json({ error: "Conflict" }, { status: 409 });
+ const status = error.code === "23505" ? 409 : 500; // unique_violation → Conflict
+ return Response.json({ error: status === 409 ? "Conflict" : "Internal error" }, { status });
  }
 
  return Response.json(data, { status: 201 });
@@ -197,7 +198,7 @@ import { revalidateTag } from "next/cache";
 
 export async function POST(req: Request) {
  // webhook processed...
- revalidateTag("projects", "max");
+ revalidateTag("projects", "max"); // { expire: 0 } when stale reads are not acceptable
  return Response.json({ ok: true });
 }
 ```
@@ -253,7 +254,7 @@ See `enforcement-rules.md` for the Server Action auth grep and `enforcement.md` 
 | Form mutations | ✅ default | possible |
 | Progressive enhancement | ✅ native | manual |
 | External/webhook clients | ❌ | ✅ |
-| `updateTag` (immediate) | ✅ | ❌ use `revalidateTag` |
+| `updateTag` (immediate) | ✅ | ❌ use `revalidateTag(tag, { expire: 0 })` |
 | OpenAPI / REST contract | awkward | ✅ |
 | File upload | ✅ with limits | ✅ |
 

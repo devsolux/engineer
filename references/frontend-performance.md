@@ -1,6 +1,6 @@
 # Frontend performance: Core Web Vitals and bundle discipline
 
-**Last verified**: 2026-07-12 · **Review cadence**: 3 months
+**Last verified**: 2026-10-22 · **Review cadence**: 3 months
 
 Targets (75th percentile field data - CrUX, not lab-only):
 
@@ -10,7 +10,10 @@ Targets (75th percentile field data - CrUX, not lab-only):
 | **INP** | ≤ 200ms | Interactivity - JS long tasks, hydration |
 | **CLS** | ≤ 0.1 | Stability - dimensions, fonts, dynamic inserts |
 
-Compose with vercel `react-best-practices` for the full 40+ rule set.
+SPA soft navigations: CrUX added experimental soft-nav LCP/INP/CLS variants (Sept 2026 release);
+collect with `web-vitals` `reportSoftNavs: true` (Chromium 151+). Track them; keep gating on the stable CWV.
+
+Compose with vercel `react-best-practices` for the full 70-rule set.
 
 ## Contents
 - [LCP checklist](#lcp-checklist)
@@ -25,11 +28,11 @@ Compose with vercel `react-best-practices` for the full 40+ rule set.
 
 ## LCP checklist
 
-1. **Hero image**: `next/image` with `priority` (or `preload` on Next 16+) - 1-2 per page max
+1. **Hero image**: `next/image` `preload` (Next 16 deprecates `priority`) or `loading="eager"` / `fetchPriority="high"` (the docs' usual pick) - 1-2 per page max
 2. **Never lazy-load** above-the-fold LCP element
 3. **`sizes` prop** on every responsive image - prevents oversized downloads
-4. **WebP/AVIF** via next/image (automatic)
-5. **TTFB** < 800ms - CDN, edge cache, fast server/data layer
+4. **WebP** via next/image (automatic); AVIF is opt-in via `images.formats`
+5. **TTFB** ≤ 800ms - CDN, edge cache, fast server/data layer
 6. **Self-host fonts** via `next/font` - no Google Fonts `<link>` at runtime
 
 ```tsx
@@ -39,7 +42,7 @@ import hero from "@/public/hero.webp";
 <Image
  src={hero}
  alt="Product dashboard showing real-time metrics"
- priority
+ preload
  sizes="(max-width: 768px) 100vw, 1200px"
  placeholder="blur"
  className="h-auto w-full"
@@ -74,7 +77,7 @@ function onFilterClick(next: string) {
 }
 ```
 
-Measure: Chrome Performance + Web Vitals extension; field data via RUM (`observability.md`).
+Measure: Chrome DevTools Performance panel live metrics (the Web Vitals extension is end-of-life); field data via RUM (`observability.md`).
 
 ## CLS checklist
 
@@ -117,7 +120,7 @@ const RevenueChart = dynamic(
  () => import("@/features/analytics/revenue-chart"),
  {
  loading: () => <ChartSkeleton height={320} />,
- ssr: false, // only when lib requires window
+ ssr: false, // only when lib requires window; Client Components only
  }
 );
 ```
@@ -126,7 +129,7 @@ Fallback must have **fixed height** to prevent CLS.
 
 ## Bundle hygiene
 
-- Run `@next/bundle-analyzer` periodically
+- Run `next analyze` (Turbopack; 16.4+, `experimental-analyze` in 16.1-16.3) or `@next/bundle-analyzer` (webpack builds) periodically; `next build` stopped printing JS sizes in 16.0
 - Audit `"use client"` file count - each adds to client graph
 - Prefer CSS over JS for hover/focus states
 - Tree-shake icon imports (`lucide-react` - import named icons only)
@@ -134,14 +137,14 @@ Fallback must have **fixed height** to prevent CLS.
 
 ## Measurement
 
-- **Field data first** - Search Console CrUX, Vercel Analytics, web-vitals RUM
+- **Field data first** - Search Console CrUX, Vercel Speed Insights, web-vitals RUM
 - Lab: Lighthouse for regressions, not as sole pass/fail
 - Fix template-level issues before individual URLs
 - Set performance budgets: JS bundle, LCP element weight, third-party count
 
 ## Anti-patterns
 
-- `priority` on every image
+- `preload` / `priority` on every image
 - Raw `<img>` without dimensions
 - Google Fonts CDN link in production
 - Full-page `"use client"` layout
@@ -155,8 +158,8 @@ Fallback must have **fixed height** to prevent CLS.
 |---|---|
 | Hardcoded colors | `engineer-scan --design` |
 | `"use client"` on layouts | `engineer-scan --strict` |
-| CWV regression | Lighthouse CI / Vercel Analytics alert |
-| Bundle size | `@next/bundle-analyzer` + size-limit in CI |
+| CWV regression | Lighthouse CI / RUM threshold alert (`web-vitals`, Speed Insights drain) |
+| Bundle size | `next analyze --output` or `@next/bundle-analyzer` + size-limit in CI |
 
 See `enforcement.md` for CI templates.
 
