@@ -1,8 +1,8 @@
 # MCP server and session security
 
-**Last verified**: 2026-08-19 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months
 
-**Spec pin**: MCP revision **2026-07-28** at modelcontextprotocol.io. Treat that dated spec as current. Do not quote 2025-11-25 as the live revision. Stateless HTTP is the default server shape. **Tasks** moved to an optional extension — quarantine them unless the deployment opted in. Elicitation no longer requires a long-lived open stream.
+**Spec pin**: MCP revision **2026-07-28** at modelcontextprotocol.io (re-checked 2026-10-22). Treat that dated spec as current. Do not quote 2025-11-25 as the live revision. The core is stateless: no `Mcp-Session-Id`, no `initialize` handshake; every request carries its protocol version and client capabilities in `_meta`, `server/discover` advertises versions and identity, every result carries `resultType`, and server-initiated requests are replaced by multi-round-trip `input_required` results. **Deprecated** (twelve-month window, new implementations must not add them): Roots, Sampling, Logging, the HTTP+SSE transport, and OAuth Dynamic Client Registration. **Tasks** moved to the optional `io.modelcontextprotocol/tasks` extension — quarantine them unless the deployment opted in. Elicitation no longer requires a long-lived open stream.
 
 Use this module before enabling an MCP server in a trusted host, after a server/tool upgrade, or
 when reviewing captured tool calls. `skill-supply-chain.md` owns package provenance; this module
@@ -40,9 +40,12 @@ application-server authority separate from Codex's outbound MCP client role.
   allow only issuers accepted by deployment policy.
 - Use OAuth 2.1 authorization code with PKCE S256 verified from metadata, exact registered redirects,
   and state validation. Refuse the authorization flow when PKCE support cannot be verified.
-- Choose preregistration, Client ID Metadata Documents, or dynamic registration deliberately. Client
-  metadata fetches need SSRF controls; localhost-only redirects need an impersonation warning or
-  stronger attestation and must show the redirect hostname.
+- Prefer preregistration or Client ID Metadata Documents; OAuth Dynamic Client Registration is
+  deprecated in 2026-07-28 and remains only for authorization servers without metadata-document
+  support. Validate the `iss` parameter in authorization responses against the recorded issuer and
+  key persisted client credentials by issuer. Client metadata fetches need SSRF controls;
+  localhost-only redirects need an impersonation warning or stronger attestation and must show the
+  redirect hostname.
 - Include the canonical MCP server `resource` in authorization and token requests. Validate token
   issuer, expiry, scopes, and audience at the server.
 - Never put tokens in query strings, pass the client's token through to an upstream API, or accept a
@@ -61,9 +64,12 @@ Negotiate only what the workflow needs:
   description and input/output-schema hashes from its canonical content, and require exact name-set
   equality with the reviewed policy. Then bind risk, destinations, scopes, timeout, rate limit,
   idempotency, confirmation, and validation policy. Added, removed, or changed tools quarantine;
-- **roots**: expose only consented `file://` roots; canonicalize every path and handle root changes;
-- **sampling**: show the server identity, prompt, context, model/cost bounds, and result to a human who
-  can deny or edit; server model hints are advisory;
+- **roots** (deprecated in 2026-07-28; migrate to tool parameters, resource URIs, or server config):
+  while still exposed, consent per `file://` root, canonicalize every path, and handle root changes;
+- **sampling** (deprecated in 2026-07-28; integrate with the provider API directly): while still
+  exposed, show the server identity, prompt, context, model/cost bounds, and result to a human who can
+  deny or edit; server model hints are advisory. Server logging is deprecated too: log to stderr or
+  OpenTelemetry, and treat a per-request `_meta` log level as the only remaining control;
 - **elicitation**: identify the server and purpose, allow decline, and rate limit both modes. Form mode
   must never request passwords, tokens, payment data, private keys, or clickable URLs and must validate
   its restricted schema. URL mode may handle credentials, third-party OAuth, or payments only out of
@@ -97,10 +103,12 @@ python3 scripts/compile-mcp-transcript.py redacted-transcript.jsonl --output-dir
 python3 scripts/compile-mcp-transcript.py --check-manifest mcp-evidence/capture-manifest.json --evidence-root .
 ```
 
-The compiler requires initialize → response → initialized ordering, paired request IDs, negotiated
-capabilities, consistent Streamable HTTP version/session metadata, and complete opaque-cursor chains.
-Negotiation must select an explicitly supported stable version; an unknown or future version is
-quarantined until its semantics and validator coverage are reviewed.
+The compiler covers the 2025-06-18 and 2025-11-25 fixture revisions: it requires initialize →
+response → initialized ordering, paired request IDs, negotiated capabilities, consistent Streamable
+HTTP version/session metadata, and complete opaque-cursor chains. A 2026-07-28 stateless transcript
+(no `initialize`, per-request `_meta` versioning, `server/discover`, `resultType`, no session id) is
+rejected as unsupported — never downgraded — until the validators gain stateless coverage; an unknown
+or future version is quarantined the same way.
 It accepts discovery/read/render/completion capture methods only, not `tools/call`. Copy the receipt
 templates and bind both to the compiled manifest:
 
@@ -122,7 +130,8 @@ language, but they are a quarantine aid rather than a proof that arbitrary natur
 The transcript proves only what the capture client observed. It does not prove the server omitted
 traffic on another connection or that the capture client itself is honest; pair it with process/network logs.
 
-The 2025-11-25 Tasks utility remains experimental. Engineer's admission compiler rejects task methods
+Tasks left the core protocol for the optional `io.modelcontextprotocol/tasks` extension in
+2026-07-28 (polling `tasks/get`, client input via `tasks/update`). Engineer's admission compiler rejects task methods
 and task-augmented tool calls instead of treating an evolving task trace as trusted evidence. Evaluate
 Tasks in an isolated extension-specific harness before adding lifecycle, identity, TTL, polling,
 input-required, result, cancellation, and authorization evidence to this canonical receipt.

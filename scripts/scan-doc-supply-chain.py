@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Iterable
 
 SHELL_LANGS = {"", "bash", "console", "sh", "shell", "zsh"}
+YAML_LANGS = {"yaml", "yml"}
+PRIVILEGED_TRIGGER = re.compile(r"^\s*(?:-\s*)?(pull_request_target|workflow_run)\s*:?\s*(?:#.*)?$|^\s*on:\s*\[[^\]]*\b(pull_request_target|workflow_run)\b")
+FORK_REF = re.compile(r"^\s*ref:\s*.*\$\{\{\s*github\.(?:event\.pull_request\.head|head_ref|event\.workflow_run\.head)")
 REMOTE_PIPE = re.compile(r"(?:curl|wget)\b[^\n|]*\|\s*(?:ba)?sh\b", re.IGNORECASE)
 RUNNER = re.compile(r"\b(npx|pnpm\s+dlx|yarn\s+dlx|bunx|uvx)\s+(?:--yes\s+)?([^\s;|&]+)", re.IGNORECASE)
 ACTION = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)@([^\s#]+)")
@@ -30,7 +33,7 @@ def exact_runner_spec(runner: str, spec: str) -> bool:
     return bool(EXACT_VERSION.fullmatch(version)) or bool(SHA40.fullmatch(version))
 
 
-def markdown_shell_lines(path: Path) -> Iterable[tuple[int, str]]:
+def markdown_fence_lines(path: Path, languages: set[str]) -> Iterable[tuple[int, str]]:
     inside = False
     scan = False
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -39,13 +42,17 @@ def markdown_shell_lines(path: Path) -> Iterable[tuple[int, str]]:
             if not inside:
                 language = stripped[3:].strip().split(maxsplit=1)[0].lower() if stripped[3:].strip() else ""
                 inside = True
-                scan = language in SHELL_LANGS
+                scan = language in languages
             else:
                 inside = False
                 scan = False
             continue
         if inside and scan:
             yield number, line
+
+
+def markdown_shell_lines(path: Path) -> Iterable[tuple[int, str]]:
+    return markdown_fence_lines(path, SHELL_LANGS)
 
 
 def scan_markdown(path: Path) -> list[dict[str, object]]:
@@ -57,14 +64,23 @@ def scan_markdown(path: Path) -> list[dict[str, object]]:
             runner, spec = match.groups()
             if not exact_runner_spec(runner, spec):
                 findings.append({"file": str(path), "line": line_number, "rule": "floating-package-runner", "text": line.strip()})
+    # YAML fences document workflows that readers copy verbatim: hold them to the workflow rules.
+    findings.extend(workflow_findings(path, markdown_fence_lines(path, YAML_LANGS)))
     return findings
 
 
-def scan_workflow(path: Path) -> list[dict[str, object]]:
+def workflow_findings(path: Path, lines: Iterable[tuple[int, str]]) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    privileged_trigger: tuple[int, str] | None = None
+    fork_refs: list[tuple[int, str]] = []
+    for line_number, line in lines:
         if line.lstrip().startswith("#"):
             continue
+        trigger = PRIVILEGED_TRIGGER.match(line)
+        if trigger and privileged_trigger is None:
+            privileged_trigger = (line_number, line.strip())
+        if FORK_REF.match(line):
+            fork_refs.append((line_number, line.strip()))
         match = ACTION.match(line)
         if not match:
             continue
@@ -75,7 +91,17 @@ def scan_workflow(path: Path) -> list[dict[str, object]]:
             findings.append({"file": str(path), "line": line_number, "rule": "mutable-action-ref", "text": line.strip()})
         elif not re.search(r"#\s*v?\d", line):
             findings.append({"file": str(path), "line": line_number, "rule": "action-pin-missing-release-comment", "text": line.strip()})
+    # A privileged trigger (pull_request_target / workflow_run) that checks out fork-controlled code runs
+    # untrusted code with repository secrets and write tokens in scope. The trigger alone is not flagged.
+    if privileged_trigger is not None:
+        for line_number, text in fork_refs:
+            findings.append({"file": str(path), "line": line_number, "rule": "privileged-trigger-fork-checkout",
+                             "text": f"{text} (trigger at line {privileged_trigger[0]}: {privileged_trigger[1]})"})
     return findings
+
+
+def scan_workflow(path: Path) -> list[dict[str, object]]:
+    return workflow_findings(path, enumerate(path.read_text(encoding="utf-8").splitlines(), 1))
 
 
 def candidates(root: Path, requested: list[str]) -> list[Path]:
@@ -117,7 +143,7 @@ def main() -> int:
     result = {
         "ok": not findings,
         "findings": findings,
-        "scope": "executable Markdown fences and active workflow action references",
+        "scope": "executable Markdown fences (shell and YAML) and active workflow action references and privileged triggers",
         "limitation": "A clean result is not proof that a skill or dependency is benign.",
     }
     if args.json:

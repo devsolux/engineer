@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engineer.local/security-hunter-result.schema.json",
+  "title": "engineer security-audit hunter result",
+  "description": "Consumer aid for the one JSON result a hunter returns per wave. The parent promotes it with scripts/security-ledger.py promote (--agent and --wave name the assignment), which refuses symlinks, files over 2 MiB, invalid JSON, credential-shaped content, units not assigned to this agent in this wave, and candidates whose fingerprint does not equal sa1- + sha256(attack_class|root_cause.path|symbol|sink)[:16]. Candidates and hardening entries carry the same shapes as findings.json records and hardening notes; the verifier, not the hunter, decides the verdict. This schema describes shape only.",
+  "type": "object",
+  "required": ["units", "candidates", "hardening", "uncovered"],
+  "additionalProperties": false,
+  "properties": {
+    "units": {
+      "type": "array",
+      "description": "one entry per assigned coverage unit the hunter finished",
+      "items": {
+        "type": "object",
+        "required": ["coverage_id", "status", "reviewed_paths", "checks", "unresolved_reason", "candidate_fingerprints"],
+        "additionalProperties": false,
+        "properties": {
+          "coverage_id": {"$ref": "#/$defs/coverage_id"},
+          "status": {"enum": ["covered", "candidate", "blocked", "deferred", "not_applicable", "out_of_scope"]},
+          "reviewed_paths": {"type": "array", "items": {"$ref": "#/$defs/relative_path"}, "uniqueItems": true},
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "method", "description", "paths", "result_fingerprint"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {"$ref": "#/$defs/text"},
+                "method": {"enum": ["source", "local"], "description": "local only inside the OS-enforced sandbox"},
+                "description": {"$ref": "#/$defs/text"},
+                "paths": {"type": "array", "items": {"$ref": "#/$defs/relative_path"}},
+                "result_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{16}$"}
+              }
+            }
+          },
+          "unresolved_reason": {"type": ["string", "null"], "description": "required for blocked, deferred, not_applicable, out_of_scope"},
+          "candidate_fingerprints": {"type": "array", "items": {"$ref": "#/$defs/fingerprint"}, "uniqueItems": true, "description": "each must name a candidate below whose coverage_ids include this unit"}
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "description": "boundary-and-result candidates for the verifier; no verdict, no severity",
+      "items": {
+        "type": "object",
+        "required": ["fingerprint", "title", "attack_class", "domain", "root_cause", "coverage_ids", "boundary", "trace", "evidence", "conditions"],
+        "additionalProperties": false,
+        "properties": {
+          "fingerprint": {"$ref": "#/$defs/fingerprint"},
+          "title": {"$ref": "#/$defs/text"},
+          "attack_class": {"enum": ["injection", "access_control", "resource_handling", "crypto_secrets", "business_logic", "feature_abuse", "chained_trust", "wildcard"]},
+          "domain": {"enum": ["web_auth", "client_side", "ai_agent", "supply_chain", "cloud_infra", "protocols_messaging", "availability", "data_isolation", null]},
+          "root_cause": {
+            "type": "object",
+            "required": ["path", "symbol", "sink", "note"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"$ref": "#/$defs/relative_path"},
+              "symbol": {"type": ["string", "null"]},
+              "sink": {"type": ["string", "null"]},
+              "note": {"$ref": "#/$defs/text"}
+            }
+          },
+          "coverage_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/coverage_id"}, "uniqueItems": true},
+          "boundary": {
+            "type": "object",
+            "required": ["principal", "input", "intended_control", "crossed", "result"],
+            "additionalProperties": false,
+            "properties": {
+              "principal": {"$ref": "#/$defs/text"},
+              "input": {"$ref": "#/$defs/text"},
+              "intended_control": {"$ref": "#/$defs/text"},
+              "crossed": {"$ref": "#/$defs/text"},
+              "result": {"$ref": "#/$defs/text"}
+            }
+          },
+          "trace": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["stage", "path", "symbol", "line", "note"],
+              "additionalProperties": false,
+              "properties": {
+                "stage": {"enum": ["entrypoint", "propagation", "sink"]},
+                "path": {"$ref": "#/$defs/relative_path"},
+                "symbol": {"type": ["string", "null"]},
+                "line": {"type": ["integer", "null"], "minimum": 1},
+                "note": {"$ref": "#/$defs/text"}
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "path", "sha256", "bytes", "summary"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"enum": ["source_excerpt", "local_execution", "test", "config", "git_history", "log"]},
+                "path": {"$ref": "#/$defs/relative_path", "description": "relative to the run artifact root; the hunter writes only to its own scratch and the parent copies it"},
+                "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+                "summary": {"$ref": "#/$defs/text"}
+              }
+            }
+          },
+          "conditions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "description"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]},
+                "description": {"$ref": "#/$defs/text"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "hardening": {
+      "type": "array",
+      "description": "checklist deviations another layer already prevents; never findings",
+      "items": {
+        "type": "object",
+        "required": ["title", "location", "note", "layer_preventing_attack", "coverage_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {"$ref": "#/$defs/text"},
+          "location": {
+            "type": "object",
+            "required": ["path", "symbol"],
+            "additionalProperties": false,
+            "properties": {"path": {"$ref": "#/$defs/relative_path"}, "symbol": {"type": ["string", "null"]}}
+          },
+          "note": {"$ref": "#/$defs/text"},
+          "layer_preventing_attack": {"$ref": "#/$defs/text"},
+          "coverage_ids": {"type": "array", "items": {"$ref": "#/$defs/coverage_id"}, "uniqueItems": true}
+        }
+      }
+    },
+    "uncovered": {
+      "type": "array",
+      "description": "assigned units the hunter could not finish (the ledger marks them blocked with the description) or observed gaps outside the assigned units, with a null coverage_id, for the coverage critic",
+      "items": {
+        "type": "object",
+        "required": ["coverage_id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "coverage_id": {"anyOf": [{"$ref": "#/$defs/coverage_id"}, {"type": "null"}]},
+          "description": {"$ref": "#/$defs/text"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "coverage_id": {"type": "string", "pattern": "^cov-[0-9a-f]{12}$"},
+    "fingerprint": {"type": "string", "pattern": "^sa1-[0-9a-f]{16}$"},
+    "relative_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$)).*$"}
+  }
+}

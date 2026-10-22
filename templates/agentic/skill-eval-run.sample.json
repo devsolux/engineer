@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill_name": "engineer",
-  "skill_version": "1.0.0",
+  "skill_version": "1.1.0",
   "run_id": "engineer-1.44.0-smoke-001",
   "captured_at": "2026-07-15T12:00:00Z",
   "run_kind": "illustrative_fixture",
@@ -16,9 +16,9 @@
     "max_steps": 24,
     "network_policy": "deny",
     "skill_path": "SKILL.md",
-    "skill_sha256": "e9272751f5a5ad9d1b844b411c24e2c73cf501734188961e3914b43c7a871e4f",
+    "skill_sha256": "f8758371a9e49b8db0917a7e03685b3f11ff0f371842307ab8aa2253770b6e07",
     "bank_path": "evals/evals.json",
-    "bank_sha256": "9525f39f8234954d378a3f4e03596fb4dcbaf5370732a0a90120dba494ad1990",
+    "bank_sha256": "edc8dae9cefe1120836071ab756d5a7755e447101a1338b06a3957c8c7f7eb03",
     "instructions_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "tools_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "fixture_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"

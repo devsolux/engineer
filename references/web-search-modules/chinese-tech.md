@@ -1,10 +1,13 @@
 # Chinese Tech Module
 
-> 从 web-search-agent.md 提取的中文技术社区专用策略
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
+Translation and structure review; search-site operators were not re-tested against live sites.
 
-**触发场景**: 中文技术问题、国内框架、中文社区解决方案
+> Extracted strategy pack for searches on Chinese-language technical communities (from web-search-agent.md).
 
-## 搜索源 (Chinese Technical Sites)
+**Trigger scenarios**: Chinese-language technical questions, China-market frameworks, solutions from Chinese-language communities
+
+## Search sources (Chinese Technical Sites)
 - **CSDN** (csdn.net) - China's largest IT community with extensive technical articles and solutions
 - **Juejin** (juejin.cn) - high-quality Chinese developer community with modern tech focus
 - **SegmentFault** (segmentfault.com) - Chinese Q&A platform similar to Stack Overflow
@@ -14,7 +17,7 @@
 - **V2EX** (v2ex.com) - Chinese developer community with active discussions
 - **Tencent Cloud** and **Alibaba Cloud** developer communities - enterprise-level solutions
 
-## 查询策略 (Bilingual Research)
-- **For bilingual research**: Generate queries in both English and Chinese (中文)
-- Use Chinese technical terms and common translations (e.g., "报错" for errors, "解决方案" for solutions)
+## Query strategy (Bilingual Research)
+- **For bilingual research**: Generate queries in both English and Chinese
+- Use Chinese technical terms and common translations; the quoted Chinese strings are literal search terms (e.g., "报错" = "error reported", for errors; "解决方案" = "solution", for solutions)
 - Search Chinese sites with Chinese keywords for better results from Chinese developer communities

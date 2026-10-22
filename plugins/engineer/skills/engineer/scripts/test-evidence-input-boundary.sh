@@ -18,6 +18,8 @@ cases=(
   "validate-mcp-session.py:mcp-session.sample.json"
   "validate-orchestration-contract.py:orchestration-contract.sample.json"
   "validate-orchestration-run.py:orchestration-run.sample.json"
+  "validate-security-coverage.py:security-coverage.sample.json"
+  "validate-security-findings.py:security-findings.sample.json"
 )
 
 for item in "${cases[@]}"; do

@@ -10,7 +10,6 @@ Load engineer `SKILL.md` + `references/enforcement.md` (rule catalog: `reference
 
 1. Copy into project (adjust `ENGINEER` path):
    ```bash
-: "${ENGINEER:?Set ENGINEER to the loaded skill directory}"
    # Set ENGINEER to the directory containing the loaded engineer SKILL.md.
    : "${ENGINEER:?Set ENGINEER to the resolved skill directory}"
    mkdir -p scripts supabase/tests .github/workflows .github

@@ -342,6 +342,9 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "bank": str(args.file),
         "model": args.model,
+        # The CLI resolves aliases such as "haiku" at run time and does not echo the dated model id
+        # back to this runner, so a capture records the alias only; pass a dated id to pin a run.
+        "model_resolution": "alias_only" if "-20" not in args.model else "pinned_id",
         "max_turns": args.max_turns,
         "attempts": args.attempts,
         "arms": arms,

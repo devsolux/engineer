@@ -20,7 +20,11 @@ make package
 ```
 
 Review generated diffs and the SHA-256 output. Keep release version in SKILL.md
-metadata and synchronize documentation headers. Avoid floating executable
+metadata and synchronize documentation headers. Reference modules carry
+`Last verified` and `Review cadence`: monthly only for host-version modules,
+6 months for version-insensitive ones, 2–3 months otherwise; a lapsed module is
+re-verified or recorded as past-due in the release ledger, never redated blind
+(`python3 scripts/report-module-currency.py`). Avoid floating executable
 package commands and Action revisions. Dependency upgrades require explicit pins,
 primary-source verification, and a passing compatible test environment.
 

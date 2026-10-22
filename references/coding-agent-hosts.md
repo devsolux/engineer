@@ -1,6 +1,6 @@
 # Coding-agent host adaptation
 
-**Last verified**: 2026-08-19 · **Review cadence**: monthly
+**Last verified**: 2026-10-22 (host versions and hook limits re-checked; matrix rows unchanged since 2026-08-19) · **Review cadence**: monthly
 **Scope**: Codex, Claude Code, Cursor, Grok, Gemini CLI, OpenCode, Hermes Agent,
 and portable fallback hosts
 **Related**: `project-detect.md`, `coding-agent-capability-playbooks.md`, `agentic-engineering.md`, `multi-agent-orchestration.md`, `ai-security.md`, `composition.md`, `hermes-agent-integration.md`
@@ -121,7 +121,8 @@ adapter. It is a task-selection layer, not another capability inventory.
   The sandbox enum {read-only, workspace-write, danger-full-access} is enforced via Seatbelt
   (macOS)/Landlock (Linux); the approval-policy value set was renamed across versions (legacy
   on-failure vs untrusted/on-request/never), so record the exact version in every receipt.
-  `codex mcp-server` has been removed (CLI check 2026-10-11). `codex app-server` uses a different
+  `codex mcp-server` has been removed (CLI check 2026-10-11); upstream is 0.164.0-alpha.10 and local
+  0.163.0-alpha.11 (checked 2026-10-22) with the `codex plugin` surface unchanged. `codex app-server` uses a different
   experimental protocol, not an MCP replacement; inspect its actual authorization boundary.
 - Keep `agents/openai.yaml` `policy.allow_implicit_invocation: true`. Codex can implicitly select a
   skill from its description, but the initial skill catalog has a bounded context budget and may
@@ -153,6 +154,11 @@ adapter. It is a task-selection layer, not another capability inventory.
   bypassPermissions, manual, dontAsk, plan) - broader than the four commonly cited; checkpoints keep
   30-day retention. Claude Code on the web is a distinct host-matrix surface (managed VM,
   default-deny network, credentials outside the sandbox) - re-negotiate capabilities there.
+- Version note (checked 2026-10-22): upstream 2.1.307; 2.1.304 caps skill hooks at 1,024 per source
+  per session with a 16,384-character matcher limit, runs at most 12 prompt/agent hooks per event,
+  drops a skill's `allowed-tools` when a plugin-hooks-only policy excludes its hooks, and makes
+  `/reload-skills` send only new or changed skills. Strict plugin validation here last ran on 2.1.282;
+  re-run `make host-validate` after updating the CLI.
 - Nested-session leakage: a child `claude -p` under leaked `CLAUDECODE`/`CLAUDE_CODE_CHILD_SESSION`
   silently skips skill loading (measured 2026-07-16); `env | grep CLAUDECODE`, scrub before spawning.
 - Use `CLAUDE.md` for stable project instructions, skills for procedures, subagents for bounded roles,

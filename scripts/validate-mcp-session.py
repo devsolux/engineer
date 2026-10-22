@@ -11,6 +11,7 @@ from evidence_path import regular_input_file
 HEX=re.compile(r'^[0-9a-f]{64}$');NAME=re.compile(r'^[a-z][a-z0-9_.-]{1,63}$')
 MUTATING={'write','money','auth','admin','external_message','production','network'}
 SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}
+STATELESS_UNSUPPORTED_VERSIONS={'2026-07-28'}  # stateless core (no initialize/session): reject explicitly, never downgrade
 def text(v:Any)->bool:return isinstance(v,str) and bool(v.strip())
 def ts(v:Any):
     try:return datetime.fromisoformat(v.replace('Z','+00:00')) if isinstance(v,str) else None
@@ -29,7 +30,9 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
     if d.get('schema_version')!=1:e.append('schema_version must be 1')
     kind=d.get('receipt_kind')
     if kind not in {'illustrative_fixture','captured_session'}:e.append('invalid receipt_kind')
-    s=d.get('server',{});skeys={'name','version','revision_sha256','owner','purpose','environment','transport','endpoint','tls','sandboxed','egress','secret_classes','protocol_version','tools_snapshot_path','tools_snapshot_sha256','capture_manifest_path','capture_manifest_sha256'}
+    s=d.get('server',{})
+    if isinstance(s,dict) and s.get('protocol_version') in STATELESS_UNSUPPORTED_VERSIONS:g.append('protocol 2026-07-28 stateless revision is not supported by this validator; rejected, never downgraded')
+    skeys={'name','version','revision_sha256','owner','purpose','environment','transport','endpoint','tls','sandboxed','egress','secret_classes','protocol_version','tools_snapshot_path','tools_snapshot_sha256','capture_manifest_path','capture_manifest_sha256'}
     if set(s)!=skeys or not NAME.fullmatch(str(s.get('name',''))) or not all(text(s.get(k)) for k in ('version','owner','purpose','environment','protocol_version','tools_snapshot_path','capture_manifest_path')) or s.get('protocol_version') not in SUPPORTED_PROTOCOL_VERSIONS or any(not HEX.fullmatch(str(s.get(k,''))) for k in ('revision_sha256','tools_snapshot_sha256','capture_manifest_sha256')) or s.get('transport') not in {'streamable_http','stdio'} or not isinstance(s.get('egress'),list) or any(not https(x) for x in s.get('egress',[])) or not isinstance(s.get('secret_classes'),list) or any(not text(x) for x in s.get('secret_classes',[])) or s.get('sandboxed') is not True:g.append('server identity, supported protocol, provenance, sandbox, or egress invalid')
     manifest=None;manifest_path=None;mrel=PurePosixPath(str(s.get('capture_manifest_path','')))
     if mrel.is_absolute() or '..' in mrel.parts:g.append('capture manifest path escapes evidence root')

@@ -1,0 +1,10 @@
+# src/notes/attachments.py (fixture excerpt, lines 15-27)
+
+ALLOWED_SCHEMES = {"http", "https"}
+
+def fetch_remote_attachment(source_url, note_id):
+    parsed = urlsplit(source_url)
+    if parsed.scheme not in ALLOWED_SCHEMES:
+        raise UnsupportedScheme(parsed.scheme)
+    response = http_client.get(source_url, timeout=10)
+    store_attachment(note_id, response.content)

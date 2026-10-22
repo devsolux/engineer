@@ -1,8 +1,9 @@
 name: Validate Engineer
 on:
   workflow_dispatch:
-  # push:
-  # pull_request:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
 concurrency:
@@ -17,12 +18,19 @@ jobs:
           - os: ubuntu-latest
             python: '3.10'
             typescript: '5.8.3'
+            node: '24'
           - os: ubuntu-latest
             python: '3.13'
             typescript: '7.0.2'
+            node: '24'
+          - os: ubuntu-latest
+            python: '3.13'
+            typescript: '7.0.2'
+            node: '26'
           - os: macos-latest
             python: '3.13'
             typescript: '7.0.2'
+            node: '24'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -34,7 +42,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
           package-manager-cache: false
       - name: Install fixture toolchain
         run: |

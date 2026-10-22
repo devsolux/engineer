@@ -51,7 +51,7 @@ vercel env pull .env.local
 ```
 
 Build settings:
-- Node 24 LTS (Node 20 is end-of-life)
+- Node 26 (Active LTS from 2026-10-28) or Node 24 (Maintenance LTS until 2028-04-30); Node 20 is end-of-life. Confirm the provider runtime supports the pinned major before changing it
 - `npm run build` must pass locally first
 - Enable Vercel Analytics / Speed Insights for CWV
 

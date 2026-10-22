@@ -1,0 +1,341 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "run": {
+    "run_id": "run-001",
+    "target": {
+      "name": "fixture-notes-service",
+      "source_ref": "illustrative",
+      "root": "."
+    },
+    "mode": "full_audit",
+    "profile": "standard",
+    "status": "complete",
+    "incomplete_reason": null,
+    "started_at": "2026-10-22T08:00:00Z",
+    "ended_at": "2026-10-22T12:00:00Z",
+    "prior_runs": [],
+    "artifact_root": "templates/agentic/security-audit-evidence",
+    "coverage": {
+      "path": "templates/agentic/security-coverage.sample.json",
+      "sha256": "fdafb33a3c5c7273828c022b22149dba123b3464846d299cc0ec9989ac293b2f"
+    },
+    "architecture": {
+      "path": "templates/agentic/security-audit-evidence/architecture.md",
+      "sha256": "b4f37bb255c897b0b0c7f74138dcac52f8980f025b9fee78d10bceaf9c4ff779"
+    },
+    "reports": [
+      "REPORT.md"
+    ],
+    "sandbox": {
+      "available": true,
+      "network": "none",
+      "env": "empty_allowlist",
+      "target_mount": "read_only",
+      "writes": "scratch_only",
+      "limits": {
+        "cpu_seconds": 600,
+        "memory_mb": 2048,
+        "wall_seconds": 900
+      },
+      "unavailable_reason": null
+    },
+    "safety": {
+      "source_inspection": "read_only",
+      "live_systems_probed": false,
+      "principals": "synthetic",
+      "secrets": "synthetic"
+    },
+    "budget": {
+      "unit": "minutes",
+      "total": 240,
+      "reserved": {
+        "critics": 30,
+        "verification": 60
+      },
+      "reserved_before_hunting": true,
+      "spent": {
+        "reconnaissance": 25,
+        "hunting": 90,
+        "critics": 20,
+        "verification": 45,
+        "record_review": 15,
+        "reporting": 10
+      }
+    }
+  },
+  "records": [
+    {
+      "fingerprint": "sa1-078fb0ee39f09530",
+      "title": "Attachment worker fetches a member-supplied URL without an egress check",
+      "verdict": "needs_validation",
+      "attack_class": "resource_handling",
+      "domain": "cloud_infra",
+      "root_cause": {
+        "path": "src/notes/attachments.py",
+        "symbol": "fetch_remote_attachment",
+        "sink": "http_client.get",
+        "note": "the URL is checked for scheme only; host and resolved address are never checked"
+      },
+      "coverage_ids": [
+        "cov-619a989ffda1"
+      ],
+      "boundary": {
+        "principal": "authenticated member",
+        "input": "source_url in POST /notes/{id}/attachments",
+        "intended_control": "egress allowlist for the attachment worker",
+        "crossed": "service network position",
+        "result": "the worker requests an address chosen by the member"
+      },
+      "trace": [
+        {
+          "stage": "entrypoint",
+          "path": "src/api/routes.py",
+          "symbol": "create_attachment_handler",
+          "line": 88,
+          "note": "accepts source_url and enqueues the fetch"
+        },
+        {
+          "stage": "propagation",
+          "path": "src/notes/queue.py",
+          "symbol": "enqueue_fetch",
+          "line": 12,
+          "note": "stores the URL unchanged"
+        },
+        {
+          "stage": "sink",
+          "path": "src/notes/attachments.py",
+          "symbol": "fetch_remote_attachment",
+          "line": 23,
+          "note": "issues the outbound request"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "source_excerpt",
+          "path": "evidence/sa1-078fb0ee39f09530/excerpt.txt",
+          "sha256": "3c2e3df75e8914d95827296078c8fc7f88a4f70a386a8106fdc444a0e6db2ca1",
+          "bytes": 375,
+          "summary": "attachment worker excerpt showing the scheme-only check before the outbound request"
+        }
+      ],
+      "conditions": [
+        {
+          "kind": "network_routing",
+          "description": "whether the worker can reach private or link-local ranges is not visible in source"
+        }
+      ],
+      "confidence": "medium",
+      "verification": {
+        "hunter": "hunter-a",
+        "verifier": "verifier-b",
+        "verifier_attempted_refutation": true,
+        "verified_at": "2026-10-22T10:45:00Z",
+        "record_reviewer": "reviewer-a",
+        "materially_replaced": false,
+        "replacement_verifier": null
+      },
+      "carried_from": null,
+      "blockers": [
+        {
+          "kind": "deployment",
+          "unresolved_fact": "whether the worker's egress policy denies private and link-local ranges",
+          "why_it_matters": "a host-level deny rule would stop the request before it leaves the worker"
+        }
+      ],
+      "validation_plan": {
+        "local": [
+          {
+            "action": "start the fixture service in the sandbox with a loopback listener and submit an attachment whose source_url points at it",
+            "expected_if_vulnerable": "the listener records the worker's request",
+            "expected_if_safe": "the worker refuses the address before connecting",
+            "sandbox_required": true
+          }
+        ],
+        "owner_observed": [
+          {
+            "action": "read the egress policy attached to the attachment worker",
+            "expected_if_vulnerable": "private and link-local ranges are reachable",
+            "expected_if_safe": "those ranges are denied",
+            "sandbox_required": false
+          }
+        ]
+      }
+    },
+    {
+      "fingerprint": "sa1-24729d7a31d4a4ae",
+      "title": "Note export path built from the note title",
+      "verdict": "rejected",
+      "attack_class": "resource_handling",
+      "domain": null,
+      "root_cause": {
+        "path": "src/notes/export.py",
+        "symbol": "export_path",
+        "sink": "open",
+        "note": "the title is slugified before it reaches the filesystem"
+      },
+      "coverage_ids": [
+        "cov-fd4b64838ffc"
+      ],
+      "boundary": {
+        "principal": "authenticated member",
+        "input": "note title",
+        "intended_control": "slugify allowlist",
+        "crossed": null,
+        "result": null
+      },
+      "trace": [
+        {
+          "stage": "entrypoint",
+          "path": "src/api/routes.py",
+          "symbol": "export_note_handler",
+          "line": 120,
+          "note": "passes the title to the exporter"
+        },
+        {
+          "stage": "sink",
+          "path": "src/notes/export.py",
+          "symbol": "export_path",
+          "line": 9,
+          "note": "opens the slugified path"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "source_excerpt",
+          "path": "evidence/sa1-24729d7a31d4a4ae/excerpt.txt",
+          "sha256": "62c1cdb0b470c0ee3ca51564e9e896a055e2a5c6ee340f78f3edbe3d83b50dee",
+          "bytes": 446,
+          "summary": "export excerpt showing the slugify allowlist applied before the path is opened"
+        }
+      ],
+      "conditions": [],
+      "confidence": "high",
+      "verification": {
+        "hunter": "hunter-b",
+        "verifier": "verifier-b",
+        "verifier_attempted_refutation": true,
+        "verified_at": "2026-10-22T11:05:00Z",
+        "record_reviewer": null,
+        "materially_replaced": false,
+        "replacement_verifier": null
+      },
+      "carried_from": null,
+      "rejection": {
+        "reason": "slugify keeps only [a-z0-9-] and replaces everything else, so no path separator or dot sequence survives into export_path",
+        "refuted_by": "verifier-b"
+      }
+    },
+    {
+      "fingerprint": "sa1-bf9c85f8a664d784",
+      "title": "Any member can read another owner's note by id",
+      "verdict": "confirmed",
+      "attack_class": "access_control",
+      "domain": "data_isolation",
+      "root_cause": {
+        "path": "src/notes/repository.py",
+        "symbol": "get_note",
+        "sink": "db.execute",
+        "note": "the query filters by note id only; the caller's owner id is never applied"
+      },
+      "coverage_ids": [
+        "cov-dcb56db86e79"
+      ],
+      "boundary": {
+        "principal": "authenticated member",
+        "input": "note id path parameter on GET /notes/{id}",
+        "intended_control": "ownership check in the note repository",
+        "crossed": "member-to-owner",
+        "result": "the body of a note owned by a different member is returned"
+      },
+      "trace": [
+        {
+          "stage": "entrypoint",
+          "path": "src/api/routes.py",
+          "symbol": "get_note_handler",
+          "line": 42,
+          "note": "parses the id and calls the service without an owner filter"
+        },
+        {
+          "stage": "propagation",
+          "path": "src/notes/service.py",
+          "symbol": "fetch_note",
+          "line": 17,
+          "note": "forwards the id unchanged"
+        },
+        {
+          "stage": "sink",
+          "path": "src/notes/repository.py",
+          "symbol": "get_note",
+          "line": 31,
+          "note": "selects by id only and returns the row to any caller"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "source_excerpt",
+          "path": "evidence/sa1-bf9c85f8a664d784/excerpt.txt",
+          "sha256": "92a41c2d80c055b11fcc2550e1c61d607f3726e2867701b426822fa6055a71c6",
+          "bytes": 294,
+          "summary": "repository excerpt showing the SELECT by note id with no owner filter"
+        }
+      ],
+      "conditions": [
+        {
+          "kind": "authentication_level",
+          "description": "requires any valid member session"
+        },
+        {
+          "kind": "data_state",
+          "description": "a note owned by a different member must exist"
+        }
+      ],
+      "confidence": "high",
+      "verification": {
+        "hunter": "hunter-b",
+        "verifier": "verifier-a",
+        "verifier_attempted_refutation": true,
+        "verified_at": "2026-10-22T10:20:00Z",
+        "record_reviewer": "reviewer-a",
+        "materially_replaced": false,
+        "replacement_verifier": null
+      },
+      "carried_from": null,
+      "severity": {
+        "likelihood": "high",
+        "impact": "high",
+        "overall": "high"
+      },
+      "remediation": {
+        "summary": "filter the query by the caller's owner id and return 404 when no row matches",
+        "layer": "data access",
+        "paths": [
+          "src/notes/repository.py"
+        ],
+        "regression_test": "tests/test_notes_isolation.py::test_member_cannot_read_foreign_note"
+      }
+    }
+  ],
+  "hardening_notes": [
+    {
+      "id": "hn-001",
+      "title": "JSON API accepts state changes without a CSRF token",
+      "location": {
+        "path": "src/api/middleware.py",
+        "symbol": "require_json_content_type"
+      },
+      "note": "no anti-CSRF token is issued or checked on state-changing routes",
+      "layer_preventing_attack": "every state-changing route requires Content-Type application/json plus the X-Requested-With header, and the session cookie is SameSite=Strict, so a cross-site form post cannot reach the handler",
+      "coverage_ids": [
+        "cov-e22ada6afe21"
+      ]
+    }
+  ],
+  "summary": {
+    "confirmed": 1,
+    "needs_validation": 1,
+    "rejected": 1,
+    "hardening_notes": 1,
+    "clean": false
+  }
+}

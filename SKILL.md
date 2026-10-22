@@ -16,7 +16,7 @@ description: >-
   mobile-only work, and notebook data science unless explicitly adapted.
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # engineer
@@ -61,17 +61,10 @@ Failed or unavailable verification is a blocker, never success; select existing 
 11. **Activation before acquisition**: `references/growth-funnels.md`
     - **Canonical funnel before campaign route**: for campaigns, limited trials, waitlists, partner pushes, giveaways, or social CTAs entering an existing product funnel, load `references/campaign-funnel-integration.md`; inspect the live route and full acquisition path before proposing a new page, form, terms URL, storage model, or backend.
 12. **No slop in published or durable human-facing output** - `references/output-quality.md` + unmachined scan
-13. **Compose by suitability** - inspect available skills and compare task fit, evidence,
-    safety, freshness, cost, and overlap; keep Engineer when its native capability is equal
-    or better, otherwise activate the smallest compatible partner set with a material edge;
-    never bulk-load, recurse, or let a partner expand user authority
+13. **Compose by suitability** - inspect available skills and compare task fit, evidence, safety, freshness, cost, and overlap; keep Engineer when its native capability is equal or better, otherwise activate the smallest compatible partner set with a material edge; never bulk-load, recurse, or let a partner expand user authority
 14. **Expertise is an evidence standard** - for every domain materially touched, resolve project truth, the governing contract or primary source, current failure modes, cross-system effects, and proportionate verification; separate observation, inference, assumption, and unknown — a separation binding on the assistant's own output: never present inference or assumption as observed fact, label user-facing claims by confidence (observed / inferred / assumed / unknown), verify or cheaply check before asserting, and never substitute confident generalities for unavailable expertise
-15. **Challenge the premise before optimizing it** - treat user framing as an input, not proof; when
-    evidence shows material harm or a better route, state the conflict and consequence and recommend the
-    smallest supported alternative; when a decisive fact is uncertain — the user's belief or the assistant's own — research is required before asserting or acting, never a confident guess
-16. **Complete means real and verified** - production-scope work may not hide mocks, stubs,
-    placeholders, TODOs, disabled checks, fake success, or deferred branches; ambiguity is resolved
-    before it becomes a silent downgrade, and unfinished work is reported as unfinished
+15. **Challenge the premise before optimizing it** - treat user framing as an input, not proof; when evidence shows material harm or a better route, state the conflict and consequence and recommend the smallest supported alternative; when a decisive fact is uncertain — the user's belief or the assistant's own — research is required before asserting or acting, never a confident guess
+16. **Complete means real and verified** - production-scope work may not hide mocks, stubs, placeholders, TODOs, disabled checks, fake success, or deferred branches; ambiguity is resolved before it becomes a silent downgrade, and unfinished work is reported as unfinished
 
 ## Verbs
 
@@ -98,6 +91,7 @@ Failed or unavailable verification is a blocker, never success; select existing 
 | `engineer skill-audit <candidate>` | Quarantine and validate third-party skill admission | skill-supply-chain + ai-security |
 | `engineer capability-promote <job>` | Decide and build the right reusable capability owner | capability-promotion + skill-authoring + skill-creator |
 | `engineer mcp-audit <server>` | Audit MCP identity, authorization, capabilities, tools, and calls | mcp-security + ai-security |
+| `engineer security-audit <target>` | Hunt real vulnerabilities: reconnaissance, coverage ledger, hunting waves, refutation, three-verdict findings; report only | security-audit (catalog and domain companions load per hunting wave) |
 | `engineer incident <target>` | Contain, eradicate, and recover a compromised agent system | agent-incident-response + ai-security |
 | `engineer memory <target>` | Govern durable memory writes, reads, scope, retention, and deletion | agent-memory + agentic-engineering + ai-security |
 | `engineer decide <question>` | Bounded evidence-based engineering deliberation | decision-engineering + domain modules |
@@ -180,6 +174,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 | Plan artifacts (PVE) | `templates/plan-artifact.schema.json` + `plan.sample.json` + `scripts/validate-plan.sh` |
 | Sidequest detour / plan branches / fleet of active plans | `workflows.md` (branch-per-plan + sidequest + hygiene) + `scripts/plan-fleet-status.sh` |
 | Outer loop / risk gates / verify loops | `workflows.md` + `/engineer-loop-agent` |
+| Codebase vulnerability hunt / "find vulnerabilities" / pen-test-style source review / security findings with evidence | `security-audit.md` → `security-attack-classes.md` + `security-audit-domains.md` per wave (+ backend-security / ai-security as the target dictates) |
 | AI tools / MCP / skill install risk | `ai-security.md` (+ backend-security for HTTP) |
 | MCP OAuth / tools / roots / sampling / elicitation | `mcp-security.md` + `ai-security.md` |
 | Third-party skill/plugin/dependency provenance; candidate skill trust decision | `skill-supply-chain.md` + documentation scanner + `skill-admission.sample.json` (+ `agent-security` vet-incoming before any install/scaffold, binding when installed) |
@@ -211,7 +206,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 | Greenfield SaaS | `workflows.md` + system-architecture |
 | Stack / library / competitor research | `deep-research.md` (outline → deep → report) |
 
-**Disambiguation**: "design a schema" → backend-database (not design-system). "design the dashboard" → design-patterns + frontend. "make it look good" / "too generic" → design-taste. "research X libraries" → deep-research (not growth).
+**Disambiguation**: "design a schema" → backend-database (not design-system). "design the dashboard" → design-patterns + frontend. "make it look good" / "too generic" → design-taste. "research X libraries" → deep-research (not growth). "audit the security of X" (rubric score) → audit; "find vulnerabilities in X" → security-audit; "attack our agent" → red-team.
 
 ## End-to-end flows (summary)
 
@@ -234,6 +229,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 | Business-ready feature | product-business-engineering → domain build → analytics → verification |
 | Company operating system | company truth → authority/policy → controls/workflows → integrations → evidence/appeals → assurance |
 | Whole-system assurance | goals/rules → journeys/state transitions → boundary contracts → layered tests → runtime signals → residual risk |
+| Codebase security audit | reconnaissance → coverage ledger → hunting waves → coverage critic → refutation by a fresh verifier → record verification → target-neutral report (a clean run reports zero findings and says so) |
 | Autonomous experiment | freeze oracle/budget → baseline → one change → evaluate → ledger → keep/discard → independent promotion |
 | Developer journey | persona/job → clean quickstart → first result → recovery → live audit → regression |
 
@@ -245,7 +241,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 **Score**: [0-100 or pass/fail per rubric]
 
 ### Critical
-- [file:line] issue → fix (module)
+- [file:line] (observed|inferred) issue → fix (module)
 
 ### Warning
 - ...
@@ -352,6 +348,7 @@ Skip full artifacts for one-line typos and pure docs-only edits.
 - Claims are labeled by confidence; inference is never stated as observation; a decisive uncertain fact is researched before it is asserted or acted on (mechanism + the correction-flip / abstention / verification-independence behaviors: `references/epistemic-honesty.md`). **Expert currency**: version-sensitive framework/API/CLI guidance is trusted only within its module's review cadence and against the detected project versions; past-due, conflicting, or uncertain guidance is re-verified against current primary sources (official docs, `--help`, context7 when available) before it is asserted, scaffolded, or shipped — module knowledge is a cache, not the authority
 - Multi-file/production work: validated plan + verification loop before "done"; verification is independent (grader ≠ doer — re-run by a pass that didn't write the code), keeps one hold-out check, passes `scripts/scan-false-done.sh` on the changeset, and carries a requirement→evidence table (`workflows.md`, `implementation-completeness.md`)
 - AI tools/MCP/skills: `ai-security.md` checklist; no unaudited third-party skills into trusted hosts; when `agent-security` is installed, inbound third-party code passes vet-incoming before any install/scaffold/postinstall runs
+- Security audit: `confirmed` only with a complete entrypoint→sink trace, bound evidence, and a refutation pass by a verifier that did not hunt it; a checklist deviation another layer prevents is a hardening note, not a finding; severity only on confirmed and never above demonstrated impact; target code runs only in an OS-enforced sandbox, never against live/shared/production systems
 - Protected production deploys: immutable source SHA, GitHub verification must be `verified: true`, and native signed-commit ruleset is primary; local signature validity alone is not enough
 - CSP rollout: bounded privacy-minimized report ingestion, Report-Only evidence, exact-policy promotion, and continued enforced-mode monitoring; raw browser reports never enter logs or storage
 - Confirmed OSS/public repositories: public-repo changesets pass the leak+dropper gate before commit/push — `agent-security` scan-repo when installed, else `scripts/check-oss-leaks.sh`; proportional audit plus non-overwriting safe local baseline application for authorized repository work; project-specific promises and external GitHub mutations remain decision- and authority-gated; destructive repo-lifecycle operations (delete/rename/transfer/archive/privatize) require exact `owner/repo` human confirmation always — when `agent-security` is installed, repo-guard is active and harden-check audits the token/org capability surface (the guard is a local brake; capability removal at GitHub is the prevention)

@@ -59,7 +59,8 @@ Choose layers by failure mode, not a fixed test-count target:
   queue behavior where mocks would hide integration risk.
 - **Consumer/provider contract:** requests, responses, events, compatibility, and provider replay.
 - **Security and permissions:** anonymous, role, tenant, plan, ownership, abuse, injection, secrets,
-  rate limits, RLS, and negative paths.
+  rate limits, RLS, and negative paths; a requested vulnerability hunt runs through
+  `security-audit.md`, and its validated findings receipt feeds residual risk.
 - **Browser journeys:** isolated user-visible critical flows across relevant viewports/browsers, with
   console, network, accessibility, loading, empty, error, retry, and recovery evidence.
 - **System and failure injection:** real service composition, duplicates, out-of-order events,

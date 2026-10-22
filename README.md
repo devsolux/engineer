@@ -1,6 +1,6 @@
 # Engineer
 
-**Version 1.0.0 · Repository `devsolux/engineer` · Plugin `engineer` · Marketplace `devsolux-engineer`**
+**Version 1.1.0 · Repository `devsolux/engineer` · Plugin `engineer` · Marketplace `devsolux-engineer`**
 
 A reusable full-stack engineering skill: inspect the existing project, select a
 focused workflow, make the smallest coherent change, and verify the result.
@@ -59,7 +59,7 @@ make check         # syntax, integrity, security metadata, fixture bindings, sta
 make test          # all discovered offline shell and Python suites; no live model calls
 make build         # refresh tracked plugins/engineer from canonical source
 make verify-build  # fail on generated bundle drift
-make package       # dist/engineer-1.0.0-plugin.zip and its SHA-256
+make package       # dist/engineer-1.1.0-plugin.zip and its SHA-256
 make clean         # only .build/ and dist/; never host state, source, or .engineer/
 ```
 

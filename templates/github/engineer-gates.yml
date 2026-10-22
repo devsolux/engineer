@@ -1,7 +1,7 @@
 # Example CI workflow - copy to .github/workflows/engineer-gates.yml
 # Pair with package-scripts.snippet.json (typecheck, lint:ci, test:*).
 # For pnpm: replace npm ci / npm run with pnpm install --frozen-lockfile / pnpm run.
-# Node 24 LTS recommended (COMPAT.md).
+# Node 24 (Maintenance LTS from 2026-10-20) or Node 26 (Active LTS from 2026-10-28); see COMPAT.md.
 
 name: engineer gates
 
@@ -88,6 +88,24 @@ jobs:
   #     - run: supabase start
   #     - run: supabase db reset
   #     - run: supabase test db
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: frozen lockfile, no lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: lifecycle scripts must be allowlisted
+        # Packages that declare install hooks must appear in .lifecycle-allowlist (one name per line).
+        run: |
+          npm query ':attr(scripts,[preinstall]),:attr(scripts,[install]),:attr(scripts,[postinstall])' \
+            | node -e 'const fs=require("fs");const found=[...new Set(JSON.parse(fs.readFileSync(0,"utf8")).map(p=>p.name))].sort();const allow=fs.existsSync(".lifecycle-allowlist")?fs.readFileSync(".lifecycle-allowlist","utf8").split(/\r?\n/).filter(Boolean):[];const bad=found.filter(n=>!allow.includes(n));if(bad.length){console.error("lifecycle scripts not allowlisted: "+bad.join(", "));process.exit(1)}console.log("lifecycle scripts allowlisted: "+found.length)'
+      - name: registry provenance signatures (report; absence does not fail)
+        run: npm audit signatures || echo "::warning::npm audit signatures reported issues; review before release"
 
   secrets:
     runs-on: ubuntu-latest

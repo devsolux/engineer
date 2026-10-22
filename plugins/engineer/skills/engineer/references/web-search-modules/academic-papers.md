@@ -1,10 +1,13 @@
 # Academic Papers Module
 
-> 从 web-search-agent.md 提取的学术论文搜索专用策略
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
+Translation and structure review; search-site operators were not re-tested against live sites.
 
-**触发场景**: 论文查找、学术研究、算法原理
+> Extracted strategy pack for academic paper searches (from web-search-agent.md).
 
-## 搜索源 (Academic Sources)
+**Trigger scenarios**: paper lookup, academic research, algorithm principles
+
+## Search sources (Academic Sources)
 - **Google Scholar** (scholar.google.com) - comprehensive academic search engine
 - **arXiv** (arxiv.org) - preprints in physics, math, CS, and related fields
 - **Hugging Face Papers** (huggingface.co/papers) - daily/monthly trending ML/AI papers with community upvotes
@@ -13,7 +16,7 @@
 - **Semantic Scholar** (semanticscholar.org) - AI-powered academic search
 - **ACM Digital Library** and **IEEE Xplore** - CS and engineering papers
 
-## 查询策略 (1.3 Academic Paper Search)
+## Query strategy (1.3 Academic Paper Search)
 - Use Google Scholar as primary source with advanced search operators
 - Search by author names, paper titles, DOI numbers, institutions, and publication years
 - Use quotation marks for exact titles and author name combinations

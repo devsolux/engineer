@@ -1,4 +1,4 @@
-# Reference modules — 1.0.0
+# Reference modules — 1.1.0
 
 The canonical catalog with routing notes is [MANIFEST](../references/MANIFEST.md).
 Load only the modules needed for the task. Dates in modules record historical
@@ -100,6 +100,9 @@ verification, not the date of this package build.
 - [Root-cause engineering: fix the cause, not the symptom](../references/root-cause-engineering.md)
 - [Rust: services, APIs, and infra](../references/rust.md)
 - [Secure package-backed HTML previews](../references/secure-package-html-preview.md)
+- [Security audit: evidence-graded codebase vulnerability hunting](../references/security-audit.md)
+- [Security attack classes: hunting questions and validation rules](../references/security-attack-classes.md)
+- [Security audit domains: web, client, AI, supply chain, cloud, messaging, availability, data](../references/security-audit-domains.md)
 - [SEO & metadata: technical discoverability](../references/seo-metadata.md)
 - [Skill authoring: build agent skills that scale](../references/skill-authoring.md)
 - [Behavioral skill evaluations](../references/skill-behavior-evals.md)

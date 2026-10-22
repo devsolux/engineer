@@ -16,7 +16,9 @@ Load `references/mcp-security.md`, `references/ai-security.md`, and
    Bind receipts to its manifest. Capture `tools/list`, hash the confined artifact, and derive every description
    and input/output schema digest from it. Require exact tool-set equality. Classify risk, scopes,
    destinations, timeout, rate limit, idempotency, confirmation, and validation requirements.
-4. Review roots, sampling, elicitation, resources, and prompts at their own trust boundaries.
+4. Review elicitation, resources, and prompts at their own trust boundaries. Roots, sampling, and
+   logging are deprecated in the 2026-07-28 revision: review them only when the server still
+   advertises them, and record that exposure as a deprecated-feature item with its migration path.
    Capture complete paginated resource/template and prompt catalogs, reviewed reads/renders, and
    completion policy. Resources remain application/user-selected data; prompts require explicit user
    selection and cannot grant authority. Revalidate list changes and subscriptions.

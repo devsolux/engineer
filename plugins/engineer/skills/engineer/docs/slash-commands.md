@@ -52,6 +52,7 @@ selection uses `$engineer`. The names below do not imply all hosts support alias
 | `/engineer-research-review` | `/engineer:research-review` | [research-review](../commands/engineer-research-review.md) |
 | `/engineer-research` | `/engineer:research` | [research](../commands/engineer-research.md) |
 | `/engineer-schema` | `/engineer:schema` | [schema](../commands/engineer-schema.md) |
+| `/engineer-security-audit` | `/engineer:security-audit` | [security-audit](../commands/engineer-security-audit.md) |
 | `/engineer-self-improve` | `/engineer:self-improve` | [self-improve](../commands/engineer-self-improve.md) |
 | `/engineer-ship` | `/engineer:ship` | [ship](../commands/engineer-ship.md) |
 | `/engineer-skill-audit` | `/engineer:skill-audit` | [skill-audit](../commands/engineer-skill-audit.md) |

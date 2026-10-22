@@ -25,7 +25,7 @@ never silently duplicate a stream (lifecycle: SKILL.md Plan → Validate → Exe
 ## Detection checklist
 
 1. **`package.json` dependencies**
- - `next` - 16.x (greenfield, Cache Components, `proxy.ts`) vs 15 (`middleware.ts`) vs 14
+ - `next` - 16.x (greenfield, Cache Components, `proxy.ts`) vs 15 (`middleware.ts`; end-of-life since 2026-10-21 → report an upgrade item) vs 14
  - `react` / `react-dom` - 19 vs 18
  - `tailwindcss` - 4.x vs 3.x
  - `@supabase/supabase-js`, `@supabase/ssr`
@@ -132,6 +132,7 @@ Rust: {Axum/none}, workspace {y/n}
 Python: {FastAPI/none}, uv {y/n}, services path {path|none}
 Patterns: {App Router|Pages}, {src/|root}, alias {path}
 Constraints: {cacheComponents|none}, {monorepo|single app}
+Currency: {Next 15 end-of-life since 2026-10-21 → upgrade item|current}
 Distribution: {private|public/OSS|unknown}, OSS profile {experimental|supported|critical|deprecated|n/a}
 Portfolio: venture {key|unknown}, workspace {healthy|attention|n/a}
 ```

@@ -54,7 +54,7 @@ supabase test db
 ### CI (from enforcement-rules.md)
 
 ```yaml
-- uses: supabase/setup-cli@v1
+- uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1 (installs the CLI from npm)
 - run: supabase start
 - run: supabase db reset
 - run: supabase test db

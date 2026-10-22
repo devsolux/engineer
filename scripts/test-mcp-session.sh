@@ -23,6 +23,8 @@ PY
 }
 mutate mutable_revision 'd["server"]["revision_sha256"]="main"'
 mutate unsupported_protocol 'd["server"]["protocol_version"]="2099-01-01"'
+mutate stateless_2026_07_28 'd["server"]["protocol_version"]="2026-07-28"'
+(python3 "$V" "$T/stateless_2026_07_28.json" --evidence-root "$ROOT" --json 2>/dev/null || true) | grep -q 'rejected, never downgraded' || { echo "stateless rejection must name the 2026-07-28 revision explicitly" >&2; exit 1; }
 mutate no_sandbox 'd["server"]["sandboxed"]=False'
 mutate insecure_endpoint 'd["server"]["endpoint"]="http://mcp.example.test/mcp"'
 mutate no_resource_metadata 'd["authorization"]["protected_resource_metadata"]=None'

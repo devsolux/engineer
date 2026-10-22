@@ -75,6 +75,7 @@ AI security:
 - [ ] Prompts/evals/traces redacted (no raw Authorization, cookies, .env)
 - [ ] New MCP server: owner, purpose, network egress, pin/version noted
 - [ ] New skill: validated admission receipt; no unaudited third-party into trusted hosts
+- [ ] Vulnerability hunt requested: `security-audit.md` run with a validated findings receipt (severity on confirmed only)
 - [ ] Money/auth paths: gstack /cso if material change
 ```
 

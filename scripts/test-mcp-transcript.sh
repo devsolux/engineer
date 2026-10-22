@@ -27,6 +27,19 @@ mutate missing_initialized 'd.pop(2);[(x.__setitem__("seq",i+1)) for i,x in enum
 mutate protocol_mismatch 'd[1]["message"]["result"]["protocolVersion"]="2025-03-26"'
 mutate unsupported_protocol '[(x["message"].get("params",{}).__setitem__("protocolVersion","2099-01-01") if x["message"].get("method")=="initialize" else None) for x in d];[(x["message"].get("result",{}).__setitem__("protocolVersion","2099-01-01") if "result" in x["message"] and x["message"].get("id")==1 else None) for x in d];[(x.__setitem__("protocol_version_header","2099-01-01") if x["direction"]=="client_to_server" and x["seq"]>2 else None) for x in d]'
 mutate bad_protocol_header 'd[3]["protocol_version_header"]="2025-03-26"'
+# The 2026-07-28 stateless revision is rejected with an explicit message, never downgraded.
+python3 - "$S" "$T/stateless.jsonl" <<'PY'
+import json,sys
+d=[json.loads(x) for x in open(sys.argv[1]) if x.strip()]
+for x in d:
+    m=x['message']
+    if m.get('method')=='initialize':m['params']['protocolVersion']='2026-07-28'
+    if 'result' in m and m.get('id')==1:m['result']['protocolVersion']='2026-07-28'
+    if x['direction']=='client_to_server' and x['seq']>2:x['protocol_version_header']='2026-07-28'
+open(sys.argv[2],'w').write('\n'.join(json.dumps(x,separators=(',',':')) for x in d)+'\n')
+PY
+if python3 "$C" "$T/stateless.jsonl" --output-dir "$T/stateless" >"$T/stateless.out" 2>&1;then echo "expected rejection: stateless_2026_07_28" >&2;exit 1;fi
+grep -q 'rejected, never downgraded' "$T/stateless.out" || { echo "stateless rejection must name the 2026-07-28 revision explicitly" >&2; cat "$T/stateless.out" >&2; exit 1; }
 mutate session_switch 'd[3]["session_id_sha256"]="8"*64'
 mutate missing_session 'd[1]["session_id_sha256"]=None'
 mutate duplicate_request_id 'd[5]["message"]["id"]=2'

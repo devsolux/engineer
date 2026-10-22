@@ -1,10 +1,13 @@
 # General Web Module
 
-> 从 web-search-agent.md 提取的通用网页搜索策略
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
+Translation and structure review; search-site operators were not re-tested against live sites.
 
-**触发场景**: 通用信息、新闻、产品对比、最佳实践
+> Extracted strategy pack for general web searches (from web-search-agent.md).
 
-## 搜索源
+**Trigger scenarios**: general information, news, product comparisons, best practices
+
+## Search sources
 - **Reddit** (r/programming, r/webdev, r/javascript, and topic-specific subreddits) - real-world experiences
 - **Official documentation** and changelogs - authoritative information
 - **Blog posts** and tutorials - detailed explanations
@@ -14,7 +17,7 @@
 - **Discord** - official discussion channels for many open source projects
 - **X/Twitter** - technical announcements and discussions from developers and maintainers
 
-## 查询策略 (1.2 Best Practices & Comparative Research)
+## Query strategy (1.2 Best Practices & Comparative Research)
 - Look for official recommendations first
 - Cross-reference with community consensus
 - Find examples from production codebases

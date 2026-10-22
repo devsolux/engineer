@@ -72,6 +72,7 @@ Start from `templates/agentic/security-eval-catalog.sample.json` and run:
 python3 scripts/validate-security-eval-catalog.py security-eval-catalog.json
 ```
 
-**Related**: `ai-security.md`, `agentic-engineering.md`, `prompt-optimization.md`, `ai-evals.md`
+**Related**: `ai-security.md`, `agentic-engineering.md`, `prompt-optimization.md`, `ai-evals.md`,
+`security-audit.md` (hunts vulnerabilities in the code you ship; this module tests the agent you run)
 
 **Research basis**: `../research/agentic-engineering-2026-07.md`

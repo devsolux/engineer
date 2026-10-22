@@ -181,8 +181,8 @@ See `scripts/check-rls-migration.sh`.
  rls:
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v7
- - uses: supabase/setup-cli@v1
+ - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+ - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1 (installs the CLI from npm)
  - run: supabase start
  - run: supabase db reset
  - run: supabase test db # runs supabase/tests/*.sql
@@ -200,7 +200,7 @@ Copy template: `templates/supabase/tests/rls_projects.test.sql`
 Enable GitHub **secret scanning** + **push protection**. Add gitleaks locally:
 
 ```yaml
- - uses: gitleaks/gitleaks-action@v2
+ - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
  env:
  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

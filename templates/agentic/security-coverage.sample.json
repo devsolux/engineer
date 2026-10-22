@@ -1,0 +1,395 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "run": {
+    "run_id": "run-001",
+    "target": {
+      "name": "fixture-notes-service",
+      "source_ref": "illustrative",
+      "root": "."
+    },
+    "profile": "standard",
+    "status": "complete",
+    "incomplete_reason": null,
+    "prior_runs": [],
+    "sandbox": {
+      "available": true,
+      "unavailable_reason": null
+    },
+    "architecture": {
+      "path": "templates/agentic/security-audit-evidence/architecture.md",
+      "sha256": "b4f37bb255c897b0b0c7f74138dcac52f8980f025b9fee78d10bceaf9c4ff779"
+    }
+  },
+  "dimensions": {
+    "surfaces": [
+      {
+        "id": "http-api",
+        "ref": "src/api/routes.py",
+        "kind": "http"
+      },
+      {
+        "id": "admin-cli",
+        "ref": "src/cli/admin.py",
+        "kind": "cli"
+      }
+    ],
+    "boundaries": [
+      {
+        "id": "anonymous-to-member",
+        "from": "anonymous",
+        "to": "member",
+        "strongest_visible_control": "session cookie check in src/api/middleware.py"
+      },
+      {
+        "id": "member-to-owner",
+        "from": "member",
+        "to": "owner",
+        "strongest_visible_control": "ownership check expected in src/notes/repository.py"
+      }
+    ],
+    "subsystems": [
+      {
+        "id": "notes",
+        "paths": [
+          "src/api/",
+          "src/notes/",
+          "src/cli/"
+        ]
+      }
+    ],
+    "attack_classes": [
+      "injection",
+      "access_control",
+      "resource_handling"
+    ]
+  },
+  "units": [
+    {
+      "coverage_id": "cov-498becfd7f06",
+      "surface": "http-api",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "injection",
+      "status": "covered",
+      "owner": "hunter-a",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/notes/repository.py",
+        "src/notes/search.py"
+      ],
+      "checks": [
+        {
+          "id": "injection-source-trace",
+          "method": "source",
+          "description": "traced every member-controlled string reaching db.execute and confirmed parameter binding",
+          "paths": [
+            "src/api/routes.py",
+            "src/notes/repository.py",
+            "src/notes/search.py"
+          ],
+          "result_fingerprint": "3b8a17c6e6149eb3"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-e22ada6afe21",
+      "surface": "http-api",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "access_control",
+      "status": "covered",
+      "owner": "hunter-a",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/api/middleware.py",
+        "src/notes/repository.py"
+      ],
+      "checks": [
+        {
+          "id": "access_control-source-trace",
+          "method": "source",
+          "description": "traced every route handler to its ownership or session check",
+          "paths": [
+            "src/api/routes.py",
+            "src/api/middleware.py",
+            "src/notes/repository.py"
+          ],
+          "result_fingerprint": "401e4e6fb26fbd83"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-619a989ffda1",
+      "surface": "http-api",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "resource_handling",
+      "status": "candidate",
+      "owner": "hunter-a",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/notes/attachments.py",
+        "src/notes/export.py"
+      ],
+      "checks": [
+        {
+          "id": "resource_handling-source-trace",
+          "method": "source",
+          "description": "traced member-controlled URLs, paths, and sizes to their filesystem and network sinks",
+          "paths": [
+            "src/api/routes.py",
+            "src/notes/attachments.py",
+            "src/notes/export.py"
+          ],
+          "result_fingerprint": "ddc9237c59c9053b"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [
+        "sa1-078fb0ee39f09530"
+      ],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-bb6fc1b9fd4e",
+      "surface": "http-api",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "injection",
+      "status": "covered",
+      "owner": "hunter-b",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/notes/repository.py",
+        "src/notes/search.py"
+      ],
+      "checks": [
+        {
+          "id": "injection-source-trace",
+          "method": "source",
+          "description": "traced every member-controlled string reaching db.execute and confirmed parameter binding",
+          "paths": [
+            "src/api/routes.py",
+            "src/notes/repository.py",
+            "src/notes/search.py"
+          ],
+          "result_fingerprint": "937dae014d02da4f"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-dcb56db86e79",
+      "surface": "http-api",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "access_control",
+      "status": "candidate",
+      "owner": "hunter-b",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/api/middleware.py",
+        "src/notes/repository.py"
+      ],
+      "checks": [
+        {
+          "id": "access_control-source-trace",
+          "method": "source",
+          "description": "traced every route handler to its ownership or session check",
+          "paths": [
+            "src/api/routes.py",
+            "src/api/middleware.py",
+            "src/notes/repository.py"
+          ],
+          "result_fingerprint": "777d073452b9fd0a"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [
+        "sa1-bf9c85f8a664d784"
+      ],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-fd4b64838ffc",
+      "surface": "http-api",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "resource_handling",
+      "status": "candidate",
+      "owner": "hunter-b",
+      "wave": 1,
+      "reviewed_paths": [
+        "src/api/routes.py",
+        "src/notes/attachments.py",
+        "src/notes/export.py"
+      ],
+      "checks": [
+        {
+          "id": "resource_handling-source-trace",
+          "method": "source",
+          "description": "traced member-controlled URLs, paths, and sizes to their filesystem and network sinks",
+          "paths": [
+            "src/api/routes.py",
+            "src/notes/attachments.py",
+            "src/notes/export.py"
+          ],
+          "result_fingerprint": "346b8a0c3825bc05"
+        }
+      ],
+      "unresolved_reason": null,
+      "candidate_fingerprints": [
+        "sa1-24729d7a31d4a4ae"
+      ],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-a01f03897f6f",
+      "surface": "admin-cli",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "injection",
+      "status": "not_applicable",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI has no anonymous caller; it runs only inside an operator shell session",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-9e8ddb420c80",
+      "surface": "admin-cli",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "access_control",
+      "status": "not_applicable",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI has no anonymous caller; it runs only inside an operator shell session",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-46a648d2b5ba",
+      "surface": "admin-cli",
+      "boundary": "anonymous-to-member",
+      "subsystem": "notes",
+      "attack_class": "resource_handling",
+      "status": "not_applicable",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI has no anonymous caller; it runs only inside an operator shell session",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-868e8bd69552",
+      "surface": "admin-cli",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "injection",
+      "status": "deferred",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI is reachable only by an operator with shell access; the member-to-owner boundary from this surface is deferred to a deep-profile run",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-9e6cfd43b824",
+      "surface": "admin-cli",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "access_control",
+      "status": "deferred",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI is reachable only by an operator with shell access; the member-to-owner boundary from this surface is deferred to a deep-profile run",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    },
+    {
+      "coverage_id": "cov-4b9d3639a0bd",
+      "surface": "admin-cli",
+      "boundary": "member-to-owner",
+      "subsystem": "notes",
+      "attack_class": "resource_handling",
+      "status": "deferred",
+      "owner": null,
+      "wave": null,
+      "reviewed_paths": [],
+      "checks": [],
+      "unresolved_reason": "the CLI is reachable only by an operator with shell access; the member-to-owner boundary from this surface is deferred to a deep-profile run",
+      "candidate_fingerprints": [],
+      "proposed_by": null,
+      "carried_from": null
+    }
+  ],
+  "waves": [
+    {
+      "wave": 1,
+      "hunters": [
+        "hunter-a",
+        "hunter-b"
+      ],
+      "critic": "critic-a",
+      "units": [
+        "cov-498becfd7f06",
+        "cov-e22ada6afe21",
+        "cov-619a989ffda1",
+        "cov-bb6fc1b9fd4e",
+        "cov-dcb56db86e79",
+        "cov-fd4b64838ffc"
+      ]
+    }
+  ],
+  "summary": {
+    "expected_cells": 12,
+    "units": 12,
+    "by_status": {
+      "blocked": 0,
+      "candidate": 3,
+      "covered": 3,
+      "deferred": 3,
+      "in_progress": 0,
+      "not_applicable": 3,
+      "out_of_scope": 0,
+      "planned": 0
+    }
+  }
+}

@@ -45,10 +45,57 @@ uvx ruff==0.12.4 check .
 (root / "unlabeled.yml").write_text('''steps:
   - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 ''')
+(root / "fork-checkout.yml").write_text('''on:
+  pull_request_target:
+    types: [opened]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm ci
+''')
+(root / "workflow-run-fork.yml").write_text('''on: [workflow_run]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+''')
+(root / "privileged-base-checkout.yml").write_text('''on:
+  pull_request_target:
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: echo label only, base ref
+''')
+(root / "yaml-fence-mutable.md").write_text('''```yaml
+ - uses: gitleaks/gitleaks-action@v2
+```
+''')
+(root / "yaml-fence-pinned.md").write_text('''```yaml
+ - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+```
+''')
+(root / "yaml-fence-fork.md").write_text('''```yml
+on:
+  pull_request_target:
+steps:
+  - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    with:
+      ref: ${{ github.head_ref }}
+```
+''')
 PY
 
-python3 "$SCANNER" "$TMP/cases/safe.md" "$TMP/cases/exact.md" "$TMP/cases/pinned.yml" >/dev/null
-for bad in pipe.md latest.md unpinned.md mutable.yml unlabeled.yml; do
+python3 "$SCANNER" "$TMP/cases/safe.md" "$TMP/cases/exact.md" "$TMP/cases/pinned.yml" "$TMP/cases/privileged-base-checkout.yml" "$TMP/cases/yaml-fence-pinned.md" >/dev/null
+for bad in pipe.md latest.md unpinned.md mutable.yml unlabeled.yml fork-checkout.yml workflow-run-fork.yml yaml-fence-mutable.md yaml-fence-fork.md; do
   if python3 "$SCANNER" "$TMP/cases/$bad" >/dev/null 2>&1; then
     echo "expected rejection: $bad" >&2
     exit 1
@@ -64,6 +111,20 @@ data = json.loads(sys.argv[1])
 assert data["ok"] is False
 assert data["findings"][0]["rule"] == "remote-pipe-interpreter"
 assert "not proof" in data["limitation"]
+PY
+FORK_OUTPUT="$(python3 "$SCANNER" "$TMP/cases/fork-checkout.yml" --json || true)"
+python3 - "$FORK_OUTPUT" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+rules = [f["rule"] for f in data["findings"]]
+assert rules == ["privileged-trigger-fork-checkout"], rules
+assert "trigger at line 2" in data["findings"][0]["text"]
+PY
+FENCE_OUTPUT="$(python3 "$SCANNER" "$TMP/cases/yaml-fence-mutable.md" --json || true)"
+python3 - "$FENCE_OUTPUT" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+assert [f["rule"] for f in data["findings"]] == ["mutable-action-ref"], data
 PY
 
 echo "documentation supply-chain fixtures passed"

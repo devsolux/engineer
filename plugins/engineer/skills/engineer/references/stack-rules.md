@@ -68,7 +68,7 @@ Use `@tailwindcss/postcss` in `postcss.config.mjs`. Do not leave a v3 `tailwind.
 
 ## Next.js 16 / App Router essentials
 
-- Greenfield is Next **16.x** (LTS). Detect 15.x and keep its conventions until a deliberate upgrade.
+- Greenfield is Next **16.x** (Active LTS). Next 15 reached end-of-life on 2026-10-21: detect 15.x, keep its conventions until a deliberate upgrade, and report the upgrade as an open item.
 - Server Components default. `"use client"` only when required.
 - Request boundary: `proxy.ts` exporting `proxy` (Next 16). Keep `middleware.ts` only when the detected major is 15.
 - Parallelize independent fetches: initiate all, then `Promise.all`.

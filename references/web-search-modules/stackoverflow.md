@@ -1,9 +1,12 @@
 # Stack Overflow Module
 
-> 从 web-search-agent.md 提取的技术问答专用策略
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
+Translation and structure review; search-site operators were not re-tested against live sites.
 
-**触发场景**: 编程问答、代码实现、API用法
+> Extracted strategy pack for technical Q&A searches (from web-search-agent.md).
 
-## 搜索源
+**Trigger scenarios**: programming Q&A, code implementation, API usage
+
+## Search sources
 - **Stack Overflow** and other Stack Exchange sites - technical Q&A
 - **Technical forums** and discussion boards - community wisdom

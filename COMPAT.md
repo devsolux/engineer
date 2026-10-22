@@ -12,6 +12,11 @@
 | Claude Code | Plugin marketplace support | 2.1.282: strict manifest validation and isolated local-marketplace install |
 | Codex CLI | `codex plugin` marketplace support | 0.162.0-alpha.17.2: isolated local-marketplace install and skill registration |
 
+Re-checked 2026-10-22: Node 24 moved to Maintenance LTS on 2026-10-20 and Node 26 becomes
+Active LTS on 2026-10-28 (both run in CI); Claude Code 2.1.307 and Codex 0.164.0-alpha.10 are
+current upstream, while the strict host validation below was last executed on the versions
+listed. See the 2026-10-22 ledger for sources.
+
 GNU Make 3.81 ignores `.SHELLFLAGS`; recipes still fail on any nonzero command, but
 3.82+ additionally applies `set -euo pipefail` inside each recipe line.
 
@@ -37,9 +42,9 @@ web, mobile, account tier, or execution mode. See the verification source ledger
 
 ## Consumer guidance, not bundled runtime dependencies
 
-Next.js 16.x is Active LTS and 15.x is Maintenance LTS as checked on 2026-10-11.
-Existing Next 15 request boundaries should not be renamed blindly to Next 16's
-`proxy.ts`. React, Tailwind, Supabase, Zod, Stripe, and Playwright examples must be
+Next.js 16.x is Active LTS; 15.x reached end-of-life on 2026-10-21 (checked 2026-10-22).
+Detected Next 15 apps keep their conventions and get an upgrade item; their request
+boundaries should not be renamed blindly to Next 16's `proxy.ts`. React, Tailwind, Supabase, Zod, Stripe, and Playwright examples must be
 adapted to the target application's installed and patched versions.
 
 The current MCP specification is 2026-07-28. Engineer contains security guidance
@@ -52,10 +57,16 @@ different, experimental application protocol, not a drop-in MCP transport.
 
 ## Evidence terminology
 
+The security-audit validators (`scripts/validate-security-findings.py`,
+`scripts/validate-security-coverage.py`) prove record consistency, identifier derivation,
+independence rules and evidence binding. They never prove exploitability, the absence of
+vulnerabilities, or that a sandbox was actually enforced.
+
 Static checks establish repository consistency. Offline fixture tests exercise
 code against synthetic cases. Template tests use TypeScript/Node and controlled
 stubs, not an installed browser or production application. Model quality,
 marketplace review, host permissions, and live workflow success need separate
 captured evidence. `research/` dates are not refreshed by a release bump.
 
-Sources and exact review scope: [2026-10-11 ledger](docs/verification-2026-10-11.md).
+Sources and exact review scope: [2026-10-11 ledger](docs/verification-2026-10-11.md) and
+[2026-10-22 ledger](docs/verification-2026-10-22.md).

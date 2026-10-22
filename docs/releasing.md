@@ -3,7 +3,9 @@
 1. Review source changes, threat boundaries, and dependency evidence. Update the
    single `SKILL.md` version, `CHANGELOG.md`, and the version headers in
    `docs/README.md` and `docs/modules.md`. Do not redate research notes without
-   rechecking their sources.
+   rechecking their sources. Run `python3 scripts/report-module-currency.py`: every
+   module past its review cadence is re-verified against primary sources (then redated)
+   or listed as past-due in the dated verification ledger — never redated blind.
 2. Rebind only reviewed illustrative fixtures (`make fixtures`), then run
    `make build` and review the generated `plugins/engineer/` diff.
 3. Run `make release-check` (`check`, `test`, and `verify-build`). Review failures
@@ -18,7 +20,8 @@
    - later changes: `make github-push GITHUB_COMMIT_MSG='…'`;
    - tagged release with the plugin ZIP: `make github-release`.
 6. After publishing, install from GitHub with the commands in the README and
-   confirm both hosts resolve `engineer@devsolux-engineer` at the new version.
+   confirm both hosts resolve `engineer@devsolux-engineer` at the new version, and
+   that `git ls-remote --tags origin` lists `v<version>`; record both in the ledger.
 
 Version is read from `SKILL.md`. The ZIP has sorted paths, fixed timestamps, explicit
 file modes, no symlinks, and a SHA-256 sidecar. Rebuilding identical input should

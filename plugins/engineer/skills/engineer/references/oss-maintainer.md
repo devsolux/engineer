@@ -14,7 +14,7 @@ For authorized repository work, run `scripts/apply-oss-baseline.py --visibility 
 
 ## Private-context leak gate (binding)
 
-Finding classes: **SECRET** and **DROPPER** and **INVISIBLE_UNICODE** (CRITICAL, never
+Finding classes: **SECRET**, **DROPPER**, **WORM**, and **INVISIBLE_UNICODE** (CRITICAL, never
 downgraded); **PATH**, **INFRA**, **PERSONAL**, **MARKER** (MAJOR). INFRA covers private IPs,
 internal hostnames, SSH targets, and — since 2026-08 — cloud identifiers that map a deployment
 topology: AWS ARNs/account ids/ECR/RDS/S3 hosts, GCP service accounts and `run.app`/`gs://`,

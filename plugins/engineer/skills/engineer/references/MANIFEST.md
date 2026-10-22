@@ -17,6 +17,7 @@ Do not bulk-load this file or all references at session start.
 | `ai-agents.md` | Prompting, agent workflows |
 | `ai-security.md` | LLM tools, MCP, skill supply chain, AI ship checklist |
 | `mcp-security.md` | MCP server identity, OAuth, capabilities, schemas, roots, sampling, elicitation, and calls |
+| `security-audit.md` | Codebase vulnerability hunt: modes, boundary-and-result rule, six phases, three verdicts, sandbox policy, reports (hunters load the catalog and domain companions per wave) |
 | `skill-supply-chain.md` | Third-party skill admission, dependency steering, and executable provenance |
 | `malware-detection.md` | Obfuscated-dropper taxonomy, regex/AST/sandbox method-tiering, FP doctrine, and where droppers hide (malware / dropper / obfuscated payload / supply-chain implant) |
 | `../research/agent-skill-ecosystem-2026-07.md` | Trust-ranked external skill catalogs, specialist packs, and integration decisions |
@@ -161,6 +162,8 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `autonomous-experimentation.md` | General metric-driven agent experiments, resource budgets, ledgers, and promotion |
 | `developer-experience.md` | Developer journeys, quickstarts, tooling errors, live audits, and regression evidence |
 | `agent-red-teaming.md` | Authorized defensive agent threat modeling and regression testing |
+| `security-attack-classes.md` | Hunting catalog: core attack classes, wildcard, and the obvious-things checklist with per-class validation rules |
+| `security-audit-domains.md` | Domain companions for the hunt: web/auth, client-side, AI/agent/MCP, supply chain, cloud, protocols/messaging, availability, data isolation |
 | `output-quality.md` | Scoped unmachined composition, anti-slop, and detection limits |
 | `decision-engineering.md` | Bounded multi-perspective engineering decisions and Council composition |
 | `epistemic-honesty.md` | Sycophancy/calibration/hallucination mechanism + correction-flip guard, calibrated abstention, and verification-independence behaviors |
@@ -198,6 +201,10 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `scripts/test-optimization-run.sh` | Comparative optimization and trial-evidence adversarial fixtures |
 | `scripts/validate-security-eval-catalog.py` | Defensive agent threat-coverage and fixture-safety validator |
 | `scripts/test-security-eval-catalog.sh` | Defensive security-catalog adversarial fixtures |
+| `scripts/validate-security-findings.py` | Security-audit findings receipt validator: three verdicts, derived fingerprints, independence, bound evidence, ledger cross-check |
+| `scripts/validate-security-coverage.py` | Security-audit coverage-ledger validator: derived unit ids, status rules, waves, cross-product completeness, carry-forward |
+| `scripts/security-ledger.py` | Trusted parent-side ledger tool: init, assign, promote (regular-file/size/JSON/assigned-unit checks), gap, finish |
+| `scripts/test-security-findings.sh` / `test-security-coverage.sh` / `test-security-ledger-tool.sh` | Security-audit validator and ledger-tool mutation fixtures |
 | `scripts/test-github-signing.sh` | GitHub signing and exact-SHA deploy-gate fixture checks |
 | `scripts/test-csp-reporting.sh` | CSP parser, minimization, origin-admission, and header fixtures |
 | `scripts/audit-oss-repo.py` | Offline proportional OSS baseline receipt with explicit external-state limits |
@@ -297,7 +304,7 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `templates/playwright/mobile-quality.ts` | Deterministic viewport policy parser for compact browser tests |
 | `templates/product-metrics/` | KPI, event, privacy, and experiment contract |
 | `templates/agentic/` | PRD-to-loop execution contract and schema |
-| `templates/agentic/prompts/` | Copy-paste agent prompt bodies (feature build, bug fix, audit only, plan only) |
+| `templates/agentic/prompts/` | Copy-paste agent prompt bodies (feature build, bug fix, audit only, plan only, security hunter / coverage critic / verifier / record reviewer) |
 | `templates/agentic/completion-receipt.sample.json` | Contract-bound final acceptance and independent completion decision receipt |
 | `templates/agentic/completion-evidence/verification.json` | Synthetic captured command and behavioral acceptance evidence |
 | `templates/agentic/optimization-run.sample.json` | Repeated baseline/candidate optimization receipt |
@@ -306,6 +313,10 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `templates/agentic/optimization-attestation-policy.sample.json` | External trusted repository, workflow, source-ref, predicate, issuer, and runner policy |
 | `templates/github/optimization-attestation.yml` | Fixed-path GitHub OIDC/Sigstore attestation workflow for captured trial evidence |
 | `templates/agentic/security-eval-catalog.sample.json` | Authorized isolated agent-security evaluation catalog |
+| `templates/agentic/security-findings.sample.json` | Illustrative security-audit findings receipt (one record per verdict, one hardening note) |
+| `templates/agentic/security-coverage.sample.json` | Illustrative security-audit coverage ledger (12 units, one wave, distinct critic) |
+| `templates/agentic/security-audit-evidence/` | Bound architecture brief, report, and evidence excerpts for the security-audit samples |
+| `templates/agentic/security-findings.schema.json` / `security-hunter-result.schema.json` | JSON Schema consumer aids for the findings receipt and the hunter result (not the enforcement path) |
 | `templates/github/verified-deploy-gate.yml` | Reusable fail-closed exact-SHA GitHub verification gate |
 | `templates/github/oss-maintainer-baseline.md` | Proportional OSS maintainer evidence and exception receipt |
 | `templates/security/csp-reporting.ts` | Privacy-minimized modern and legacy CSP report parser/handler/header helper |
@@ -365,6 +376,7 @@ Run inside the engineer repository; target apps never need these.
 
 ```bash
 bash scripts/validate-repo.sh
+python3 scripts/report-module-currency.py          # reference-module review-cadence report (informational; --fail-after-days N gates)
 bash scripts/test-scan.sh
 bash scripts/run-evals.sh          # smoke
 bash scripts/run-evals.sh --full
@@ -378,6 +390,8 @@ bash scripts/install-all-agents.sh --hosts all
 python3 scripts/validate-optimization-run.py templates/agentic/optimization-run.sample.json --evidence-root .
 # Captured promotion only: add --verify-attestation
 python3 scripts/validate-security-eval-catalog.py templates/agentic/security-eval-catalog.sample.json
+python3 scripts/validate-security-coverage.py templates/agentic/security-coverage.sample.json --evidence-root .
+python3 scripts/validate-security-findings.py templates/agentic/security-findings.sample.json --evidence-root .
 python3 scripts/validate-skill-eval-run.py templates/agentic/skill-eval-run.sample.json
 python3 scripts/capture-skill-eval.py templates/agentic/skill-eval-job.sample.json --print-command
 python3 scripts/prepare-skill-eval-baseline.py --scenarios 121 --hosts codex,claude --activation-modes explicit,implicit
@@ -416,4 +430,5 @@ These tools belong to the source repository, not a separate runtime service.
 | `build-plugin.py` | Reproducible shared bundle, host metadata, ZIP and drift checks |
 | `run-tests.py` | Discover all offline shell/Python suites in isolated source copies |
 | `check-source.py` | Source syntax, core links, and marketplace identity |
+| `report-module-currency.py` | Reference-module review-cadence report: past due, missing header or cadence; never redates |
 | `clean-build.py` | Scoped cleanup of disposable build output |

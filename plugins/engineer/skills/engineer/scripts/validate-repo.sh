@@ -268,6 +268,10 @@ if [[ "$MISSING_VERIFIED" -eq 0 ]]; then
 else
   fail "$MISSING_VERIFIED reference module(s) missing Last verified"
 fi
+# Informational only: modules past their own review cadence. Re-verify or record them in the
+# dated ledger (docs/releasing.md); never redate. `--fail-after-days N` makes this a gate.
+CURRENCY=$(python3 scripts/report-module-currency.py --summary 2>/dev/null || echo "report unavailable")
+echo "  ℹ Module review cadence: $CURRENCY (python3 scripts/report-module-currency.py)"
 
 # ─── Operator/venture runbooks must not live in the public skill ───────────
 OPERATOR_HITS=$(grep -R -n -E 'x_article_publish|nyk-article-gating|personal-brand/research/articles' \

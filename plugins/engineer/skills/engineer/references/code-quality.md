@@ -172,7 +172,25 @@ Score 0-100 when running `engineer audit`:
 ≥80 = ship-ready · 60-79 = fix before merge · <60 = rework
 
 Report: quote → rule → fix → **enforcement recommendation**.
-Severity: critical / suggestion / nice-to-have.
+Severity: critical / suggestion / nice-to-have. Tag each finding with its confidence
+(`observed` from code or a run, `inferred` from patterns); never state an inference as observed.
+
+### Severity vocabularies (one mapping)
+
+Every Engineer surface keeps its native labels; this table is the exchange rate when findings
+cross surfaces or land in one report. The canonical machine scale is the security findings
+receipt (`low` / `medium` / `high` / `critical`, plus `confidence`).
+
+| Surface | Native labels | Canonical |
+|---|---|---|
+| `engineer audit` rubric | critical / suggestion / nice-to-have | high–critical / medium / low |
+| `engineer qa` (`browser-qa.md`) | Critical / High / Medium / Low | same names |
+| Security findings receipt | confirmed-only severity, overall ≤ impact | canonical |
+| `check-oss-leaks.sh` | CRITICAL / MAJOR / NOTE | critical / high / low |
+| `engineer-scan.sh` | error / warn | high / medium |
+| `scan-false-done.sh` | BLOCK / warn | high / medium |
+| Admission receipts | reject / quarantine / trust | decision, not severity |
+| `compliance-controls.md` | met-by-evidence / met-by-policy / gap | status, not severity |
 
 ## Anti-patterns
 

@@ -18,7 +18,7 @@ Use SKILL.md audit template:
 **Score**: ...
 
 ### Critical
-- [file:line] issue → fix
+- [file:line] (observed|inferred) issue → fix
 
 ### Warning
 - ...
@@ -37,7 +37,7 @@ Use SKILL.md audit template:
 | UI / dashboard | design-system, design-accessibility, design-patterns |
 | Performance | frontend-performance, frontend-streaming |
 | Backend / API | backend-api, backend-auth, backend-database |
-| Security | backend-security, backend-auth |
+| Security | backend-security, backend-auth (rubric score only); to hunt and prove vulnerabilities hand off to `/engineer-security-audit` |
 | Enforcement | enforcement.md + maturity L0–L4 |
 | Full stack | Score each touched domain |
 
@@ -46,3 +46,4 @@ Use SKILL.md audit template:
 - Quote specific issues with fixes — **no praise padding**
 - Recommend scripts/CI for checklist-only gaps
 - If Critical > 0, suggest `/engineer-fix` after report
+- A request to find or prove vulnerabilities (not score a rubric) routes to `/engineer-security-audit`

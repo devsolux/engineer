@@ -1,13 +1,16 @@
 # GitHub Debug Module
 
-> 从 web-search-agent.md 提取的 GitHub/Debug 专用策略
+**Last verified**: 2026-10-22 · **Review cadence**: 6 months
+Translation and structure review; search-site operators were not re-tested against live sites.
 
-**触发场景**: 项目bug、error调试、issue查找、版本特定问题
+> Extracted strategy pack for GitHub and debugging searches (from web-search-agent.md).
 
-## 搜索源
+**Trigger scenarios**: project bugs, error debugging, issue lookup, version-specific problems
+
+## Search sources
 - **GitHub Issues** (both open and closed) - excellent for known bugs and workarounds
 
-## 查询策略 (1.1 Debugging Assistance)
+## Query strategy (1.1 Debugging Assistance)
 - Search for exact error messages in quotes
 - Look for issue templates that match the problem pattern
 - Find workarounds, not just explanations

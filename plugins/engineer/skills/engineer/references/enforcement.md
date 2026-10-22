@@ -164,13 +164,16 @@ Server Action auth grep for this pipeline: `enforcement-rules.md`.
   flag an unexpected build path or a newly-absent attestation on a critical dep. Do not fail on
   mere absence.
 - SHA-pin every third-party Action to a full 40-char commit (not a mutable tag); forbid
-  `pull_request_target`/`workflow_run` that check out and run fork code with secrets in scope.
+  `pull_request_target`/`workflow_run` that check out and run fork code with secrets in scope
+  (`scan-doc-supply-chain.py` rule `privileged-trigger-fork-checkout`; YAML fences in docs are
+  scanned too).
 - Dependency hygiene rationale and package-manager defaults: `backend-security.md`.
 
 ### Layer the secrets job (a clean scan does not clear a public push)
 
-Pre-commit (`check-oss-leaks.sh` SECRET class / gitleaks, network-free) -> CI (TruffleHog
-**verified**, fail on live secrets) -> server-side (GitHub push protection). A clean SECRET
+Pre-commit (`check-oss-leaks.sh` SECRET class / gitleaks, network-free) -> CI (gitleaks in the
+template's `secrets` job; TruffleHog `--only-verified` as an optional second scanner that fails
+on live secrets) -> server-side (GitHub push protection). A clean SECRET
 scan does **not** clear a public push: the anchor's base64 URL is a *dropper indicator, not a
 credential* - run the DROPPER/ENVB64/INVISIBLE_UNICODE pass (`check-oss-leaks.sh`) too.
 

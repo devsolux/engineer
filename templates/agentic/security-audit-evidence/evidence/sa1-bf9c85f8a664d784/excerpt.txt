@@ -1,0 +1,10 @@
+# src/notes/repository.py (fixture excerpt, lines 26-34)
+
+def get_note(db, note_id):
+    row = db.execute(
+        "SELECT id, owner_id, title, body FROM notes WHERE id = ?",
+        (note_id,),
+    ).fetchone()
+    if row is None:
+        raise NotFound(note_id)
+    return Note.from_row(row)

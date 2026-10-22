@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engineer.local/security-findings.schema.json",
+  "title": "engineer security-audit findings",
+  "description": "Consumer aid for findings.json. The enforcement path is scripts/validate-security-findings.py, which recomputes every fingerprint (sa1- + sha256(attack_class|root_cause.path|symbol|sink)[:16]), checks bound digests, runs the coverage validator on the bound ledger, and screens content. This schema describes shape only.",
+  "type": "object",
+  "required": ["schema_version", "receipt_kind", "run", "records", "hardening_notes", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "receipt_kind": {"enum": ["illustrative_fixture", "captured_run"]},
+    "run": {
+      "type": "object",
+      "required": ["run_id", "target", "mode", "profile", "status", "incomplete_reason", "started_at", "ended_at", "prior_runs", "artifact_root", "coverage", "architecture", "reports", "sandbox", "safety", "budget"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {"$ref": "#/$defs/run_id"},
+        "target": {
+          "type": "object",
+          "required": ["name", "source_ref", "root"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"$ref": "#/$defs/text"},
+            "source_ref": {"$ref": "#/$defs/text", "description": "40-hex commit for captured runs"},
+            "root": {"$ref": "#/$defs/text"}
+          }
+        },
+        "mode": {"const": "full_audit"},
+        "profile": {"enum": ["quick", "standard", "deep"]},
+        "status": {"enum": ["complete", "incomplete"]},
+        "incomplete_reason": {"type": ["string", "null"], "description": "non-empty iff status is incomplete"},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "ended_at": {"$ref": "#/$defs/timestamp"},
+        "prior_runs": {"type": "array", "items": {"$ref": "#/$defs/run_id"}, "uniqueItems": true},
+        "artifact_root": {"$ref": "#/$defs/relative_path"},
+        "coverage": {"$ref": "#/$defs/binding"},
+        "architecture": {"$ref": "#/$defs/binding"},
+        "reports": {"type": "array", "items": {"$ref": "#/$defs/relative_path"}, "uniqueItems": true},
+        "sandbox": {
+          "type": "object",
+          "required": ["available", "network", "env", "target_mount", "writes", "limits", "unavailable_reason"],
+          "additionalProperties": false,
+          "properties": {
+            "available": {"type": "boolean"},
+            "network": {"const": "none"},
+            "env": {"const": "empty_allowlist"},
+            "target_mount": {"const": "read_only"},
+            "writes": {"const": "scratch_only"},
+            "limits": {
+              "type": "object",
+              "required": ["cpu_seconds", "memory_mb", "wall_seconds"],
+              "additionalProperties": false,
+              "properties": {
+                "cpu_seconds": {"type": "integer", "minimum": 1},
+                "memory_mb": {"type": "integer", "minimum": 1},
+                "wall_seconds": {"type": "integer", "minimum": 1}
+              }
+            },
+            "unavailable_reason": {"type": ["string", "null"], "description": "required when available is false"}
+          }
+        },
+        "safety": {
+          "type": "object",
+          "required": ["source_inspection", "live_systems_probed", "principals", "secrets"],
+          "additionalProperties": false,
+          "properties": {
+            "source_inspection": {"const": "read_only"},
+            "live_systems_probed": {"const": false},
+            "principals": {"const": "synthetic"},
+            "secrets": {"const": "synthetic"}
+          }
+        },
+        "budget": {
+          "type": "object",
+          "required": ["unit", "total", "reserved", "reserved_before_hunting", "spent"],
+          "additionalProperties": false,
+          "properties": {
+            "unit": {"$ref": "#/$defs/text"},
+            "total": {"type": "number", "minimum": 0},
+            "reserved": {
+              "type": "object",
+              "required": ["critics", "verification"],
+              "additionalProperties": false,
+              "properties": {
+                "critics": {"type": "number", "exclusiveMinimum": 0},
+                "verification": {"type": "number", "exclusiveMinimum": 0}
+              }
+            },
+            "reserved_before_hunting": {"const": true},
+            "spent": {
+              "type": "object",
+              "required": ["reconnaissance", "hunting", "critics", "verification", "record_review", "reporting"],
+              "additionalProperties": false,
+              "properties": {
+                "reconnaissance": {"type": "number", "minimum": 0},
+                "hunting": {"type": "number", "minimum": 0, "description": "at most total - reserved.critics - reserved.verification"},
+                "critics": {"type": "number", "minimum": 0},
+                "verification": {"type": "number", "minimum": 0},
+                "record_review": {"type": "number", "minimum": 0},
+                "reporting": {"type": "number", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "maxItems": 2000,
+      "description": "sorted by fingerprint; fingerprints unique",
+      "items": {"$ref": "#/$defs/record"}
+    },
+    "hardening_notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "location", "note", "layer_preventing_attack", "coverage_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"$ref": "#/$defs/text"},
+          "title": {"$ref": "#/$defs/text"},
+          "location": {
+            "type": "object",
+            "required": ["path", "symbol"],
+            "additionalProperties": false,
+            "properties": {"path": {"$ref": "#/$defs/relative_path"}, "symbol": {"type": ["string", "null"]}}
+          },
+          "note": {"$ref": "#/$defs/text"},
+          "layer_preventing_attack": {"$ref": "#/$defs/text"},
+          "coverage_ids": {"type": "array", "items": {"$ref": "#/$defs/coverage_id"}, "uniqueItems": true}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["confirmed", "needs_validation", "rejected", "hardening_notes", "clean"],
+      "additionalProperties": false,
+      "properties": {
+        "confirmed": {"type": "integer", "minimum": 0},
+        "needs_validation": {"type": "integer", "minimum": 0},
+        "rejected": {"type": "integer", "minimum": 0},
+        "hardening_notes": {"type": "integer", "minimum": 0},
+        "clean": {"type": "boolean", "description": "true iff confirmed == 0 and needs_validation == 0"}
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "run_id": {"type": "string", "pattern": "^run-[0-9]{3,}$"},
+    "agent_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{1,63}$"},
+    "coverage_id": {"type": "string", "pattern": "^cov-[0-9a-f]{12}$"},
+    "fingerprint": {"type": "string", "pattern": "^sa1-[0-9a-f]{16}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "relative_path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$)).*$", "description": "lexically confined: relative, no .. component, no backslash"},
+    "binding": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "additionalProperties": false,
+      "properties": {"path": {"$ref": "#/$defs/relative_path"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "attack_class": {"enum": ["injection", "access_control", "resource_handling", "crypto_secrets", "business_logic", "feature_abuse", "chained_trust", "wildcard"]},
+    "domain": {"enum": ["web_auth", "client_side", "ai_agent", "supply_chain", "cloud_infra", "protocols_messaging", "availability", "data_isolation", null]},
+    "level": {"enum": ["low", "medium", "high", "critical"]},
+    "trace_step": {
+      "type": "object",
+      "required": ["stage", "path", "symbol", "line", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {"enum": ["entrypoint", "propagation", "sink"]},
+        "path": {"$ref": "#/$defs/relative_path"},
+        "symbol": {"type": ["string", "null"]},
+        "line": {"type": ["integer", "null"], "minimum": 1},
+        "note": {"$ref": "#/$defs/text"}
+      }
+    },
+    "evidence_item": {
+      "type": "object",
+      "required": ["kind", "path", "sha256", "bytes", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["source_excerpt", "local_execution", "test", "config", "git_history", "log"]},
+        "path": {"$ref": "#/$defs/relative_path", "description": "relative to run.artifact_root"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "summary": {"$ref": "#/$defs/text"}
+      }
+    },
+    "condition": {
+      "type": "object",
+      "required": ["kind", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]},
+        "description": {"$ref": "#/$defs/text"}
+      }
+    },
+    "plan_step": {
+      "type": "object",
+      "required": ["action", "expected_if_vulnerable", "expected_if_safe", "sandbox_required"],
+      "additionalProperties": false,
+      "properties": {
+        "action": {"$ref": "#/$defs/text"},
+        "expected_if_vulnerable": {"$ref": "#/$defs/text"},
+        "expected_if_safe": {"$ref": "#/$defs/text"},
+        "sandbox_required": {"type": "boolean"}
+      }
+    },
+    "record": {
+      "type": "object",
+      "required": ["fingerprint", "title", "verdict", "attack_class", "domain", "root_cause", "coverage_ids", "boundary", "trace", "evidence", "conditions", "confidence", "verification", "carried_from"],
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "title": {"$ref": "#/$defs/text"},
+        "verdict": {"enum": ["confirmed", "needs_validation", "rejected"]},
+        "attack_class": {"$ref": "#/$defs/attack_class"},
+        "domain": {"$ref": "#/$defs/domain"},
+        "root_cause": {
+          "type": "object",
+          "required": ["path", "symbol", "sink", "note"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {"$ref": "#/$defs/relative_path"},
+            "symbol": {"type": ["string", "null"]},
+            "sink": {"type": ["string", "null"]},
+            "note": {"$ref": "#/$defs/text"}
+          }
+        },
+        "coverage_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/coverage_id"}, "uniqueItems": true},
+        "boundary": {
+          "type": "object",
+          "required": ["principal", "input", "intended_control", "crossed", "result"],
+          "additionalProperties": false,
+          "description": "every value non-empty unless the verdict is rejected",
+          "properties": {
+            "principal": {"type": ["string", "null"]},
+            "input": {"type": ["string", "null"]},
+            "intended_control": {"type": ["string", "null"]},
+            "crossed": {"type": ["string", "null"]},
+            "result": {"type": ["string", "null"]}
+          }
+        },
+        "trace": {"type": "array", "items": {"$ref": "#/$defs/trace_step"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}},
+        "conditions": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "verification": {
+          "type": "object",
+          "required": ["hunter", "verifier", "verifier_attempted_refutation", "verified_at", "record_reviewer", "materially_replaced", "replacement_verifier"],
+          "additionalProperties": false,
+          "properties": {
+            "hunter": {"$ref": "#/$defs/agent_id"},
+            "verifier": {"$ref": "#/$defs/agent_id", "description": "never the hunter"},
+            "verifier_attempted_refutation": {"const": true},
+            "verified_at": {"$ref": "#/$defs/timestamp", "description": "inside [run.started_at, run.ended_at]"},
+            "record_reviewer": {"anyOf": [{"$ref": "#/$defs/agent_id"}, {"type": "null"}], "description": "required for confirmed and needs_validation; never the hunter or verifier"},
+            "materially_replaced": {"type": "boolean"},
+            "replacement_verifier": {"anyOf": [{"$ref": "#/$defs/agent_id"}, {"type": "null"}], "description": "required and independent when materially_replaced"}
+          }
+        },
+        "carried_from": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["run_id", "prior_verdict", "reverified"],
+              "additionalProperties": false,
+              "properties": {
+                "run_id": {"$ref": "#/$defs/run_id", "description": "must appear in run.prior_runs"},
+                "prior_verdict": {"enum": ["confirmed", "needs_validation", "rejected"]},
+                "reverified": {"const": true}
+              }
+            }
+          ]
+        },
+        "severity": {
+          "type": "object",
+          "required": ["likelihood", "impact", "overall"],
+          "additionalProperties": false,
+          "properties": {
+            "likelihood": {"enum": ["low", "medium", "high"]},
+            "impact": {"$ref": "#/$defs/level"},
+            "overall": {"$ref": "#/$defs/level", "description": "never above impact"}
+          }
+        },
+        "remediation": {
+          "type": "object",
+          "required": ["summary", "layer", "paths", "regression_test"],
+          "additionalProperties": false,
+          "properties": {
+            "summary": {"$ref": "#/$defs/text"},
+            "layer": {"$ref": "#/$defs/text"},
+            "paths": {"type": "array", "items": {"$ref": "#/$defs/relative_path"}},
+            "regression_test": {"type": ["string", "null"]}
+          }
+        },
+        "blockers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["kind", "unresolved_fact", "why_it_matters"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {"enum": ["deployment", "runtime", "configuration", "data"]},
+              "unresolved_fact": {"$ref": "#/$defs/text"},
+              "why_it_matters": {"$ref": "#/$defs/text"}
+            }
+          }
+        },
+        "validation_plan": {
+          "type": "object",
+          "required": ["local", "owner_observed"],
+          "additionalProperties": false,
+          "description": "at least one of the two lists is non-empty",
+          "properties": {
+            "local": {"type": "array", "items": {"$ref": "#/$defs/plan_step"}},
+            "owner_observed": {"type": "array", "items": {"$ref": "#/$defs/plan_step"}}
+          }
+        },
+        "rejection": {
+          "type": "object",
+          "required": ["reason", "refuted_by"],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {"$ref": "#/$defs/text"},
+            "refuted_by": {"$ref": "#/$defs/agent_id", "description": "equals verification.verifier"}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"verdict": {"const": "confirmed"}}},
+          "then": {
+            "required": ["severity", "remediation"],
+            "not": {"anyOf": [{"required": ["blockers"]}, {"required": ["validation_plan"]}, {"required": ["rejection"]}]},
+            "properties": {
+              "trace": {"minItems": 2},
+              "evidence": {"minItems": 1},
+              "conditions": {"minItems": 1},
+              "confidence": {"enum": ["medium", "high"]},
+              "verification": {"properties": {"record_reviewer": {"$ref": "#/$defs/agent_id"}}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"verdict": {"const": "needs_validation"}}},
+          "then": {
+            "required": ["blockers", "validation_plan"],
+            "not": {"anyOf": [{"required": ["severity"]}, {"required": ["remediation"]}, {"required": ["rejection"]}]},
+            "properties": {
+              "trace": {"minItems": 1},
+              "evidence": {"minItems": 1},
+              "verification": {"properties": {"record_reviewer": {"$ref": "#/$defs/agent_id"}}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"verdict": {"const": "rejected"}}},
+          "then": {
+            "required": ["rejection"],
+            "not": {"anyOf": [{"required": ["severity"]}, {"required": ["remediation"]}, {"required": ["blockers"]}, {"required": ["validation_plan"]}]}
+          }
+        }
+      ]
+    }
+  }
+}

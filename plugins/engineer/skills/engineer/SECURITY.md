@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 1.0.x (latest) | Yes |
+| 1.1.x (latest) | Yes |
+| 1.0.x | Until 1.1.0 is published |
 
 engineer is a skill/docs package (Markdown, Python, and shell tooling). It does not run a network service.
 

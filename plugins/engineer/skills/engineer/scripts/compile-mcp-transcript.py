@@ -12,6 +12,7 @@ SENSITIVE_VALUE=re.compile(r'(?i)(bearer\s+[a-z0-9._~+/-]{8,}|-----BEGIN [A-Z ]*
 HEX=re.compile(r'^[0-9a-f]{64}$'); LISTS={'tools/list':'tools','resources/list':'resources','resources/templates/list':'resourceTemplates','prompts/list':'prompts'}
 OPS=set(LISTS)|{'resources/read','prompts/get','completion/complete'}
 SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}
+STATELESS_UNSUPPORTED_VERSIONS={'2026-07-28'}  # stateless core (no initialize/session): reject explicitly, never downgrade
 def digest(v:bytes)->str:return hashlib.sha256(v).hexdigest()
 def jd(v:Any)->bytes:return (json.dumps(v,indent=2,ensure_ascii=False)+'\n').encode()
 def csha(v:Any)->str:return digest(json.dumps(v,sort_keys=True,separators=(',',':')).encode())
@@ -75,7 +76,8 @@ def compile_transcript(raw:bytes)->tuple[dict[str,Any],dict[str,Any],dict[str,An
         rid,init_req,im=init[0];init_res=responses.get(rid,(None,{}))[0];result=responses.get(rid,(None,{}))[1].get('result',{})
         if init_req['seq']!=1 or not init_res or not initialized or not (init_req['seq']<init_res['seq']<initialized['seq']):errors.append('initialize lifecycle order invalid')
         requested=im.get('params',{}).get('protocolVersion');negotiated=result.get('protocolVersion')
-        if not requested or requested!=negotiated or negotiated not in SUPPORTED_PROTOCOL_VERSIONS:errors.append('protocol version negotiation invalid or unsupported')
+        if requested in STATELESS_UNSUPPORTED_VERSIONS or negotiated in STATELESS_UNSUPPORTED_VERSIONS:errors.append('protocol 2026-07-28 stateless revision is not supported by this compiler; rejected, never downgraded')
+        elif not requested or requested!=negotiated or negotiated not in SUPPORTED_PROTOCOL_VERSIONS:errors.append('protocol version negotiation invalid or unsupported')
         if result.get('instructions'):errors.append('server initialization instructions require separate quarantine review')
     init_seq=initialized['seq'] if initialized else 10**9
     for _,(x,m) in requests.items():
