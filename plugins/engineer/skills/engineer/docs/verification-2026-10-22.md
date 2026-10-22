@@ -175,3 +175,26 @@ from the run logs and a local reproduction:
 The fixes are recorded in the CHANGELOG "Unreleased" section. CI run 39758633347 on 022fdf5 passed on
 all four lanes: Ubuntu with Python 3.10, TypeScript 5.8.3 and Node 24; Ubuntu with Python 3.13,
 TypeScript 7.0.2 and Node 24 or Node 26; macOS with Python 3.13, TypeScript 7.0.2 and Node 24.
+
+## Release gates for 1.2.0
+
+1.2.0 packages everything merged on `main` after the `v1.1.0` tag: the CI fixes, the
+`privileged-trigger-secrets` rule and the live-eval model ids (022fdf5), and the re-verification of
+all 66 past-cadence modules (d526acf and f237225; sources in
+[verification-2026-10-22-modules.md](verification-2026-10-22-modules.md)). Same machine; Claude Code
+2.1.282 and Codex CLI 0.163.0-alpha.11.
+
+| Check | Result |
+|---|---|
+| `python3 scripts/report-module-currency.py --today 2026-10-22` | 116 of 116 modules current |
+| `make fixtures` | Rebound the skill-eval chain from version 1.1.0 to 1.2.0 with the new bundle and `SKILL.md` digests; grader-verified |
+| `make build` → `make lint` | Plugin manifests and the bundled skill at 1.2.0; lint passed |
+| `make release-check JOBS=4` | Static gates passed (216 static eval scenarios); 55/55 isolated offline suites passed; no bundle drift |
+| `make host-validate` | `claude plugin validate --strict` passed for the marketplace and the plugin on Claude Code 2.1.282 |
+| `make package` | Deterministic `dist/engineer-1.2.0-plugin.zip` with its SHA-256 sidecar (the digest is not recorded here because this ledger ships inside the bundle) |
+| `python3 scripts/scan-doc-supply-chain.py` | Passed |
+| `bash scripts/check-oss-leaks.sh` on the staged changeset | Clean |
+
+Not executed before the release commit: publishing (push, `v1.2.0` tag, GitHub release), the
+install-from-GitHub check, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and any live model run.
+CI last passed on f237225 (run 39762308568) and has not run on the release commit.

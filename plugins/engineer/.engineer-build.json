@@ -1,14 +1,14 @@
 {
   "format": 1,
   "generator": "scripts/build-plugin.py",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "files": {
     ".claude-plugin/plugin.json": {
-      "sha256": "534e3f455eddbfb3284a9fc7dd493376714dfd40013781778b95f91e7aedd58e",
+      "sha256": "4b7d6cc2adb558c7d17a85c4280428c15efec1108d73a7c4bcc54455a632f695",
       "mode": 420
     },
     ".codex-plugin/plugin.json": {
-      "sha256": "01529706163d44bc82f8633986959ff38a9c7db2376fa0d60b6e3c37447ccfca",
+      "sha256": "52f39b57fca7b4130bd8e6c7fa83abd1904d8e6f8cb791003bcce27721fc49ce",
       "mode": 420
     },
     "LICENSE": {
@@ -224,7 +224,7 @@
       "mode": 420
     },
     "plugin.json": {
-      "sha256": "d07ccdf74a6337a35b37a60523dc805573c09f24970787b29e1f296607a89729",
+      "sha256": "0843c0ccae78d4a3f400846287591d4671dc4c2a1e8bbcc6527ec0e5ffbac75a",
       "mode": 420
     },
     "skills/engineer/COMPAT.md": {
@@ -236,11 +236,11 @@
       "mode": 420
     },
     "skills/engineer/SECURITY.md": {
-      "sha256": "7220aea50003e91e31e630b97b57dd6716b4385a187013bdb392f0eb1b30731b",
+      "sha256": "bbd3ca363090a9a5e1db89e2d65d3629b38ed387a202ea0917369e050df7d260",
       "mode": 420
     },
     "skills/engineer/SKILL.md": {
-      "sha256": "f8758371a9e49b8db0917a7e03685b3f11ff0f371842307ab8aa2253770b6e07",
+      "sha256": "05e27a0085c8a6403b5cbd9ae9a790b4e1be1ebb7f4ee839a1420f30883c312f",
       "mode": 420
     },
     "skills/engineer/agents/openai.yaml": {
@@ -488,7 +488,7 @@
       "mode": 420
     },
     "skills/engineer/docs/README.md": {
-      "sha256": "8b551b8710eb16ac19ce14b14c2dff49a1c811cd2e95d3f8a9df81ca123ac8dd",
+      "sha256": "71f5e20fc188d3fecf789bfb2a832304fddf7608731f5215069c0c8b7ddf06b4",
       "mode": 420
     },
     "skills/engineer/docs/architecture.md": {
@@ -508,7 +508,7 @@
       "mode": 420
     },
     "skills/engineer/docs/modules.md": {
-      "sha256": "6e6edbef272132aeacabcc0e0223a3b73802901619700512ad195a4bff463be0",
+      "sha256": "3314b50c773fd796e9284c31af4167d03e77e8c912ab90758ccfc588e95ea6b4",
       "mode": 420
     },
     "skills/engineer/docs/native-skills.md": {
@@ -536,7 +536,7 @@
       "mode": 420
     },
     "skills/engineer/docs/verification-2026-10-22.md": {
-      "sha256": "76d75e4a28bb269778d066d0cede10a9e942b6388d330426fed4dea706537231",
+      "sha256": "aee5f03a097672b9d16a175db20b7f7d210c246d55ca605f312d83b1e71511b1",
       "mode": 420
     },
     "skills/engineer/references/MANIFEST.md": {
@@ -1800,11 +1800,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-auto-job.sample.json": {
-      "sha256": "ae045ef00f1525fc45c0e4eff43630c94d61adb4b3e115f4c0d47fc1f4dc3bf4",
+      "sha256": "eef7ce9b5cdf78bf67bfd82d971dc7cae118710aa880b0562df246570508dc9f",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-capture.sample.json": {
-      "sha256": "567998f08b3c9a9e425497d4efd01ccce04853ab5aa711bb0d02f4cfe7cd4c95",
+      "sha256": "5ec99f2d30d76acd6b039cd1adc6715a3da26f16f71073914207a65329d6c773",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-comparison.sample.json": {
@@ -1812,11 +1812,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-grade.sample.json": {
-      "sha256": "c80f4e496c08043933e8442618668712e0ff4aa55751323ef6600d377aaa520f",
+      "sha256": "2ae001cd7de6ddd8d37779b083cb9edf2602118c20ab7823ba5299c3e182a14e",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-job.sample.json": {
-      "sha256": "a13c8598527a3ee198f9095c0b162d41581dbd4d44adb3016c95c4acf6a68e5a",
+      "sha256": "060e01488f594d90c381ba22ffe3433c4d18ea719099f5f9dad555ac141efa9f",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-oracle.sample.json": {
@@ -1824,7 +1824,7 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-run.sample.json": {
-      "sha256": "b5bbd4e569f8ba276a4ff132b9be22d6b5b4eb63da726737b51795c4eb21d1cb",
+      "sha256": "dc01c65a0d314c9b90cc4b610a274ea0534c6ca90571e3b4e8fd9c92a9490a71",
       "mode": 420
     },
     "skills/engineer/templates/agentic/trajectory.sample.json": {

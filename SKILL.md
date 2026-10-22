@@ -16,7 +16,7 @@ description: >-
   mobile-only work, and notebook data science unless explicitly adapted.
 license: MIT
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # engineer

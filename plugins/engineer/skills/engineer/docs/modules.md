@@ -1,4 +1,4 @@
-# Reference modules — 1.1.0
+# Reference modules — 1.2.0
 
 The canonical catalog with routing notes is [MANIFEST](../references/MANIFEST.md).
 Load only the modules needed for the task. Dates in modules record historical
