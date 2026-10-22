@@ -198,3 +198,31 @@ all 66 past-cadence modules (d526acf and f237225; sources in
 Not executed before the release commit: publishing (push, `v1.2.0` tag, GitHub release), the
 install-from-GitHub check, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and any live model run.
 CI last passed on f237225 (run 39762308568) and has not run on the release commit.
+
+## Publication of 1.2.0
+
+| Check | Result |
+|---|---|
+| `make github-push` | `main` pushed to `origin` as a fast-forward, f237225..157992b |
+| GitHub Actions | Run 39763368757 on 157992b passed all four lanes before the tag was created |
+| `make github-release` | Release "Engineer 1.2.0" published 2026-10-22T10:33:50Z, marked Latest, not a draft or prerelease, with `engineer-1.2.0-plugin.zip` and its SHA-256 sidecar |
+| `git ls-remote --tags origin` | `v1.2.0` → 157992b; `v1.1.0` → 2713d00; `v1.0.0` → 5ac51a3 |
+| Release assets | The uploaded ZIP (1,150,759 bytes, digest `80d6a03bc487066267f0de12cfbb9d7009e7c47fa2e3550e9b53f0a9f10c73ae`) and the sidecar equal the locally packaged files |
+
+## Install 1.2.0 from GitHub into throwaway profiles
+
+Same method as the 1.1.0 check: every command ran under `env -i` with `HOME`, `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME` and the XDG directories in a fresh scratch directory, with auto-update off. Claude Code
+2.1.282 and Codex CLI 0.163.0-alpha.11. Both hosts cloned 157992b, the `v1.2.0` tag commit.
+
+| Check | Result |
+|---|---|
+| `claude plugin marketplace add https://github.com/devsolux/engineer` → `claude plugin install engineer@devsolux-engineer` | `claude plugin list` shows `engineer@devsolux-engineer` at version 1.2.0, user scope, enabled; the install record names 157992b |
+| Installed Claude Code tree (`plugins/cache/devsolux-engineer/engineer/1.2.0`) | Identical to `plugins/engineer` at 157992b apart from Claude Code's own `.in_use` marker; `SKILL.md` version 1.2.0; 51 commands |
+| `codex plugin marketplace add devsolux/engineer` → `codex plugin add engineer@devsolux-engineer` | `codex plugin list` shows `engineer@devsolux-engineer` installed and enabled at 1.2.0 |
+| Installed Codex tree (`plugins/cache/devsolux-engineer/engineer/1.2.0`) | Identical to `plugins/engineer` at 157992b |
+| `codex debug prompt-input` (renders the prompt, no model call) | Skill registered as `engineer:engineer` from the 1.2.0 cache |
+| Real host profiles | The Claude Code marketplace catalog, installed-plugin record and settings, and the Codex config, had the same SHA-256 before and after; the real Engineer caches still held only their earlier versions. The throwaway Claude Code profile wrote its own state file, and the real `~/.claude.json` holds no reference to the throwaway directory |
+
+Not exercised: the update and removal commands, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and
+any live model run. The user's real Claude Code and Codex installs stay at 1.1.0 until updated.
