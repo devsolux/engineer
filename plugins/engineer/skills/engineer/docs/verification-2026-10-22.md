@@ -75,3 +75,33 @@ their own dates; this ledger does not re-verify them.
 
 Not repeated here: local-marketplace install into throwaway host profiles, the Codex `codex plugin`
 registration, and any live model run (see "Not established").
+
+## Follow-up after 1.1.0 (e4d6f9a): MCP 2026-07-28 stateless evidence
+
+Same machine and toolchain. This follow-up supersedes the "Not established" item above that said a
+2026-07-28 transcript is rejected, not validated; that item stays as the 1.1.0 record.
+
+| Fact encoded in the compiler/validators | Primary source (fetched 2026-10-22) |
+|---|---|
+| No `initialize` / `notifications/initialized` handshake and no `Mcp-Session-Id`; every request carries `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities` in `_meta`; clients SHOULD send `clientInfo`, servers SHOULD send `serverInfo` in each result's `_meta`; `ttlMs`/`cacheScope` required on list results and `resources/read`; Roots, Sampling, Logging and Dynamic Client Registration deprecated; Tasks moved to `io.modelcontextprotocol/tasks` | modelcontextprotocol.io/specification/latest/changelog |
+| Missing required `_meta` fields are malformed (`-32602`); `resultType` is required, `complete` or `input_required`, unknown values invalid; `serverInfo` belongs in result `_meta` | modelcontextprotocol.io/specification/2026-07-28/basic/index |
+| No negotiation handshake; servers MUST implement `server/discover`, clients MAY skip it; a dual-era server treats `initialize` as legacy semantics | modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle |
+| `DiscoverResult` carries `supportedVersions`, `capabilities`, optional `instructions`, `serverInfo` in `_meta`, plus `ttlMs`/`cacheScope` | modelcontextprotocol.io/specification/2026-07-28/server/discover |
+| `MCP-Protocol-Version` header MUST equal the `_meta` version; a modern-only server ignores `Mcp-Session-Id` and never mints one; `Last-Event-ID` resumability removed | modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http |
+| `input_required` results only on `prompts/get`, `resources/read`, `tools/call`; their `inputRequests` are server-to-client requests | modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr |
+| `subscriptions/listen` replaces `resources/subscribe` and the GET stream; notifications carry `io.modelcontextprotocol/subscriptionId` | modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions |
+| Deprecated registry: Roots, Sampling, Logging, Dynamic Client Registration deprecated in 2026-07-28, earliest removal in the first revision on or after 2027-07-28 | modelcontextprotocol.io/specification/2026-07-28/deprecated |
+| Client `roots`/`sampling` and server `logging` capabilities marked Deprecated; `ReadResourceResult`/`DiscoverResult` `ttlMs` is a number | modelcontextprotocol.io/specification/2026-07-28/schema |
+| Tasks extension: `resultType: "task"`, `tasks/get` / `tasks/update` / `tasks/cancel`, negotiated under `capabilities.extensions` | modelcontextprotocol.io/extensions/tasks/overview |
+
+Applied: stateless lifecycle in `scripts/compile-mcp-transcript.py`, stateless receipt rules in
+`scripts/validate-mcp-session.py`, a session/manifest version binding in
+`scripts/validate-mcp-content.py`, fixtures under `templates/agentic/mcp-evidence-2026-07-28/`
+with two receipt samples, and stateless mutation cases in the three MCP suites. The 2025-11-25
+path kept its verdicts; an old-versus-new comparison over 40,000 random mutations of the
+2025-11-25 transcript found no accept/reject change, only former tracebacks now reported as
+`captured result invalid`.
+
+Not established: no live 2026-07-28 server or SDK capture was observed; the fixtures are
+synthetic. URL-mode elicitation receipts still carry the 2025-11-25 `completion_ids_validated`
+control, although 2026-07-28 removed `elicitationId` in favour of retries with `requestState`.

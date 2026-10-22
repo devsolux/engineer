@@ -61,6 +61,7 @@ def validate(d:Any,root:Path,validator:Path)->tuple[list[str],list[str]]:
         try:run=subprocess.run([sys.executable,str(Path(__file__).with_name('compile-mcp-transcript.py')),'--check-manifest',capture['manifest_path'],'--evidence-root',str(root)],capture_output=True,text=True,timeout=15);compiled=run.returncode==0
         except subprocess.TimeoutExpired:compiled=False
         if not compiled:g.append('capture manifest fails deterministic transcript compilation')
+        if manifest.get('protocol',{}).get('protocol_version')!=binding.get('protocol_version'):g.append('capture manifest protocol version differs from the bound session: rejected, never downgraded')
         out=manifest.get('outputs',{}).get('server_content',{}) if isinstance(manifest,dict) else {}
         if raw is not None and out.get('canonical_sha256')!=csha(raw):g.append('content capture differs from transcript-compiled output')
     caps=d.get('capabilities',{}); capkeys={'resources','resources_subscribe','resources_list_changed','prompts','prompts_list_changed','completions'}
@@ -69,7 +70,7 @@ def validate(d:Any,root:Path,validator:Path)->tuple[list[str],list[str]]:
         negotiated=set(session.get('capabilities',{}).get('negotiated',[]))
         if caps.get('resources')!=('resources' in negotiated) or caps.get('prompts')!=('prompts' in negotiated):g.append('content capabilities differ from negotiated session')
     if manifest:
-        mcaps=manifest.get('protocol',{}).get('capabilities',{});resources=mcaps.get('resources',{}) if isinstance(mcaps.get('resources'),dict) else {};prompts=mcaps.get('prompts',{}) if isinstance(mcaps.get('prompts'),dict) else {}
+        mcaps=manifest.get('protocol',{}).get('capabilities') or {};resources=mcaps.get('resources',{}) if isinstance(mcaps.get('resources'),dict) else {};prompts=mcaps.get('prompts',{}) if isinstance(mcaps.get('prompts'),dict) else {}
         expected={'resources':'resources' in mcaps,'resources_subscribe':resources.get('subscribe') is True,'resources_list_changed':resources.get('listChanged') is True,'prompts':'prompts' in mcaps,'prompts_list_changed':prompts.get('listChanged') is True,'completions':'completions' in mcaps}
         if any(caps.get(k)!=v for k,v in expected.items()):g.append('content capabilities differ from transcript compilation')
     policy=d.get('policy',{}); pkeys={'allowed_uri_schemes','max_item_bytes','resource_selection','prompt_selection','content_trust','annotations_advisory','argument_validation','embedded_resources_untrusted','completion_values_untrusted','list_change_revalidation','subscription_revalidation'}

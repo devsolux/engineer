@@ -273,11 +273,11 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `scripts/validate-coordination-envelope.py` | Valid-contract, delegation, receiver output-schema, artifact, chronology, acknowledgment, and review validator |
 | `scripts/test-coordination-envelope.sh` | Injection, spoofing, replay, expiry, path, digest, quota, and false-acceptance fixtures |
 | `scripts/validate-mcp-session.py` | MCP OAuth, capability, captured tools/list, tool policy, call, regression, and trust validator |
-| `scripts/test-mcp-session.sh` | Audience, token, scope, root, capability, snapshot drift, egress, timeout, and false-trust fixtures |
+| `scripts/test-mcp-session.sh` | Audience, token, scope, root, capability, snapshot drift, egress, timeout, deprecated-feature flag, missing-discovery, and false-trust fixtures for both revisions |
 | `scripts/validate-mcp-content.py` | Session-bound MCP resource, template, prompt, render, completion-policy, and trust validator |
 | `scripts/test-mcp-content.sh` | Catalog drift, URI, content, prompt injection, binding, traversal, review, and false-trust fixtures |
-| `scripts/compile-mcp-transcript.py` | Offline redacted JSON-RPC lifecycle, pagination, and deterministic MCP evidence compiler |
-| `scripts/test-mcp-transcript.sh` | Lifecycle, protocol, session, capability, response, secret, cursor, manifest, and output-forgery fixtures |
+| `scripts/compile-mcp-transcript.py` | Offline redacted JSON-RPC lifecycle, pagination, and deterministic MCP evidence compiler (2025-11-25 handshake and 2026-07-28 stateless shapes) |
+| `scripts/test-mcp-transcript.sh` | Lifecycle, protocol, session, capability, response, secret, cursor, manifest, and output-forgery fixtures; stateless `_meta` version, mixed-version, `resultType`, session-header, cache, discovery, task, and deprecated-exposure fixtures |
 | `scripts/run-evals.sh` | Static eval bank harness (smoke/full) |
 | `scripts/evidence_path.py` | Shared lexical confinement and symlink-component rejection for hash-bound evidence |
 | `scripts/check-trajectory-fixture.py` | Offline agent path/fixture checker |
@@ -338,6 +338,12 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `templates/agentic/mcp-evidence/server-content.json` | Captured synthetic resource catalogs, reads, prompt catalogs, and renders |
 | `templates/agentic/mcp-evidence/transcript.jsonl` | Redacted ordered synthetic MCP JSON-RPC capture |
 | `templates/agentic/mcp-evidence/capture-manifest.json` | Deterministic transcript provenance and semantic output hashes |
+| `templates/agentic/mcp-session-2026-07-28.sample.json` | MCP 2026-07-28 stateless session receipt with `deprecated_feature_exposure` acknowledgement |
+| `templates/agentic/mcp-content-2026-07-28.sample.json` | Content admission receipt bound to the 2026-07-28 stateless session sample |
+| `templates/agentic/mcp-evidence-2026-07-28/transcript.jsonl` | Redacted synthetic 2026-07-28 stateless capture: per-request `_meta`, `server/discover`, `resultType`, cache fields, no session |
+| `templates/agentic/mcp-evidence-2026-07-28/capture-manifest.json` | Deterministic stateless transcript provenance, discovered capabilities, deprecated exposure, and output hashes |
+| `templates/agentic/mcp-evidence-2026-07-28/tools-list.json` | Compiled two-page synthetic tools/list artifact from the stateless capture |
+| `templates/agentic/mcp-evidence-2026-07-28/server-content.json` | Compiled synthetic resource, template, prompt, and completion capture from the stateless transcript |
 | `templates/lib/instrumentation.ts` | Next.js OTel bootstrap |
 | `templates/lib/cache-tags.ts` | Cache tag registry |
 | `templates/plan-artifact.schema.json` | Plan artifact shape (lifecycle: stream, origin incl. sidequest, interrupts, resume_context, verification, integration) |
@@ -416,6 +422,9 @@ python3 scripts/validate-coordination-envelope.py templates/agentic/coordination
 python3 scripts/validate-mcp-session.py templates/agentic/mcp-session.sample.json --evidence-root .
 python3 scripts/validate-mcp-content.py templates/agentic/mcp-content.sample.json --evidence-root .
 python3 scripts/compile-mcp-transcript.py --check-manifest templates/agentic/mcp-evidence/capture-manifest.json --evidence-root .
+python3 scripts/validate-mcp-session.py templates/agentic/mcp-session-2026-07-28.sample.json --evidence-root .
+python3 scripts/validate-mcp-content.py templates/agentic/mcp-content-2026-07-28.sample.json --evidence-root .
+python3 scripts/compile-mcp-transcript.py --check-manifest templates/agentic/mcp-evidence-2026-07-28/capture-manifest.json --evidence-root .
 bash scripts/engineer-output-gate.sh path/to/human-facing-output.md
 ```
 

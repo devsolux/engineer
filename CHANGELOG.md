@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
+## Unreleased
+
+### Added
+
+- MCP 2026-07-28 ("stateless core") evidence: `compile-mcp-transcript.py`,
+  `validate-mcp-session.py` and `validate-mcp-content.py` now validate stateless transcripts
+  and receipts, chosen by the per-request `_meta` protocol version, next to the unchanged
+  2025-11-25 handshake path. Stateless rules: no `initialize` or session id, one version per
+  transcript with matching HTTP version headers, optional `server/discover` (its capabilities
+  bound later operations; its instructions quarantine), required `resultType`, `ttlMs` and
+  `cacheScope` on cacheable results, stable client/server identity, and rejection of
+  `input_required`, task results, task methods, a negotiated tasks extension, and
+  `subscriptions/listen`. Roots, Sampling, Logging and dynamic client registration exposure is
+  recorded as `deprecated_feature_exposure` and must be acknowledged in the session receipt; a
+  stateless receipt without a captured `server/discover`, or with a discovered server extension,
+  is gated.
+- Synthetic fixtures under `templates/agentic/mcp-evidence-2026-07-28/`, the
+  `mcp-session-2026-07-28.sample.json` and `mcp-content-2026-07-28.sample.json` receipts, and
+  stateless mutation cases in `test-mcp-transcript.sh`, `test-mcp-session.sh` and
+  `test-mcp-content.sh`.
+
+### Changed
+
+- A 2026-07-28 version negotiated through `initialize`, mixed versions, and a receipt whose
+  version differs from its compiled transcript are rejected, never downgraded; so is a content
+  receipt whose capture manifest version differs from its bound session. The previous blanket
+  rejection of every 2026-07-28 input is gone. `mcp-security.md` (Contract), `COMPAT.md` and the
+  mcp-audit command describe both validated revisions.
+
+### Fixed
+
+- `compile-mcp-transcript.py` rejected a non-object JSON-RPC `result` with a Python traceback;
+  it now reports `captured result invalid: <method>` (regression case in `test-mcp-transcript.sh`).
+
 ## 1.1.0 — 2026-10-22
 
 ### Added

@@ -82,4 +82,38 @@ json.dump(content,open(sys.argv[4],'w'),indent=2)
 PY
 python3 "$SV" "$TR/templates/agentic/mcp-session.sample.json" --evidence-root "$TR" >/dev/null
 python3 "$V" "$TR/content.json" --evidence-root "$TR" >/dev/null
+
+# 2026-07-28 stateless content receipt bound to the stateless session sample.
+S2="$ROOT/templates/agentic/mcp-content-2026-07-28.sample.json"
+python3 "$V" "$S2" --evidence-root "$ROOT" >/dev/null
+stateless_mutate() {
+  local name="$1" expression="$2"
+  python3 - "$S2" "$T/$name.json" "$expression" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]));exec(sys.argv[3],{'d':d});json.dump(d,open(sys.argv[2],'w'),indent=2)
+PY
+  if python3 "$V" "$T/$name.json" --evidence-root "$ROOT" >/dev/null 2>&1; then echo "expected rejection: $name" >&2;exit 1;fi
+}
+stateless_mutate stateless_protocol_binding 'd["session"]["protocol_version"]="2025-11-25"'
+stateless_mutate stateless_legacy_session 'd["session"]["path"]="templates/agentic/mcp-session.sample.json"'
+# A correctly hashed 2025-11-25 manifest under a 2026-07-28 session binding is a version downgrade.
+python3 - "$S2" "$T/stateless_legacy_manifest.json" "$ROOT/templates/agentic/mcp-evidence/capture-manifest.json" <<'PY'
+import hashlib,json,sys
+d=json.load(open(sys.argv[1]));d['capture']['manifest_path']='templates/agentic/mcp-evidence/capture-manifest.json';d['capture']['manifest_sha256']=hashlib.sha256(open(sys.argv[3],'rb').read()).hexdigest();json.dump(d,open(sys.argv[2],'w'),indent=2)
+PY
+if python3 "$V" "$T/stateless_legacy_manifest.json" --evidence-root "$ROOT" --json >"$T/stateless_legacy_manifest.out" 2>&1; then echo "expected rejection: stateless_legacy_manifest" >&2;exit 1;fi
+grep -q 'capture manifest protocol version differs from the bound session' "$T/stateless_legacy_manifest.out" || { echo "wrong rejection reason: stateless_legacy_manifest" >&2; cat "$T/stateless_legacy_manifest.out" >&2; exit 1; }
+stateless_mutate stateless_list_changed 'd["capabilities"]["resources_list_changed"]=False'
+stateless_mutate stateless_illustrative_trust 'd["decision"]={"outcome":"trust","reasons":["fixture"],"unresolved_risks":[]};d["review"]["approved"]=True'
+TS="$T/stateless-trusted";E2="templates/agentic/mcp-evidence-2026-07-28";mkdir -p "$TS/$E2"
+for f in tools-list.json server-content.json transcript.jsonl capture-manifest.json; do cp "$ROOT/$E2/$f" "$TS/$E2/$f"; done
+python3 - "$ROOT/templates/agentic/mcp-session-2026-07-28.sample.json" "$S2" "$TS/templates/agentic/mcp-session-2026-07-28.sample.json" "$TS/content.json" <<'PY'
+import hashlib,json,sys
+session=json.load(open(sys.argv[1]));session['receipt_kind']='captured_session';session['review']['approved']=True;session['decision']={'outcome':'trust','reasons':['captured fixture'],'unresolved_risks':[]}
+raw=(json.dumps(session,indent=2)+'\n').encode();open(sys.argv[3],'wb').write(raw)
+content=json.load(open(sys.argv[2]));content['receipt_kind']='captured_content';content['session']['sha256']=hashlib.sha256(raw).hexdigest();content['review']['approved']=True;content['decision']={'outcome':'trust','reasons':['captured fixture'],'unresolved_risks':[]}
+json.dump(content,open(sys.argv[4],'w'),indent=2)
+PY
+python3 "$SV" "$TS/templates/agentic/mcp-session-2026-07-28.sample.json" --evidence-root "$TS" >/dev/null
+python3 "$V" "$TS/content.json" --evidence-root "$TS" >/dev/null
 echo "MCP content fixtures passed"

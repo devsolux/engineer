@@ -228,7 +228,7 @@
       "mode": 420
     },
     "skills/engineer/COMPAT.md": {
-      "sha256": "c6ce70223a08f0fb3c06bacc670550f98d55063ffbc44ee0a7b26511ffdec08a",
+      "sha256": "5c6e8386b1e4a013cd44a2de616370e1ecc34e6377c1843349d5359fd273ecde",
       "mode": 420
     },
     "skills/engineer/LICENSE": {
@@ -388,7 +388,7 @@
       "mode": 420
     },
     "skills/engineer/commands/engineer-mcp-audit.md": {
-      "sha256": "c13e55d65a45ab0162edaf623d8f0d7b9c670975622a4a3a98ac3248015d1595",
+      "sha256": "7684822541d9766eacf3ea2397cb3e0c8a6f3535ae23512d4aad0c2dfc3233ed",
       "mode": 420
     },
     "skills/engineer/commands/engineer-memory.md": {
@@ -532,11 +532,11 @@
       "mode": 420
     },
     "skills/engineer/docs/verification-2026-10-22.md": {
-      "sha256": "3219b975d7c36ba5417f16012f93be4f76bb64c8099a050417302b26323f9a21",
+      "sha256": "5113ed07536935082a70fd09b47ca6cded290b7cc0cad03b0f4008e82131ac00",
       "mode": 420
     },
     "skills/engineer/references/MANIFEST.md": {
-      "sha256": "6777086b382600b9f08c82359cbb6c695817df255f4b11a5b924885fcd24a721",
+      "sha256": "e838384944a49d21a5334cb9a0356299d56a850678d0bf04fac7925141206b32",
       "mode": 420
     },
     "skills/engineer/references/agent-incident-response.md": {
@@ -852,7 +852,7 @@
       "mode": 420
     },
     "skills/engineer/references/mcp-security.md": {
-      "sha256": "f33667c0de61661fcaad5954fa33b2afc99c13779fd357e1925215a15b910ee2",
+      "sha256": "0e6544312384795d9ae19da8fb63e14d9f776364cb7f8491bbad7ac0037966e4",
       "mode": 420
     },
     "skills/engineer/references/multi-agent-orchestration.md": {
@@ -1052,7 +1052,7 @@
       "mode": 420
     },
     "skills/engineer/scripts/compile-mcp-transcript.py": {
-      "sha256": "a07e5cdd45d991fc2d564a3bb9490c5bf208825675a8e968c69f38b519be902b",
+      "sha256": "59196f7be363be718cab5164c9ff27a15cb9112c93f8286716d187d97405ad30",
       "mode": 493
     },
     "skills/engineer/scripts/engineer-doctor.py": {
@@ -1308,15 +1308,15 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-mcp-content.sh": {
-      "sha256": "50c9fb5e29c96450fec29c163c1204c37b23471df92a204ed4eacca98b0621d2",
+      "sha256": "349731d23db33824880c3d9bbb269c311849251c5cf9c381e12876804158ce58",
       "mode": 493
     },
     "skills/engineer/scripts/test-mcp-session.sh": {
-      "sha256": "64d4d9cb186101028ad1a83408eb486b9e7cfde337c9dc2a60ab53b7ef7dd52e",
+      "sha256": "77bcd30acc2a6667ad85400ae99730e80d986f1dd4e24aa2fa06e7077f593db6",
       "mode": 493
     },
     "skills/engineer/scripts/test-mcp-transcript.sh": {
-      "sha256": "c01dd68dcb6f80d73b9c1e2b9b8052f65fda02f5bb996a5fac80d8c79c47f7d6",
+      "sha256": "c95571a7b7cfa2743c4073a0c51a7abd49633521e1069cf9fc574f12341c48ec",
       "mode": 493
     },
     "skills/engineer/scripts/test-module-currency.sh": {
@@ -1480,11 +1480,11 @@
       "mode": 493
     },
     "skills/engineer/scripts/validate-mcp-content.py": {
-      "sha256": "0ccc0188e6edb4bc490a58559a70ba21489ee16f8d6bb1ee9929eaf5e0e8eb66",
+      "sha256": "c092bdf647672b8f01fd4480b1f577ea334dfe0f53e53ff4f0a32c3069dc9d0b",
       "mode": 493
     },
     "skills/engineer/scripts/validate-mcp-session.py": {
-      "sha256": "bc6870e6e87ade9df761ae0428023029a27e468057d1c328af4ccd455e2e71be",
+      "sha256": "4d4415acdde073b8f560f36194acbd2359122709345f266754dc9bf53bb98314",
       "mode": 493
     },
     "skills/engineer/scripts/validate-optimization-run.py": {
@@ -1619,8 +1619,28 @@
       "sha256": "d696743d37e869bf1da61a1923c7112f070ddef2beb3127ae8b557d4617b209d",
       "mode": 420
     },
+    "skills/engineer/templates/agentic/mcp-content-2026-07-28.sample.json": {
+      "sha256": "c50ff9c1b28c089231fe4bb7fcb2d5fdd7acc992237869bd6642201c90e297fd",
+      "mode": 420
+    },
     "skills/engineer/templates/agentic/mcp-content.sample.json": {
       "sha256": "c244476f6d0bc830173152310a75d8703c817341ba575fa897f0a0a9f009b0d9",
+      "mode": 420
+    },
+    "skills/engineer/templates/agentic/mcp-evidence-2026-07-28/capture-manifest.json": {
+      "sha256": "8f12e431b33015145603afee1a7408ec808b77dd3c48916ae06b93f3148e8623",
+      "mode": 420
+    },
+    "skills/engineer/templates/agentic/mcp-evidence-2026-07-28/server-content.json": {
+      "sha256": "963445c6f732d641420b81d2cb7890a0afd6a780c9ddc5640139aeaa35b72f25",
+      "mode": 420
+    },
+    "skills/engineer/templates/agentic/mcp-evidence-2026-07-28/tools-list.json": {
+      "sha256": "b68f2e128bac9d7317ffb430135b3b6229f413a65f48f8b99c13e635a551c8bd",
+      "mode": 420
+    },
+    "skills/engineer/templates/agentic/mcp-evidence-2026-07-28/transcript.jsonl": {
+      "sha256": "82c25dab9b821563c73a41e9efa60c8200bf3aa3cb037703712ef44b638551db",
       "mode": 420
     },
     "skills/engineer/templates/agentic/mcp-evidence/capture-manifest.json": {
@@ -1637,6 +1657,10 @@
     },
     "skills/engineer/templates/agentic/mcp-evidence/transcript.jsonl": {
       "sha256": "acf8e75750fb5c6148de7faf30b2ff80cb16008e8654b6a88e2069f66c14f616",
+      "mode": 420
+    },
+    "skills/engineer/templates/agentic/mcp-session-2026-07-28.sample.json": {
+      "sha256": "ad43e5975257460cb83c210e42ffabc8aaf0e2b0a38c64de23af9b72db2010c8",
       "mode": 420
     },
     "skills/engineer/templates/agentic/mcp-session.sample.json": {
@@ -1768,11 +1792,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-auto-job.sample.json": {
-      "sha256": "1d36798ec52b56de01d418a4403672083398350130aa622cca8f2810ff4fe071",
+      "sha256": "0a26fe7c9892765616d6c7adbac5739caa584b8f355c2cd88c7ad145f173dd04",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-capture.sample.json": {
-      "sha256": "1fd21a70b5e697d9e2e3e0968119ecaef2fd8c6e58d2124ac7c76199b500d994",
+      "sha256": "00dc5103b418071df06ab0e577e7189ec4d2c732256f5a6f85494ecbe95d5401",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-comparison.sample.json": {
@@ -1780,11 +1804,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-grade.sample.json": {
-      "sha256": "6642388dbdca88ce6eead1b33dd32276367b514ad14d16cd98da6d8e9b3b3bbe",
+      "sha256": "a4d8ce4b1a81b0dea21a320eb235d3ebba5cfc811a8dd8aa376bd4c380df3735",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-job.sample.json": {
-      "sha256": "9362cef4df3e21f9cc0ac4f10dbd7789fff24afee9f3b902df8fe402dfc29b42",
+      "sha256": "39fa919aff3a66ad53a2645e05d8601976a14738021e9455419d0e6fd9d8237b",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-oracle.sample.json": {

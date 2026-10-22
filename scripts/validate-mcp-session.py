@@ -10,8 +10,10 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from evidence_path import regular_input_file
 HEX=re.compile(r'^[0-9a-f]{64}$');NAME=re.compile(r'^[a-z][a-z0-9_.-]{1,63}$')
 MUTATING={'write','money','auth','admin','external_message','production','network'}
-SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}
-STATELESS_UNSUPPORTED_VERSIONS={'2026-07-28'}  # stateless core (no initialize/session): reject explicitly, never downgrade
+STATELESS_PROTOCOL_VERSIONS={'2026-07-28'}  # stateless core: per-request _meta version, no initialize or session
+SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}|STATELESS_PROTOCOL_VERSIONS
+DEPRECATED_FEATURES={'roots','sampling','logging','dynamic_client_registration'}  # deprecated in 2026-07-28; exposure must be flagged
+STATELESS_CLIENT_CAPABILITIES={'roots','sampling','elicitation'}
 def text(v:Any)->bool:return isinstance(v,str) and bool(v.strip())
 def ts(v:Any):
     try:return datetime.fromisoformat(v.replace('Z','+00:00')) if isinstance(v,str) else None
@@ -31,7 +33,7 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
     kind=d.get('receipt_kind')
     if kind not in {'illustrative_fixture','captured_session'}:e.append('invalid receipt_kind')
     s=d.get('server',{})
-    if isinstance(s,dict) and s.get('protocol_version') in STATELESS_UNSUPPORTED_VERSIONS:g.append('protocol 2026-07-28 stateless revision is not supported by this validator; rejected, never downgraded')
+    stateless=isinstance(s,dict) and s.get('protocol_version') in STATELESS_PROTOCOL_VERSIONS
     skeys={'name','version','revision_sha256','owner','purpose','environment','transport','endpoint','tls','sandboxed','egress','secret_classes','protocol_version','tools_snapshot_path','tools_snapshot_sha256','capture_manifest_path','capture_manifest_sha256'}
     if set(s)!=skeys or not NAME.fullmatch(str(s.get('name',''))) or not all(text(s.get(k)) for k in ('version','owner','purpose','environment','protocol_version','tools_snapshot_path','capture_manifest_path')) or s.get('protocol_version') not in SUPPORTED_PROTOCOL_VERSIONS or any(not HEX.fullmatch(str(s.get(k,''))) for k in ('revision_sha256','tools_snapshot_sha256','capture_manifest_sha256')) or s.get('transport') not in {'streamable_http','stdio'} or not isinstance(s.get('egress'),list) or any(not https(x) for x in s.get('egress',[])) or not isinstance(s.get('secret_classes'),list) or any(not text(x) for x in s.get('secret_classes',[])) or s.get('sandboxed') is not True:g.append('server identity, supported protocol, provenance, sandbox, or egress invalid')
     manifest=None;manifest_path=None;mrel=PurePosixPath(str(s.get('capture_manifest_path','')))
@@ -46,7 +48,9 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
             except subprocess.TimeoutExpired:compiled=False
             if not compiled:g.append('capture manifest fails deterministic transcript compilation')
             protocol=manifest.get('protocol',{}) if isinstance(manifest,dict) else {}
-            if protocol.get('protocol_version')!=s.get('protocol_version') or protocol.get('transport')!=s.get('transport') or protocol.get('server_info',{}).get('name')!=s.get('name') or protocol.get('server_info',{}).get('version')!=s.get('version'):g.append('capture manifest server identity differs from receipt')
+            server_info=protocol.get('server_info') if isinstance(protocol.get('server_info'),dict) else {}
+            if protocol.get('protocol_version')!=s.get('protocol_version'):g.append('receipt protocol version differs from transcript compilation: rejected, never downgraded')
+            if protocol.get('transport')!=s.get('transport') or server_info.get('name')!=s.get('name') or server_info.get('version')!=s.get('version'):g.append('capture manifest server identity differs from receipt')
     remote=s.get('transport')=='streamable_http'
     if remote and (not https(s.get('endpoint')) or s.get('tls') is not True):g.append('remote MCP endpoint requires HTTPS')
     a=d.get('authorization',{});akeys={'mode','protected_resource_metadata','authorization_server_metadata','protected_resource_401_discovery','protected_resource_path_discovery','protected_resource_root_fallback','oauth_metadata_discovery','oidc_metadata_discovery','selected_issuer_allowed','client_registration_mode','client_id','client_metadata_ssrf_mitigated','localhost_redirect_impersonation_mitigated','resource_indicator','authorization_resource_match','pkce_s256','state_validated','exact_redirect','scope_challenge_parsed','step_up_supported','token_in_query','audience_validated','token_passthrough','upstream_separate_token','token_storage','requested_scopes','granted_scopes','incremental_elevation'}
@@ -55,11 +59,21 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
     if registration=='client_id_metadata' and (not https(a.get('client_id')) or a.get('client_metadata_ssrf_mitigated') is not True or a.get('localhost_redirect_impersonation_mitigated') is not True):g.append('client ID metadata registration lacks SSRF or localhost impersonation controls')
     if remote and (a.get('mode')!='oauth2_1' or not https(a.get('protected_resource_metadata')) or not https(a.get('authorization_server_metadata')) or a.get('resource_indicator')!=s.get('endpoint') or any(a.get(k) is not True for k in ('protected_resource_401_discovery','protected_resource_path_discovery','protected_resource_root_fallback','oauth_metadata_discovery','oidc_metadata_discovery','selected_issuer_allowed','authorization_resource_match','pkce_s256','state_validated','exact_redirect','scope_challenge_parsed','step_up_supported','audience_validated','upstream_separate_token','incremental_elevation')) or a.get('token_in_query') is not False or a.get('token_passthrough') is not False):g.append('remote OAuth discovery, registration, PKCE, scope, audience, redirect, or token policy invalid')
     if not set(a.get('granted_scopes',[])).issubset(set(a.get('requested_scopes',[]))) or any(x in {'*','all','full-access'} for x in a.get('requested_scopes',[])):g.append('scope request or grant is overbroad')
-    cap=d.get('capabilities',{});ckeys={'negotiated','roots','sampling','elicitation'}
+    cap=d.get('capabilities',{});ckeys={'negotiated','roots','sampling','elicitation'}|({'deprecated_feature_exposure'} if stateless else set())
     if set(cap)!=ckeys or not isinstance(cap.get('negotiated'),list) or any(x not in {'tools','resources','prompts','completions','logging','sampling','roots','elicitation'} for x in cap.get('negotiated',[])):e.append('capability negotiation invalid')
     if manifest:
-        observed=set(manifest.get('protocol',{}).get('capabilities',{}));declared=set(cap.get('negotiated',[]))&{'tools','resources','prompts','completions','logging'}
+        observed=set(manifest.get('protocol',{}).get('capabilities') or {})-({'extensions'} if stateless else set());declared=set(cap.get('negotiated',[]))&{'tools','resources','prompts','completions','logging'}
         if observed!=declared:g.append('server capabilities differ from transcript compilation')
+    if stateless:
+        negotiated=set(cap.get('negotiated',[])) if isinstance(cap.get('negotiated'),list) else set();flags=cap.get('deprecated_feature_exposure')
+        if not isinstance(flags,list) or any(not isinstance(x,str) or x not in DEPRECATED_FEATURES for x in flags) or len(flags)!=len(set(flags)):e.append('deprecated_feature_exposure must list unique known deprecated features');flags=[]
+        exposed=(negotiated&{'roots','sampling','logging'})|({'dynamic_client_registration'} if registration=='dynamic' else set())
+        if manifest:
+            protocol=manifest.get('protocol',{});exposed|=set(protocol.get('deprecated_feature_exposure') or [])
+            if protocol.get('capabilities') is None:g.append('stateless capture lacks server/discover: server capabilities and instructions are unverified')
+            elif (protocol['capabilities'].get('extensions') if isinstance(protocol['capabilities'],dict) else None):g.append('server advertises extensions this receipt cannot review: '+', '.join(sorted(map(str,protocol['capabilities']['extensions']))))
+            if set(protocol.get('client_capabilities') or [])&STATELESS_CLIENT_CAPABILITIES!=negotiated&STATELESS_CLIENT_CAPABILITIES:g.append('client capabilities differ from transcript compilation')
+        if set(flags)!=exposed:g.append('deprecated_feature_exposure flags differ from exposed deprecated features: '+', '.join(sorted(exposed^set(flags))))
     roots=cap.get('roots',{});rkeys={'enabled','uris','consented','path_validation','list_changes'}
     if set(roots)!=rkeys or not isinstance(roots.get('enabled'),bool) or not isinstance(roots.get('uris'),list) or any(not text(x) or not x.startswith('file://') or '..' in x for x in roots.get('uris',[])) or (roots.get('enabled') and (roots.get('consented') is not True or roots.get('path_validation') is not True)):g.append('root capability unsafe')
     sampling=cap.get('sampling',{});spkeys={'enabled','human_review_request','human_review_response','model_hints_advisory','rate_limited'}
@@ -114,7 +128,8 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
         cid=c.get('id');tool=tmap.get(c.get('tool'));start,end=ts(c.get('started_at')),ts(c.get('completed_at'))
         if not text(cid) or cid in ids or not tool or not all(text(c.get(k)) for k in ('user_id','tenant_id','audit_event')) or not HEX.fullmatch(str(c.get('args_sha256',''))) or not HEX.fullmatch(str(c.get('result_sha256',''))) or not start or not end or end<start or c.get('source_trust') not in {'untrusted','verified'} or not all(isinstance(c.get(k),bool) for k in ('authorized','schema_matched','confirmed','timed_out','rate_limited','sensitive_input','sensitive_output','is_error')):e.append(f'call {i} identity or evidence invalid');continue
         ids.add(cid)
-        if c.get('destination') not in tool.get('destinations',[]) or c.get('root_uri') not in roots.get('uris',[]):g.append(f'call {cid} destination or root outside policy')
+        root_ok=c.get('root_uri') is None if stateless and roots.get('enabled') is False else c.get('root_uri') in roots.get('uris',[])
+        if c.get('destination') not in tool.get('destinations',[]) or not root_ok:g.append(f'call {cid} destination or root outside policy')
         if not set(tool.get('scopes',[])).issubset(set(c.get('scopes',[]))) or not set(c.get('scopes',[])).issubset(set(a.get('granted_scopes',[]))):g.append(f'call {cid} scope invalid')
         if c.get('authorized') is not True or c.get('schema_matched') is not True or c.get('timed_out') or c.get('sensitive_input') or c.get('sensitive_output'):g.append(f'call {cid} authorization, schema, timeout, or sensitivity invalid')
         if (end-start).total_seconds()*1000>tool.get('timeout_ms',0):g.append(f'call {cid} exceeded timeout budget')

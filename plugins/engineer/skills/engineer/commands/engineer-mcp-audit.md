@@ -13,7 +13,8 @@ Load `references/mcp-security.md`, `references/ai-security.md`, and
    audience, minimal scopes, token storage, and separate upstream credentials. Reject passthrough.
 3. Capture a redacted ordered JSON-RPC transcript without tokens, cookies, or raw secrets. Compile it
    offline with `compile-mcp-transcript.py`; do not let the compiler connect to or invoke the server.
-   Bind receipts to its manifest. Capture `tools/list`, hash the confined artifact, and derive every description
+   For a 2026-07-28 server, include `server/discover` in the capture and copy the
+   `-2026-07-28` receipt templates. Bind receipts to its manifest. Capture `tools/list`, hash the confined artifact, and derive every description
    and input/output schema digest from it. Require exact tool-set equality. Classify risk, scopes,
    destinations, timeout, rate limit, idempotency, confirmation, and validation requirements.
 4. Review elicitation, resources, and prompts at their own trust boundaries. Roots, sampling, and

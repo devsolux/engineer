@@ -48,9 +48,14 @@ boundaries should not be renamed blindly to Next 16's `proxy.ts`. React, Tailwin
 adapted to the target application's installed and patched versions.
 
 The current MCP specification is 2026-07-28. Engineer contains security guidance
-and evidence validators; it does not implement a transport/server. Older protocol
-versions in fixtures are explicit scenario inputs, not promises of full support for
-the newest protocol. Reject unsupported modes rather than silently downgrading.
+and evidence validators; it does not implement a transport/server. The transcript
+compiler and the session/content validators check both the 2025-11-25 handshake
+shape and the 2026-07-28 stateless shape, each against its own synthetic fixture set
+(`templates/agentic/mcp-evidence/` and `templates/agentic/mcp-evidence-2026-07-28/`).
+Fixtures are scenario inputs, not a ceiling on what a capture may contain. Tasks,
+multi-round-trip `input_required` results, and `subscriptions/listen` streams are
+not admitted by the compiler. Reject unsupported or mixed modes rather than
+silently downgrading.
 
 `codex mcp-server` is no longer a current CLI entrypoint. `codex app-server` is a
 different, experimental application protocol, not a drop-in MCP transport.

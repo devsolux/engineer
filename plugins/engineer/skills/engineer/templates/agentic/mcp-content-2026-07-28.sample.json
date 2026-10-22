@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "session": {
+    "path": "templates/agentic/mcp-session-2026-07-28.sample.json",
+    "sha256": "ad43e5975257460cb83c210e42ffabc8aaf0e2b0a38c64de23af9b72db2010c8",
+    "server_name": "fixture-orders-mcp",
+    "server_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protocol_version": "2026-07-28"
+  },
+  "capture": {
+    "path": "templates/agentic/mcp-evidence-2026-07-28/server-content.json",
+    "sha256": "963445c6f732d641420b81d2cb7890a0afd6a780c9ddc5640139aeaa35b72f25",
+    "manifest_path": "templates/agentic/mcp-evidence-2026-07-28/capture-manifest.json",
+    "manifest_sha256": "8f12e431b33015145603afee1a7408ec808b77dd3c48916ae06b93f3148e8623",
+    "captured_at": "2026-10-22T09:00:20Z",
+    "pagination_complete": true,
+    "redacted": true
+  },
+  "capabilities": {
+    "resources": true,
+    "resources_subscribe": false,
+    "resources_list_changed": true,
+    "prompts": true,
+    "prompts_list_changed": true,
+    "completions": true
+  },
+  "policy": {
+    "allowed_uri_schemes": [
+      "fixture"
+    ],
+    "max_item_bytes": 65536,
+    "resource_selection": "application_or_user",
+    "prompt_selection": "explicit_user",
+    "content_trust": "untrusted_data",
+    "annotations_advisory": true,
+    "argument_validation": true,
+    "embedded_resources_untrusted": true,
+    "completion_values_untrusted": true,
+    "list_change_revalidation": true,
+    "subscription_revalidation": true
+  },
+  "resources": [
+    {
+      "uri": "fixture://orders/schema",
+      "catalog_sha256": "34cf42be6ff31ddbe3e3dc16662bb755b00fc8221ec9ebd48aea1cb6a7eaa6f5",
+      "content_sha256": "938537817a40c695a192ed056d4b414814fee8290aee52d77b588c4ec2c71640",
+      "access_authorized": true,
+      "uri_validated": true,
+      "mime_validated": true,
+      "size_bytes": 32,
+      "sensitivity": "internal",
+      "no_secret": true,
+      "treated_as_data": true,
+      "selected_by": "fixture host policy"
+    }
+  ],
+  "resource_templates": [
+    {
+      "uri_template": "fixture://orders/{order_id}",
+      "catalog_sha256": "1d1659528d4f8e45d337a6f7a5d2cdc140f3d89e199c7315add4a0742fed085e",
+      "arguments_validated": true,
+      "expansion_confined": true,
+      "completion_untrusted": true
+    }
+  ],
+  "prompts": [
+    {
+      "name": "summarize_order",
+      "catalog_sha256": "64803f910b38fc70f5b0732f2248bddcb8666396f3ca20436044b7e79927cd3c",
+      "arguments_sha256": "07db78671186ae1346d5bebd4247a7d81ea5cbfd2c55955a7ae641083d098aae",
+      "render_sha256": "ae73bfe3cf95fca24802e628826386e9841aa2c4511e43119355be29f1e4819f",
+      "user_selected": true,
+      "arguments_validated": true,
+      "output_validated": true,
+      "injection_reviewed": true,
+      "treated_as_data": true,
+      "authority_effect": "none",
+      "embedded_resources_checked": true
+    }
+  ],
+  "completions": [
+    {
+      "reference_sha256": "7b6791adaa99907b6c7d14f5841ebd3c55647233eece10aad3b41979df123018",
+      "result_sha256": "0542f469234cf7cf1c86249de8bb1d0cb7525a12adf063829bbef220671741dc",
+      "values_untrusted": true,
+      "selected_by_user": true,
+      "authority_effect": "none"
+    }
+  ],
+  "tests": {
+    "catalog_injection": true,
+    "catalog_removal": true,
+    "resource_uri_escape": true,
+    "resource_access_denied": true,
+    "resource_secret": true,
+    "resource_instruction": true,
+    "prompt_argument_injection": true,
+    "prompt_output_injection": true,
+    "embedded_resource_injection": true,
+    "completion_injection": true,
+    "list_change_drift": true,
+    "subscription_drift": true,
+    "passed": true
+  },
+  "review": {
+    "owner": "fixture-server-owner",
+    "independent_reviewer": "fixture-content-reviewer",
+    "reviewed_at": "2026-10-22T09:10:00Z",
+    "review_after": "2026-11-22T09:10:00Z",
+    "approved": false,
+    "rollback": "disable resources, prompts, and completions for the MCP registration"
+  },
+  "decision": {
+    "outcome": "quarantine",
+    "reasons": [
+      "Illustrative fixture demonstrates the 2026-07-28 stateless content receipt only."
+    ],
+    "unresolved_risks": [
+      "No real resource or prompt exchange was observed."
+    ]
+  }
+}

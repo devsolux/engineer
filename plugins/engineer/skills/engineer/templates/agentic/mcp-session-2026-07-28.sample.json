@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "server": {
+    "name": "fixture-orders-mcp",
+    "version": "2.0.0",
+    "revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "owner": "fixture-server-owner",
+    "purpose": "read and update synthetic order notes",
+    "environment": "isolated-test",
+    "transport": "streamable_http",
+    "endpoint": "https://mcp.example.test/mcp",
+    "tls": true,
+    "sandboxed": true,
+    "egress": [
+      "https://api.example.test"
+    ],
+    "secret_classes": [
+      "synthetic-oauth-token"
+    ],
+    "protocol_version": "2026-07-28",
+    "tools_snapshot_path": "templates/agentic/mcp-evidence-2026-07-28/tools-list.json",
+    "tools_snapshot_sha256": "b68f2e128bac9d7317ffb430135b3b6229f413a65f48f8b99c13e635a551c8bd",
+    "capture_manifest_path": "templates/agentic/mcp-evidence-2026-07-28/capture-manifest.json",
+    "capture_manifest_sha256": "8f12e431b33015145603afee1a7408ec808b77dd3c48916ae06b93f3148e8623"
+  },
+  "authorization": {
+    "mode": "oauth2_1",
+    "protected_resource_metadata": "https://mcp.example.test/.well-known/oauth-protected-resource",
+    "authorization_server_metadata": "https://auth.example.test/.well-known/oauth-authorization-server",
+    "protected_resource_401_discovery": true,
+    "protected_resource_path_discovery": true,
+    "protected_resource_root_fallback": true,
+    "oauth_metadata_discovery": true,
+    "oidc_metadata_discovery": true,
+    "selected_issuer_allowed": true,
+    "client_registration_mode": "client_id_metadata",
+    "client_id": "https://client.example.test/metadata.json",
+    "client_metadata_ssrf_mitigated": true,
+    "localhost_redirect_impersonation_mitigated": true,
+    "resource_indicator": "https://mcp.example.test/mcp",
+    "authorization_resource_match": true,
+    "pkce_s256": true,
+    "state_validated": true,
+    "exact_redirect": true,
+    "scope_challenge_parsed": true,
+    "step_up_supported": true,
+    "token_in_query": false,
+    "audience_validated": true,
+    "token_passthrough": false,
+    "upstream_separate_token": true,
+    "token_storage": "encrypted host credential store",
+    "requested_scopes": [
+      "orders:read",
+      "orders:notes:write"
+    ],
+    "granted_scopes": [
+      "orders:read",
+      "orders:notes:write"
+    ],
+    "incremental_elevation": true
+  },
+  "capabilities": {
+    "negotiated": [
+      "tools",
+      "resources",
+      "prompts",
+      "completions",
+      "elicitation"
+    ],
+    "deprecated_feature_exposure": [],
+    "roots": {
+      "enabled": false,
+      "uris": [],
+      "consented": false,
+      "path_validation": false,
+      "list_changes": false
+    },
+    "sampling": {
+      "enabled": false,
+      "human_review_request": false,
+      "human_review_response": false,
+      "model_hints_advisory": false,
+      "rate_limited": false
+    },
+    "elicitation": {
+      "enabled": true,
+      "modes": [
+        "form"
+      ],
+      "server_identity_shown": true,
+      "decline_supported": true,
+      "rate_limited": true,
+      "form": {
+        "enabled": true,
+        "sensitive_requested": false,
+        "schema_validated": true,
+        "clickable_urls": false
+      },
+      "url": {
+        "enabled": false,
+        "explicit_consent": true,
+        "auto_fetch": false,
+        "auto_open": false,
+        "full_url_shown": true,
+        "domain_highlighted": true,
+        "client_content_access": false,
+        "sensitive_url_data": false,
+        "preauthenticated_url": false,
+        "https_only": true,
+        "user_binding_verified": true,
+        "completion_ids_validated": true,
+        "manual_resume_supported": true
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "get_order",
+      "description_sha256": "448c43f863da19d1681d700edc447708f0d8387551fd07d90191531aa5b20169",
+      "input_schema_sha256": "d8a472d1aa52d3bd63730df340277e644d2a775a153da604f5c656755eebad50",
+      "output_schema_sha256": "84857ec1cc971ea11bb6a0a67d714d4f27a03945ecc026f5b1eab6a9e3f89171",
+      "risk": "read",
+      "scopes": [
+        "orders:read"
+      ],
+      "destinations": [
+        "https://api.example.test/orders"
+      ],
+      "timeout_ms": 5000,
+      "rate_limit": "60/minute/user",
+      "idempotency_required": false,
+      "confirmation_required": false,
+      "input_validated": true,
+      "output_validated": true,
+      "output_sanitized": true
+    },
+    {
+      "name": "update_order_note",
+      "description_sha256": "9e5bfff62b91a6c3a974708a33f231369f032d561c6f186667be01f01e4e1a5f",
+      "input_schema_sha256": "9a21f88b779bb4d1b49a8656ad12a1cf04b1dc18456158e310502848a9d3ffe8",
+      "output_schema_sha256": "20090c9c1cc686a76f2b6935a2bebb99faae2023d08ef1393c19207a4c0f3f71",
+      "risk": "write",
+      "scopes": [
+        "orders:notes:write"
+      ],
+      "destinations": [
+        "https://api.example.test/orders"
+      ],
+      "timeout_ms": 5000,
+      "rate_limit": "10/minute/user",
+      "idempotency_required": true,
+      "confirmation_required": true,
+      "input_validated": true,
+      "output_validated": true,
+      "output_sanitized": true
+    }
+  ],
+  "calls": [
+    {
+      "id": "call_fixture_read",
+      "tool": "get_order",
+      "user_id": "synthetic-user",
+      "tenant_id": "synthetic-tenant",
+      "scopes": [
+        "orders:read"
+      ],
+      "args_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "result_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "destination": "https://api.example.test/orders",
+      "root_uri": null,
+      "started_at": "2026-10-22T09:01:00Z",
+      "completed_at": "2026-10-22T09:01:01Z",
+      "authorized": true,
+      "schema_matched": true,
+      "confirmed": false,
+      "confirmation_id": null,
+      "idempotency_key": null,
+      "timed_out": false,
+      "rate_limited": false,
+      "sensitive_input": false,
+      "sensitive_output": false,
+      "source_trust": "untrusted",
+      "is_error": false,
+      "audit_event": "fixture-mcp-read"
+    },
+    {
+      "id": "call_fixture_write",
+      "tool": "update_order_note",
+      "user_id": "synthetic-user",
+      "tenant_id": "synthetic-tenant",
+      "scopes": [
+        "orders:notes:write"
+      ],
+      "args_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "result_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "destination": "https://api.example.test/orders",
+      "root_uri": null,
+      "started_at": "2026-10-22T09:02:00Z",
+      "completed_at": "2026-10-22T09:02:01Z",
+      "authorized": true,
+      "schema_matched": true,
+      "confirmed": true,
+      "confirmation_id": "confirm_fixture_write",
+      "idempotency_key": "idem_fixture_write",
+      "timed_out": false,
+      "rate_limited": false,
+      "sensitive_input": false,
+      "sensitive_output": false,
+      "source_trust": "untrusted",
+      "is_error": false,
+      "audit_event": "fixture-mcp-write"
+    }
+  ],
+  "tests": {
+    "wrong_audience": true,
+    "token_passthrough": true,
+    "scope_escalation": true,
+    "schema_drift": true,
+    "prompt_injection": true,
+    "cross_tenant": true,
+    "root_traversal": true,
+    "elicitation_form_secret": true,
+    "elicitation_url_auto_open": true,
+    "elicitation_url_prefetch": true,
+    "elicitation_url_sensitive_data": true,
+    "elicitation_url_user_binding": true,
+    "elicitation_url_client_observation": true,
+    "sampling_without_approval": true,
+    "timeout": true,
+    "passed": true
+  },
+  "review": {
+    "owner": "fixture-server-owner",
+    "independent_reviewer": "fixture-security-reviewer",
+    "reviewed_at": "2026-10-22T09:05:00Z",
+    "review_after": "2026-11-22T09:05:00Z",
+    "approved": false,
+    "rollback": "disable the MCP registration and revoke synthetic credentials"
+  },
+  "decision": {
+    "outcome": "quarantine",
+    "reasons": [
+      "Illustrative fixture demonstrates the 2026-07-28 stateless receipt only."
+    ],
+    "unresolved_risks": [
+      "No real MCP process or OAuth flow was observed."
+    ]
+  }
+}

@@ -8,6 +8,13 @@ Use this module before enabling an MCP server in a trusted host, after a server/
 when reviewing captured tool calls. `skill-supply-chain.md` owns package provenance; this module
 owns protocol authorization, negotiated capabilities, tool schemas, and runtime behavior.
 
+## Contents
+- [Boundary](#boundary)
+- [Server and authorization](#server-and-authorization)
+- [Capabilities](#capabilities)
+- [Calls](#calls)
+- [Contract](#contract)
+
 ## Boundary
 
 An MCP server is an untrusted capability provider until admitted. Tool descriptions, annotations,
@@ -96,21 +103,39 @@ model sees it. Record safe hashes, not secrets or raw customer payloads.
 
 Capture through a client that records one redacted JSON-RPC envelope per line. Never record
 authorization headers, cookies, session IDs, credentials, or raw customer secrets; retain only a
-session-ID hash. Compile offline. The compiler never connects to or invokes the server:
+session-ID hash where the revision still has sessions. Compile offline. The compiler never connects
+to or invokes the server:
 
 ```bash
 python3 scripts/compile-mcp-transcript.py redacted-transcript.jsonl --output-dir mcp-evidence
 python3 scripts/compile-mcp-transcript.py --check-manifest mcp-evidence/capture-manifest.json --evidence-root .
 ```
 
-The compiler covers the 2025-06-18 and 2025-11-25 fixture revisions: it requires initialize →
-response → initialized ordering, paired request IDs, negotiated capabilities, consistent Streamable
-HTTP version/session metadata, and complete opaque-cursor chains. A 2026-07-28 stateless transcript
-(no `initialize`, per-request `_meta` versioning, `server/discover`, `resultType`, no session id) is
-rejected as unsupported — never downgraded — until the validators gain stateless coverage; an unknown
-or future version is quarantined the same way.
-It accepts discovery/read/render/completion capture methods only, not `tools/call`. Copy the receipt
-templates and bind both to the compiled manifest:
+The compiler and both validators accept two transcript shapes, chosen by the per-request
+`_meta` version, and run separate fixtures for each (`templates/agentic/mcp-evidence/` for
+2025-11-25, `templates/agentic/mcp-evidence-2026-07-28/` for 2026-07-28; a transcript with
+`initialize` always takes the handshake rules):
+
+- **2025-06-18 / 2025-11-25** (handshake): initialize → response → initialized ordering, one
+  negotiated version, negotiated capabilities, and a hashed session id with a matching version
+  header on every later Streamable HTTP message.
+- **2026-07-28** (stateless): no `initialize`, `notifications/initialized`, or session id. Every
+  request carries `io.modelcontextprotocol/protocolVersion` and `.../clientCapabilities` in `_meta`
+  (and the matching `MCP-Protocol-Version` header over HTTP), and one transcript holds one version.
+  `server/discover` is optional for compilation; when present it must advertise that version, its
+  capabilities bound later operations, and its `instructions` quarantine like initialize
+  instructions. Every result carries `resultType: "complete"`; `input_required` (multi-round-trip
+  input requests) and `task` results are rejected. List and `resources/read` results carry `ttlMs`
+  and `cacheScope`, and `serverInfo`/`clientInfo` must not change mid-capture. Roots, Sampling, and
+  Logging exposure (client capability, server capability, or per-request `logLevel`) compiles but is
+  recorded as `deprecated_feature_exposure`.
+
+Both shapes require paired request IDs and complete opaque-cursor chains. Mixed versions, a
+2026-07-28 version negotiated through `initialize`, and unknown or future versions are rejected,
+never downgraded. The compiler accepts discovery/read/render/completion capture methods only, not
+`tools/call`, `subscriptions/listen`, or task methods. Copy the receipt templates
+(`mcp-session.sample.json` / `mcp-content.sample.json`, or their `-2026-07-28` counterparts) and bind
+both to the compiled manifest:
 
 ```bash
 python3 scripts/validate-mcp-session.py mcp-session.json --evidence-root . --json
@@ -118,7 +143,14 @@ python3 scripts/validate-mcp-content.py mcp-content.json --evidence-root . --jso
 ```
 
 The validator checks the captured tool snapshot's confined path and file digest, safe object schemas,
-exact tool set, and derived description/schema digests. The receipt still does not perform OAuth discovery, authenticate the server,
+exact tool set, and derived description/schema digests. A 2026-07-28 receipt also needs a capture
+with `server/discover` (otherwise server capabilities and instructions are unverified), client
+capabilities that match the transcript, and a `capabilities.deprecated_feature_exposure` list equal to
+the deprecated features actually exposed (Roots, Sampling, Logging, or dynamic client registration).
+A discovered server extension (for example MCP Apps) is gated until an extension-specific review
+exists. A receipt whose protocol version differs from its compiled transcript, or a content receipt
+whose capture manifest has a different version from its bound session, is rejected, never downgraded.
+The receipt still does not perform OAuth discovery, authenticate the server,
 observe the process, or prove the server omitted hidden calls. Pair it with network/process traces,
 provider audit logs, and `skill-admission` evidence for third-party packages.
 
@@ -131,8 +163,9 @@ The transcript proves only what the capture client observed. It does not prove t
 traffic on another connection or that the capture client itself is honest; pair it with process/network logs.
 
 Tasks left the core protocol for the optional `io.modelcontextprotocol/tasks` extension in
-2026-07-28 (polling `tasks/get`, client input via `tasks/update`). Engineer's admission compiler rejects task methods
-and task-augmented tool calls instead of treating an evolving task trace as trusted evidence. Evaluate
+2026-07-28 (polling `tasks/get`, client input via `tasks/update`). Engineer's admission compiler rejects task methods,
+`resultType: "task"` results, a negotiated tasks extension, and task-augmented tool calls instead of
+treating an evolving task trace as trusted evidence. Evaluate
 Tasks in an isolated extension-specific harness before adding lifecycle, identity, TTL, polling,
 input-required, result, cancellation, and authorization evidence to this canonical receipt.
 

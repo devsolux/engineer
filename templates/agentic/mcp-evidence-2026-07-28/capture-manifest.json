@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "compiled_transcript",
+  "transcript": {
+    "path": "transcript.jsonl",
+    "sha256": "82c25dab9b821563c73a41e9efa60c8200bf3aa3cb037703712ef44b638551db",
+    "redacted": true
+  },
+  "protocol": {
+    "protocol_version": "2026-07-28",
+    "era": "stateless",
+    "transport": "streamable_http",
+    "client_info": {
+      "name": "fixture-client",
+      "version": "2.0.0"
+    },
+    "server_info": {
+      "name": "fixture-orders-mcp",
+      "version": "2.0.0"
+    },
+    "capabilities": {
+      "tools": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": true
+      },
+      "prompts": {
+        "listChanged": true
+      },
+      "completions": {}
+    },
+    "client_capabilities": [
+      "elicitation"
+    ],
+    "deprecated_feature_exposure": [],
+    "discovered_seq": 1,
+    "cache": {
+      "server/discover": [
+        {
+          "ttl_ms": 3600000,
+          "cache_scope": "public"
+        }
+      ],
+      "tools/list": [
+        {
+          "ttl_ms": 300000,
+          "cache_scope": "public"
+        },
+        {
+          "ttl_ms": 300000,
+          "cache_scope": "public"
+        }
+      ],
+      "resources/list": [
+        {
+          "ttl_ms": 300000,
+          "cache_scope": "public"
+        }
+      ],
+      "resources/templates/list": [
+        {
+          "ttl_ms": 300000,
+          "cache_scope": "public"
+        }
+      ],
+      "resources/read": [
+        {
+          "ttl_ms": 60000,
+          "cache_scope": "private"
+        }
+      ],
+      "prompts/list": [
+        {
+          "ttl_ms": 300000,
+          "cache_scope": "public"
+        }
+      ]
+    },
+    "message_count": 18,
+    "request_count": 9,
+    "pagination": {
+      "tools/list": {
+        "pages": 2,
+        "complete": true,
+        "cursor_sha256": [
+          "5ec9bee9f5a6d39e4363db59304bfc0c3e071afb3b73e5df91ed015ac912f9d4"
+        ]
+      },
+      "resources/list": {
+        "pages": 1,
+        "complete": true,
+        "cursor_sha256": []
+      },
+      "resources/templates/list": {
+        "pages": 1,
+        "complete": true,
+        "cursor_sha256": []
+      },
+      "prompts/list": {
+        "pages": 1,
+        "complete": true,
+        "cursor_sha256": []
+      }
+    }
+  },
+  "outputs": {
+    "tools_list": {
+      "path": "tools-list.json",
+      "canonical_sha256": "e3738adddfcd18fdbe3dda2289e91d72a017faf5833bd955d26d46c55d3b0182"
+    },
+    "server_content": {
+      "path": "server-content.json",
+      "canonical_sha256": "28448b2c36eb79a3b872d1db25a505f40da36989c5bdf3aeb330b9a3e007e542"
+    }
+  },
+  "compiler": {
+    "name": "engineer-compile-mcp-transcript",
+    "schema_version": 1
+  }
+}
