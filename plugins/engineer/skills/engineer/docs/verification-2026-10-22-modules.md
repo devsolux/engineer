@@ -86,6 +86,8 @@ module was accepted.
 | Enforcement (`enforcement.md`) | The lint-staged entry ran `check-rls-migration.sh` on staged file paths, which makes it skip with exit 0 — now a pre-commit line on the migrations directory with a warning; lint-staged 17.6.0 (was 17.0.8); npm 12 blocks dependency lifecycle scripts unless the root `allowScripts` policy allows them, and pnpm 11 replaced `onlyBuiltDependencies` with `allowBuilds`; the workflow lockfile (public preview) noted; `actions/checkout` v7 refuses fork checkout under privileged triggers unless `allow-unsafe-pr-checkout: true`; gitleaks-action needs `GITLEAKS_LICENSE` on organization repos; TruffleHog's documented flags are `--results=verified --fail`; `ANALYZE=true` only works with webpack's bundle analyzer (`next analyze` for Turbopack); Speed Insights for CWV. Action SHAs (checkout v7.0.1, setup-node v7.1.0, gitleaks-action v3.0.0, setup-python v7.0.0) match their tags | github.com/npm/cli releases (v12.0.0, 2026-07-08); github.com/pnpm/pnpm releases (v11.0.0); `npm view lint-staged husky version`; github.com/actions/checkout (v7.0.1 `action.yml`); github.com/gitleaks/gitleaks-action README; github.com/trufflesecurity/trufflehog (v3.99.3); nextjs.org/docs/app/guides/package-bundling; `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` for each pin |
 | OSS maintainer (`oss-maintainer.md`) | The OpenSSF OSPS Baseline's current release is v2026.08.28 (module baseline 2026.02.19 kept, as the test fixture greps for it); Fly's current tokens are `FlyV1 fm2_` (the gate only matches legacy `fo1_` — gap stated); `--allow` drops findings whose line text matches, CRITICAL included; the WORM class is now described; GitHub added structured `VULNERABILITY_REPORT.yml` forms (2026-10-01); Scorecard v5.6.0, Dependabot `directories`/`cooldown`/`groups`, community-health files, CODEOWNERS, rulesets, private vulnerability reporting, immutable releases (GA 2025-10-28), attestations and token prefixes hold | baseline.openssf.org (versions/2026-08-28); github.com/ossf/scorecard releases; fly.io/auth.md; github.blog/changelog/2026-10-01-structured-forms-for-private-vulnerability-reports; docs.github.com (Dependabot options, community health files, immutable releases, private vulnerability reporting); spdx.org/licenses; local `check-oss-leaks.sh` probes |
 | Backend security (`backend-security.md`, dated 2026-08-19) | Lifecycle-script line updated to npm 12's `allowScripts` policy and pnpm 11's `allowBuilds`; date unchanged | github.com/npm/cli releases (v12.0.0); github.com/pnpm/pnpm releases (v11.0.0) |
+| Visual communication (`visual-communication.md`) | Every platform claim holds; four were made specific. YouTube thumbnails: 16:9, 3840x2160 recommended, 640-pixel minimum width. YouTube A/B test: up to 3 titles and thumbnails, highest watch time wins, outcomes Winner / Performed Same / Inconclusive, desktop Studio only, not Shorts, scheduled lives or premieres. X header: 1500x500, up to 60 px may crop at top and bottom. GitHub social preview: 1280x640 for best display, at least 640x320, under 1 MB, a solid background when transparency may fail; no profile banner exists, and a profile README comes from a public repository named after the username. YouTube banner: 2560x1440 recommended, 2048x1152 minimum, 1235x338 safe area, 6 MB | support.google.com/youtube (answers 72431, 16391400, 10456525); help.x.com; docs.github.com |
+| Design taste (`design-taste.md`) | Krebs (2026-04-20): 1,590 Show HN pages, 16 patterns, 22% / 32% / 46% at 4+ / 2–3 / 0–1 patterns (the 46% tier was called "clean"; corrected). The em-dash comparison is a designer Krebs quotes, and it says "almost as reliable" (attribution corrected). No cited source gives a 34% permanent-dark-theme share (figure removed). The clean-page traits come from Developers Digest (2026-04-22, updated 2026-10-06). Impeccable's slop catalog confirms Cardocalypse, nested cards, border plus shadow, large radii, icon tiles and the hero metric. Rams' principles (Vitsœ), NN/g hierarchy (contrast, scale, grouping), `next/font` self-hosting and `text-wrap: balance` (Baseline widely available) hold. Quote Investigator finds no solid evidence for the Chanel adage (attribution softened) | adriankrebs.ch; developersdigest.tech; impeccable.style; vitsoe.com; nngroup.com; nextjs.org/docs; developer.mozilla.org; quoteinvestigator.com |
 
 ## Retained dated observations
 
@@ -115,13 +117,16 @@ Claude Code 2.1.295+ and was not exercised on the local 2.1.282.
 
 ## Not re-verified (recorded, not redated)
 
-Still past their review cadence (`python3 scripts/report-module-currency.py --today 2026-10-22`):
-`visual-communication.md` (verified 2026-08-19, due 2026-10-18) and `design-taste.md` (verified
-2026-08-21, due 2026-10-20). Their source check was still running when this work moved onto
-`main`; neither file was edited.
+None. `visual-communication.md` and `design-taste.md`, the last two past due when this work moved
+onto `main`, were re-verified there the same day (rows above), so every reference module past its
+review cadence on 2026-10-22 is now re-verified.
 
 ## Found, not changed here
 
+- `research/design-taste-2026-08.md` (as-of 2026-08-19) lists "permanent dark theme (34%),
+  gradient backgrounds (27%), icon-card grids (22%)" as the most common tells; neither of its cited
+  sources gives these figures. The note keeps its date and text; `design-taste.md` no longer
+  repeats the 34%.
 - `COMPAT.md` keeps Python 3.10 as the maintainer floor and a CI lane although 3.10 reached
   end-of-life on 2026-10-01; raising the floor is a maintainer decision (noted in `COMPAT.md`).
 - `scripts/check-oss-leaks.sh`: `--allow` filters matched line text before the path is attached, so
@@ -196,3 +201,15 @@ facts together with both privileged-trigger scanner rules.
 | `python3 scripts/report-module-currency.py --today 2026-10-22` | 114 of 116 modules current; `visual-communication.md` and `design-taste.md` past due |
 | `python3 scripts/scan-doc-supply-chain.py` | Passed |
 | `bash scripts/check-oss-leaks.sh` on the staged changeset | DROPPER on the unchanged `malware-detection.md` Sink row (both copies), cleared by `--allow '\*\*Sink\*\*'`; otherwise clean |
+
+## Gates after re-verifying the last two modules
+
+| Check | Result |
+|---|---|
+| `make fixtures` | Rebound the bundle digest; grader-verified |
+| `make build` → `make lint` → `make check` → `make verify-build` | Passed; no drift. The first `make check` failed the verb load budget: `visual` loaded 801 of 800 lines once `visual-communication.md` grew to 203 lines. Rewrapping two bullets brought it to 201 lines, and the gate passed |
+| `make test JOBS=4` | 55/55 isolated offline suites passed |
+| `make host-validate` | `claude plugin validate --strict` passed for the marketplace and the plugin on Claude Code 2.1.282 |
+| `python3 scripts/report-module-currency.py --today 2026-10-22` | 116 of 116 modules current |
+| `python3 scripts/scan-doc-supply-chain.py` | Passed |
+| `bash scripts/check-oss-leaks.sh` on the staged changeset | Clean |

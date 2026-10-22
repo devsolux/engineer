@@ -1,6 +1,6 @@
 # Design taste: distinctive UI, not token-compliant slop
 
-**Last verified**: 2026-08-21 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months
 **Related**: `design-system.md`, `design-patterns.md`, `design-motion.md`, `conversion-ui.md`, `frontend.md`, `output-quality.md`
 
 Tokens, WCAG, and shadcn wrappers can still produce a page that looks like every other 2026 AI app. This module is the aesthetic contract. Load it for new UI, landings, redesigns, "make it look good," and audits that mention generic / slop / taste.
@@ -41,7 +41,7 @@ Spend boldness in **one** place. Everything else stays quiet.
 
 Taste is a **chosen default**, not a mood. Dieter Rams: useful, understandable, unobtrusive, honest, thorough, as little design as possible — aesthetic quality is part of usefulness ([Vitsœ](https://www.vitsoe.com/us/about/good-design)). Hierarchy is contrast, scale, and grouping (NN/g).
 
-In 2026 the failure mode is the **LLM median**: polished, coherent, interchangeable. Krebs on 1,590 Show HN pages: 22% hit 4+ of 16 AI patterns, 32% hit 2–3, 46% stayed clean. Slop converts; it does not distinguish. Ship ugly on purpose before you ship accidental shadcn.
+In 2026 the failure mode is the **LLM median**: polished, coherent, interchangeable. Krebs scored 1,590 Show HN pages (April 2026): 22% hit 4+ of 16 AI patterns, 32% hit 2–3, 46% hit 0–1. Slop converts; it does not distinguish. Ship ugly on purpose before you ship accidental shadcn.
 
 Trends (3D, collage, neo-brutalism, "imperfect by design," tactile grain) are **not** taste if you picked them because they are trending. Same rule as Inter.
 
@@ -65,17 +65,17 @@ Do not emit these unless the brief names them. Highest-signal extras beyond the 
 
 | Tell | Why |
 |---|---|
-| Colored left or top stripe on rounded cards | Krebs: as reliable as em-dashes in prose |
+| Colored left or top stripe on rounded cards | A designer Krebs quotes: almost as reliable a tell as em-dashes in text |
 | Icon tile (rounded square) stacked above a heading | Universal feature-card template |
 | Hero metric: big number + tiny label + three supporting stats | Trusted nowhere; invents proof |
-| Permanent dark theme as the only mode, grey body, all-caps labels | 34% of scored Show HN pages |
+| Permanent dark theme as the only mode, grey body, all-caps labels | One of Krebs's 16 patterns |
 | Nested cards, or hairline border **plus** a wide soft shadow | Cardocalypse / generated elevation |
 | Card radius ≥24px on small cards | Everything becomes the same blob |
 | Radial/spotlight glow, decorative grid, pulsing status dot, logo marquee | Motion or texture without a job |
 | Lucide/emoji as the whole icon system on a marketing hero | Decoration larger than the message |
 | "Supercharge / empower / streamline / world-class" | Copy slop riding visual slop |
 
-Clean pages in the same dataset: a palette that is not lavender; a type system that is not Inter-only; **one layout primitive repeated** until it is the signature.
+Clean pages in the same dataset (Developers Digest's write-up): a palette that is not the default "VibeCode purple"; a type system that is not Inter-only; **one layout primitive repeated** until it is the signature.
 
 Sources: [Krebs](https://www.adriankrebs.ch/blog/design-slop/), [Developers Digest](https://www.developersdigest.tech/blog/ai-design-slop-and-how-to-spot-it), [Impeccable slop](https://impeccable.style/slop). Notes: `research/design-taste-2026-08.md`.
 
@@ -113,7 +113,7 @@ Images: real product, subject-matter photography, or honest placeholders. No sto
 
 ## Restraint
 
-Chanel's rule: remove one accessory before ship. If the signature is the type pairing, do not also add grain, glow, and a marquee. Maximalist briefs need execution density; minimal briefs need spacing and type precision. Both fail when every section shouts.
+Remove one accessory before ship (an adage often credited to Chanel, without evidence). If the signature is the type pairing, do not also add grain, glow, and a marquee. Maximalist briefs need execution density; minimal briefs need spacing and type precision. Both fail when every section shouts.
 
 Match existing product chrome on interior app pages. A dashboard that suddenly becomes a poster is not taste; it is a broken system.
 

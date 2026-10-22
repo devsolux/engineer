@@ -532,7 +532,7 @@
       "mode": 420
     },
     "skills/engineer/docs/verification-2026-10-22-modules.md": {
-      "sha256": "9145f71c2066a3ea3440fba79fab348738b287c632b79da13d59212d20de547c",
+      "sha256": "4e1e80d1d2df3ede65e0f9d5c151d428c29c149947267a3c1d55b830da63bd28",
       "mode": 420
     },
     "skills/engineer/docs/verification-2026-10-22.md": {
@@ -768,7 +768,7 @@
       "mode": 420
     },
     "skills/engineer/references/design-taste.md": {
-      "sha256": "289578f255943870cb32c6132c2baa91e5b2059f176e98a13be997e7dc244dc6",
+      "sha256": "18dd128dab49c056af7a01f92c271c02f157662c42b0f3fcbc979d4f82a6d48d",
       "mode": 420
     },
     "skills/engineer/references/developer-experience.md": {
@@ -976,7 +976,7 @@
       "mode": 420
     },
     "skills/engineer/references/visual-communication.md": {
-      "sha256": "c754ba0e3888f46b1dbef5bbb795efbcda3bb11c2cbbb827bf0f5dcaa2b113be",
+      "sha256": "e3b90d3551d3e2bb1ac894591ca27afc6982f721833fbe79f9774a7db8260876",
       "mode": 420
     },
     "skills/engineer/references/web-discovery-engineering.md": {
@@ -1800,11 +1800,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-auto-job.sample.json": {
-      "sha256": "0b1db6b920f3bf21b4d81bf962a14fb4143b54d38cc12e1fbe561705f9267780",
+      "sha256": "ae045ef00f1525fc45c0e4eff43630c94d61adb4b3e115f4c0d47fc1f4dc3bf4",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-capture.sample.json": {
-      "sha256": "5dd9e0b12005889940603b58a4ea59e9cc496cdbe03d88e9ec8cbacb6bf9485a",
+      "sha256": "567998f08b3c9a9e425497d4efd01ccce04853ab5aa711bb0d02f4cfe7cd4c95",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-comparison.sample.json": {
@@ -1812,11 +1812,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-grade.sample.json": {
-      "sha256": "ce1cad2e44a638a31b234050a30d0fd40a14e2f77495031cd0968a5876ec0309",
+      "sha256": "c80f4e496c08043933e8442618668712e0ff4aa55751323ef6600d377aaa520f",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-job.sample.json": {
-      "sha256": "c2fe1ab6689ded27308859c2df1f4fa624622332d4ed6ef0b3a94f3de2c351eb",
+      "sha256": "a13c8598527a3ee198f9095c0b162d41581dbd4d44adb3016c95c4acf6a68e5a",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-oracle.sample.json": {

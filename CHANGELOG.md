@@ -22,7 +22,7 @@ All notable changes to this project are documented here. The project follows
   from a date suffix in the requested name misreported current dateless model ids.
 - `make test` accepts `TEST_TIMEOUT` (seconds per suite, default 180). CI runs with 600 seconds, a
   30-minute job limit, and uploads `.build/tests/` suite logs when the fixtures step fails.
-- Module currency (2026-10-22 module ledger): sixty-four past-due reference modules re-verified
+- Module currency (2026-10-22 module ledger): all sixty-six past-due reference modules re-verified
   against primary sources and redated — the host and agent-security modules
   (`coding-agent-capability-playbooks.md`, `hermes-agent-integration.md`,
   `web-discovery-engineering.md`, `agent-red-teaming.md`, `implementation-completeness.md`,
@@ -45,7 +45,8 @@ All notable changes to this project are documented here. The project follows
   `long-horizon-agents.md`, `prompt-optimization.md`, `skill-behavior-evals.md`,
   `capability-promotion.md`, `system-assurance.md`, `root-cause-engineering.md`,
   `epistemic-honesty.md`, `company-operating-system.md`, `portfolio-context.md`,
-  `product-business-engineering.md`). Corrections include current Claude Code hook, fallback and plan-file
+  `product-business-engineering.md`) and the design modules (`visual-communication.md`,
+  `design-taste.md`). Corrections include current Claude Code hook, fallback and plan-file
   behaviour, Hermes v0.22.4 approval defaults, Python 3.14 as the default with refreshed pins,
   Supabase's explicit Data API grants (all projects from 2026-10-30), secret keys and Storage
   upload limits, Stripe meter events and thin events, Next 16 `preload`, async `params`, Proxy
@@ -93,6 +94,11 @@ All notable changes to this project are documented here. The project follows
 - `backend-security.md` names npm 12's `allowScripts` and pnpm 11's `allowBuilds` for dependency
   lifecycle scripts; eval 186 expects RULER's "half or less" effective context; the onboarding
   event `growth-funnels.md` gained is named `onboarding_step_completed`.
+- `design-taste.md` no longer cites an unsupported 34% permanent-dark-theme share, calls Krebs's
+  lowest tier "0–1 patterns" rather than clean, attributes the em-dash comparison to the designer
+  Krebs quotes, and no longer credits Chanel with an adage Quote Investigator could not trace to her.
+  `visual-communication.md` states YouTube's thumbnail and banner sizes, safe area, test eligibility,
+  and X's header crop margin.
 - `malware-detection.md` no longer claims the leak gate stays clean on this tree or that a
   path pattern passed to `--allow` exempts it.
 - `COMPAT.md` records that Python 3.10, still the maintainer floor, reached end-of-life on

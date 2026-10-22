@@ -1,6 +1,6 @@
 # Visual communication and cross-surface assets
 
-**Last verified**: 2026-08-19 · **Review cadence**: 2 months
+**Last verified**: 2026-10-22 · **Review cadence**: 2 months
 **Related**: `design-system.md`, `design-taste.md`, `design-accessibility.md`, `product-marketing.md`,
 `output-quality.md`, `seo-metadata.md`, `composition.md`
 **Contents**: [Brief](#brief-before-pixels) · [Taxonomy](#infographic-and-diagram-taxonomy) · [Composition](#composition-system) · [Surfaces](#surface-contracts) · [Anti-slop](#anti-slop-and-creative-direction) · [Export/QA](#export-and-qa-receipt)
@@ -125,9 +125,10 @@ in the asset manifest. Master files are not delivery files.
   text. Verify at the smallest feed size, in light and dark contexts, and with the duration badge zone.
 - No fabricated expressions, outcomes, UI, money, people, or scale. Curiosity cannot contradict the
   video. Optimize qualified watch time and satisfaction, not clicks alone.
-- Current official guidance recommends 16:9 and high resolution. Use YouTube's native concurrent test
-  for up to three materially different title/thumbnail variants when eligible; judge by watch-time
-  share, record inconclusive results, and avoid sequential-test certainty.
+- Current official guidance recommends 16:9 at 3840x2160, with a 640-pixel minimum width. Use YouTube's
+  native concurrent test for up to three materially different title/thumbnail variants when eligible
+  (desktop YouTube Studio; not Shorts, scheduled lives, or premieres); judge by watch-time share, record
+  "performed same" and inconclusive results, and avoid sequential-test certainty.
 
 ### Logos and identity marks
 
@@ -137,8 +138,7 @@ in the asset manifest. Master files are not delivery files.
   light/dark, small-size simplification, favicon/avatar, clear space, minimum size, misuse examples,
   color/type tokens, and editable vector source.
 - Test silhouette, one color, 16-32px, blur, grayscale, embroidery/print constraints, unfamiliar
-  viewers, and collision against category competitors. Font-plus-random-icon output is not a
-  a finished identity.
+  viewers, and collision against category competitors. Font-plus-random-icon output is not a finished identity.
 - Aesthetic generation is not legal clearance. Record authorship, asset/font licenses, source files,
   and the jurisdiction-specific trademark review owner.
 
@@ -158,13 +158,15 @@ in the asset manifest. Master files are not delivery files.
 - Design the crop system first. Keep identity and message in the intersection of safe regions; let
   edge artwork tolerate cropping. Preview desktop, mobile, high-DPI, light/dark surroundings, and
   profile-avatar overlap.
-- X currently recommends 1500x500 and warns that top/bottom cropping varies. Treat the central band as
-  the robust message zone and verify on live surfaces.
+- X currently recommends 1500x500 and warns that up to 60 pixels at the top and bottom may be cropped,
+  depending on monitor and browser. Treat the central band as the robust message zone and verify on
+  live surfaces.
 - GitHub has no native personal profile banner. A profile README header is content, while repository
   social preview is platform metadata. GitHub currently recommends 1280x640 for best social preview,
   under 1 MB, with solid-background fallback when transparency may fail.
-- YouTube currently recommends 2560x1440, with a central text/logo safe region, because the same banner
-  crops differently on TV, desktop, and mobile. Never stretch an X header into this canvas.
+- YouTube currently recommends 2560x1440 (minimum 2048x1152, 6 MB or smaller), with text and logos
+  inside the 1235x338 safe area at the minimum size, because the same banner crops differently on TV,
+  desktop, and mobile. Never stretch an X header into this canvas.
 
 ## Anti-slop and creative direction
 
