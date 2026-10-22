@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "receipt_kind": "illustrative_fixture",
+  "findings": {
+    "run_id": "run-001",
+    "sha256": "ae25a47b998abb0a519edac8982d450862bf467ec8a7a9fbf6ca8b144f944f88"
+  },
+  "entries": [
+    {
+      "fingerprint": "sa1-bf9c85f8a664d784",
+      "outcome": "root_cause_fixed",
+      "layer": "data access",
+      "changed_paths": [
+        "src/notes/repository.py"
+      ],
+      "regression_test": {
+        "path": "tests/test_notes_isolation.py",
+        "name": "test_member_cannot_read_foreign_note",
+        "failed_before_fix": {
+          "command": "python3 -m pytest tests/test_notes_isolation.py::test_member_cannot_read_foreign_note",
+          "exit_code": 1
+        },
+        "passed_after_fix": {
+          "command": "python3 -m pytest tests/test_notes_isolation.py::test_member_cannot_read_foreign_note",
+          "exit_code": 0
+        }
+      },
+      "verification": [
+        {
+          "command": "python3 -m pytest",
+          "exit_code": 0
+        },
+        {
+          "command": "bash \"$ENGINEER/scripts/engineer-scan.sh\" --strict",
+          "exit_code": 0
+        }
+      ],
+      "mitigation": null
+    }
+  ],
+  "not_fixed": [
+    {
+      "fingerprint": "sa1-078fb0ee39f09530",
+      "verdict": "needs_validation",
+      "disposition": "handed_back",
+      "reason": "the owner-observed egress-policy check went to the owner verbatim; no patch until a re-verified confirmed record names the remediation layer and paths"
+    },
+    {
+      "fingerprint": "sa1-24729d7a31d4a4ae",
+      "verdict": "rejected",
+      "disposition": "skipped",
+      "reason": "rejected by verifier-b: slugify keeps only [a-z0-9-], so no path separator reaches export_path"
+    }
+  ]
+}

@@ -332,7 +332,7 @@
       "mode": 420
     },
     "skills/engineer/commands/engineer-fix.md": {
-      "sha256": "f0c658d6a5b3e38d94dc304575c8753412a3a9221112b68ce7b4657fadfbf34e",
+      "sha256": "c33e93dbb9871f493b2f2208b0c8c5c73bacef792c18ec09e84d035a270a1321",
       "mode": 420
     },
     "skills/engineer/commands/engineer-flow.md": {
@@ -460,7 +460,7 @@
       "mode": 420
     },
     "skills/engineer/commands/engineer-security-audit.md": {
-      "sha256": "1ff9ecf61f88fa2d855c8279754996b63572d906c6e86e21cd9a944b4f738da3",
+      "sha256": "631b830967a55582ce18a64caf2832f8324aac29075a5ee22dd0e205ca9d162c",
       "mode": 420
     },
     "skills/engineer/commands/engineer-self-improve.md": {
@@ -496,7 +496,7 @@
       "mode": 420
     },
     "skills/engineer/docs/checks.md": {
-      "sha256": "b9628e263ab054505e2e04970a7c14eb4db8668f1951b5f2c3c0e0eb815bb58a",
+      "sha256": "80657e1a171982d546ed1717b0751ffe8aa1d6cc1f3be3ab1ea4ee2173526b2e",
       "mode": 420
     },
     "skills/engineer/docs/enforcement-setup.md": {
@@ -536,7 +536,7 @@
       "mode": 420
     },
     "skills/engineer/references/MANIFEST.md": {
-      "sha256": "6777086b382600b9f08c82359cbb6c695817df255f4b11a5b924885fcd24a721",
+      "sha256": "bb750a99334e77831f012435bf432d63e170881e850c88ba576ce93bc788fda3",
       "mode": 420
     },
     "skills/engineer/references/agent-incident-response.md": {
@@ -912,7 +912,7 @@
       "mode": 420
     },
     "skills/engineer/references/root-cause-engineering.md": {
-      "sha256": "014224729da97b9ace55e0624230c94ba730eadcd6bbd10e3aad67eee5bd13a5",
+      "sha256": "8621f04840ac20745a2e0b535d25e678441c66c3436df680cd4d34e74c5383b5",
       "mode": 420
     },
     "skills/engineer/references/rust.md": {
@@ -932,7 +932,7 @@
       "mode": 420
     },
     "skills/engineer/references/security-audit.md": {
-      "sha256": "a19fc7a95d39e7172efabda84a36f49d066b45090accfa10d376ddbd61ed4a82",
+      "sha256": "2e0fb89004eb661c06bfb63482a537c1a80b7552f0ca1e8515aeec64ad0a98d8",
       "mode": 420
     },
     "skills/engineer/references/seo-metadata.md": {
@@ -1400,7 +1400,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-security-findings.sh": {
-      "sha256": "d8b5eee11e1ef45ffebbd9dce1003bc19dc423799cf24a592a0e68e739c05312",
+      "sha256": "0ee42a439931ccb232b6a840538a83245a28ba0716ed7b56edbea6adfbaeacf7",
       "mode": 493
     },
     "skills/engineer/scripts/test-security-ledger-tool.sh": {
@@ -1524,7 +1524,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/validate-security-findings.py": {
-      "sha256": "91fd1fd0e4a8975c68028f551b2be8e6e325ad3cc99a74906d1f9405809d40e2",
+      "sha256": "e3fd415a80fa4245a8e1a875c9b6231e58d8af5b2090adafac26e395543d33b5",
       "mode": 493
     },
     "skills/engineer/scripts/validate-skill-admission.py": {
@@ -1763,16 +1763,20 @@
       "sha256": "0cf4d1f1135675a971e0894b9e660d6077004ba2886ef48d17556b49e4fc91b9",
       "mode": 420
     },
+    "skills/engineer/templates/agentic/security-remediation.sample.json": {
+      "sha256": "3f98af371d7f9954e86ac33624fe0d57a8031f471eb2aaa38b672d351a95c71f",
+      "mode": 420
+    },
     "skills/engineer/templates/agentic/skill-admission.sample.json": {
       "sha256": "062bfa28b664325fa5f6f06172bd6cc25ee03dcbb35ab599591f5d31c9a49b68",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-auto-job.sample.json": {
-      "sha256": "1d36798ec52b56de01d418a4403672083398350130aa622cca8f2810ff4fe071",
+      "sha256": "f4a83ec1dc2ad9f0c451747578d82fba7af163f0e8cb665230691a689f4f8613",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-capture.sample.json": {
-      "sha256": "1fd21a70b5e697d9e2e3e0968119ecaef2fd8c6e58d2124ac7c76199b500d994",
+      "sha256": "01adb29f88047ad9da1050aaf8fcaf900839e5dee7644d8c39014c292112174f",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-comparison.sample.json": {
@@ -1780,11 +1784,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-grade.sample.json": {
-      "sha256": "6642388dbdca88ce6eead1b33dd32276367b514ad14d16cd98da6d8e9b3b3bbe",
+      "sha256": "610a425abd4d2ed553aefd12b321bb70622ec5d3efef22871c153e3b8d038600",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-job.sample.json": {
-      "sha256": "9362cef4df3e21f9cc0ac4f10dbd7789fff24afee9f3b902df8fe402dfc29b42",
+      "sha256": "20f2e07d4a69e26f25c5a52c11c2383ef7676663d13de0267b767ae3c69983bc",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-oracle.sample.json": {
@@ -1792,7 +1796,7 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-run.sample.json": {
-      "sha256": "6d69f3d46c21a9e4c3de7b45cc817c9f3fe4e68e77435c962580c749d1566567",
+      "sha256": "32dfe67351c4d5d55aa5da64347bd26dcbffd6f81865d8a2dea3e41f6d4445b8",
       "mode": 420
     },
     "skills/engineer/templates/agentic/trajectory.sample.json": {

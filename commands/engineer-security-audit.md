@@ -65,4 +65,4 @@ live, shared, staging, or production systems; principals and secrets are synthet
 appears only on `confirmed` records and never exceeds the demonstrated impact. Validators prove
 record consistency and evidence binding, never exploitability or the absence of vulnerabilities.
 Fix, install, enable, and deploy decisions stay separately authorized; hand remediation to
-`/engineer-fix` only on an explicit request.
+`/engineer-fix --findings "$RUN/findings.json"` only on an explicit request.

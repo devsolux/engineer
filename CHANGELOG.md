@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
+## Unreleased
+
+### Added
+
+- `engineer fix --findings <run>/findings.json`: remediation from a validated security-audit
+  receipt, traceable from fingerprint to fix to regression test. Only `confirmed` records are
+  fixed, in severity order, one per atomic change at the record's remediation layer and paths,
+  each behind a regression test built from the trace and boundary that fails before the repair
+  and passes after; `needs_validation` records are never patched (their local plan runs in a
+  sandbox or the owner-observed checks go back to the user, and a vulnerable result returns to
+  the audit for re-verification); `rejected` records are skipped and listed. Documented in the
+  fix command, a "From findings to fixes" section of `security-audit.md`, and a pointer in
+  `root-cause-engineering.md`.
+- `validate-security-findings.py --remediated remediation.json`: cross-checks the fix receipt
+  against the findings it binds by digest (confirmed only, severity order, changed paths inside
+  `remediation.paths`, the matching layer, a red-then-green regression test, passing
+  verification commands, a declared mitigation when not root-cause fixed, every record
+  accounted for exactly once), with an illustrative
+  `templates/agentic/security-remediation.sample.json`, mutation cases, and two eval
+  scenarios (215, 216).
+
 ## 1.1.0 — 2026-10-22
 
 ### Added
