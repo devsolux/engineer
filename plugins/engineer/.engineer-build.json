@@ -496,7 +496,7 @@
       "mode": 420
     },
     "skills/engineer/docs/checks.md": {
-      "sha256": "80657e1a171982d546ed1717b0751ffe8aa1d6cc1f3be3ab1ea4ee2173526b2e",
+      "sha256": "997bc21f18f9c8a425547d570d7cd3f21c5b92179378ea81df4b73a5f67e6b18",
       "mode": 420
     },
     "skills/engineer/docs/enforcement-setup.md": {
@@ -532,11 +532,11 @@
       "mode": 420
     },
     "skills/engineer/docs/verification-2026-10-22.md": {
-      "sha256": "bd828efce633b98ad0aa8564794f6268c0adc2c1b52b9d2a86df73fd290f57d6",
+      "sha256": "c3fd57ed8073355fe0b506fd513e9e1c537a6f97d5aadaaa2be098c461009e64",
       "mode": 420
     },
     "skills/engineer/references/MANIFEST.md": {
-      "sha256": "3682df9be46f13fb4ac09c8be9a640d903e2365fa916e3dda6195316e17e5ccc",
+      "sha256": "5c7e92c2ea4eff7e49b9f7b81bae2f8262d3c49317f1ad4c87af0cc06763579c",
       "mode": 420
     },
     "skills/engineer/references/agent-incident-response.md": {
@@ -780,7 +780,7 @@
       "mode": 420
     },
     "skills/engineer/references/enforcement.md": {
-      "sha256": "71a8ef7223a9cc4c087d9624a9e1297837f6328b8099b5706e05feac66614c31",
+      "sha256": "2a05af96b09b3fd1273a0de02bdbc93af8dbda849cb6f0369dc140feaaf30b5b",
       "mode": 420
     },
     "skills/engineer/references/engineer-telemetry.md": {
@@ -1120,7 +1120,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/install-host-activation.py": {
-      "sha256": "deabe00da230792700364de84f42f7830f2686256f2fd836489311aebc773e0c",
+      "sha256": "0283e9ce30a88fc5014888b7cb62c801c468f4e6869d26fc7d644dac140af5f1",
       "mode": 493
     },
     "skills/engineer/scripts/install-native-skills.py": {
@@ -1184,7 +1184,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/run-live-evals.py": {
-      "sha256": "4b754f9b533dafc2a16896e2ed75995d560ee8a23f4d99debe06ddcd7d32f8d6",
+      "sha256": "22db963761e7c4c83e1e54f51e1291b51c08d020f192f5c354868dad7e17d808",
       "mode": 493
     },
     "skills/engineer/scripts/run-tests.py": {
@@ -1192,7 +1192,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/scan-doc-supply-chain.py": {
-      "sha256": "2702d161a5593fa3d9099b33b8470ecd214cf74800988898c560ba48bc748f8d",
+      "sha256": "7f54dd80121b6cebdcee0eaf1e7f8990b8c83818e325e5257af9dd201d4ea023",
       "mode": 493
     },
     "skills/engineer/scripts/scan-false-done.sh": {
@@ -1264,11 +1264,11 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-csp-reporting.sh": {
-      "sha256": "dd288b82a35a08e5e793bb42dd5950df760f296d119524e6a93380edef2b0067",
+      "sha256": "1bfc0358712b42a06b03c49c0159cf85fb6bfa47c222c08b5fbef76be5a4568a",
       "mode": 493
     },
     "skills/engineer/scripts/test-doc-supply-chain.sh": {
-      "sha256": "47e9b1fd05d13ebf919f9833837574e8fd56c6ea90ca2573044b93b159864d94",
+      "sha256": "a2ea9aaeeaa20832a387af8af0d2c539ef3b9419988af117c35d54c79a6e05cc",
       "mode": 493
     },
     "skills/engineer/scripts/test-engineer-doctor.sh": {
@@ -1292,11 +1292,11 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-github-signing.sh": {
-      "sha256": "99a9ff5f146d185f9befae0b1ce0ba4088f355c19ef59b0ad4c11433460537ed",
+      "sha256": "9bdd688fb53e46f34c9dc1dc3a0d4af99a85cce93625126d2167162a936e5ecb",
       "mode": 493
     },
     "skills/engineer/scripts/test-host-activation.sh": {
-      "sha256": "6625e7ae54eefcddfd6285105531f13d034043e69821b1f716f99977b267063e",
+      "sha256": "25bef340a1b8c4628e12e764d662926aa6c216c3b27b28295d3d8af06b2d4137",
       "mode": 493
     },
     "skills/engineer/scripts/test-host-capabilities.sh": {
@@ -1304,7 +1304,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-live-evals.sh": {
-      "sha256": "eb49642754689cc44f5ff136e4b02778d34b3b3ee234edf25684c49209089536",
+      "sha256": "27b85ffc9b7de663f9fcbd7aa887f8852d8c05032674f853f0a7ab5005bef837",
       "mode": 493
     },
     "skills/engineer/scripts/test-mcp-content.sh": {
@@ -1376,7 +1376,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-repo-validation.sh": {
-      "sha256": "b90520fd66ca1d0ccd37b6821b0d60ee2c3a1e24c40ba3157fa0c3a7572db97c",
+      "sha256": "a2f3bb9fe0e53f91737ef58ccc8f44af15a3d4e610c2df4c0b00620d9edd7837",
       "mode": 493
     },
     "skills/engineer/scripts/test-research.sh": {
@@ -1404,7 +1404,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/test-security-ledger-tool.sh": {
-      "sha256": "35ac3eb5c9acf6c8e9decbe237af5ef02833bcec95e5f7eb9a4cc634f94429d2",
+      "sha256": "1800415e9354acef477a17d3fdf2da9c52af228d5eddead06dc108b56304709b",
       "mode": 493
     },
     "skills/engineer/scripts/test-skill-admission.sh": {
@@ -1512,7 +1512,7 @@
       "mode": 493
     },
     "skills/engineer/scripts/validate-repo.sh": {
-      "sha256": "b81898473b643b0247bdf4f60d096a1065079d278837e929cb4349539102d15d",
+      "sha256": "d3ab6d4bed6246e7ca141d9bd40c37de36261dbbc491c0c452b5b1dd72c4d30d",
       "mode": 493
     },
     "skills/engineer/scripts/validate-security-coverage.py": {
@@ -1796,11 +1796,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-auto-job.sample.json": {
-      "sha256": "68ae636c23452ee0412fcb1f1cccfcdf2cfc030efc089019bd90bc5111611929",
+      "sha256": "bd7ee0869eb38d0e96a3b353b7f82bdfc9f66e55fbf35e1aa42599e6e142e78a",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-capture.sample.json": {
-      "sha256": "82faa4747ef4f6f0985cca644d6748064a416c95b03c136dc88177c15a44d998",
+      "sha256": "cf1a103cad46328430816559769b924638c00bf511adbc9edfdee6af3dbe08e7",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-comparison.sample.json": {
@@ -1808,11 +1808,11 @@
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-grade.sample.json": {
-      "sha256": "4d4baab46dafcb47040db4d9d930c6be0c9251de29089d12cefe710a5464bc28",
+      "sha256": "5b979d80e387176741640a5aa541b2dda1e9b1e24a898d3d2d60704a6242fa86",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-job.sample.json": {
-      "sha256": "8ae849007dd8bbfbec2edf1f62512736a7fb24185578397bc32fefee76bb3bc9",
+      "sha256": "cba057697bc4e574e9ed4669453438e9c896de24f059c5f36c855bb6fe9fec98",
       "mode": 420
     },
     "skills/engineer/templates/agentic/skill-eval-oracle.sample.json": {

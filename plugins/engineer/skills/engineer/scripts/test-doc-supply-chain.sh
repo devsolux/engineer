@@ -92,10 +92,103 @@ steps:
       ref: ${{ github.head_ref }}
 ```
 ''')
+(root / "prt-secret.yml").write_text('''on:
+  pull_request_target:
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./notify.sh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+''')
+(root / "prt-bracket.yml").write_text('''on: [pull_request_target]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ secrets['DEPLOY_KEY'] }}" > key
+''')
+(root / "workflow-run-tojson.yml").write_text('''on:
+  workflow_run:
+    workflows: [ci]
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    env:
+      ALL: ${{ toJSON(secrets) }}
+    steps:
+      - run: true
+''')
+(root / "prt-inherit.yml").write_text('''on:
+  pull_request_target:
+jobs:
+  call:
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+''')
+(root / "prt-github-token.yml").write_text('''on:
+  pull_request_target:
+permissions:
+  pull-requests: write
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh pr edit "$PR" --add-label triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALSO: ${{ secrets.github_token }}
+''')
+(root / "pr-secret.yml").write_text('''on:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+''')
+(root / "yaml-fence-secrets.md").write_text('''```yaml
+on:
+  pull_request_target:
+steps:
+  - run: ./publish.sh
+    env:
+      TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+```
+''')
+(root / "yaml-fence-split.md").write_text('''A labeler runs on the base ref only:
+
+```yaml
+on:
+  pull_request_target:
+steps:
+  - run: echo label
+```
+
+A separate release workflow:
+
+```yaml
+on:
+  push:
+    tags: ["v*"]
+steps:
+  - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    with:
+      ref: ${{ github.head_ref }}
+  - run: ./publish.sh
+    env:
+      TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+```
+''')
 PY
 
-python3 "$SCANNER" "$TMP/cases/safe.md" "$TMP/cases/exact.md" "$TMP/cases/pinned.yml" "$TMP/cases/privileged-base-checkout.yml" "$TMP/cases/yaml-fence-pinned.md" >/dev/null
-for bad in pipe.md latest.md unpinned.md mutable.yml unlabeled.yml fork-checkout.yml workflow-run-fork.yml yaml-fence-mutable.md yaml-fence-fork.md; do
+python3 "$SCANNER" "$TMP/cases/safe.md" "$TMP/cases/exact.md" "$TMP/cases/pinned.yml" "$TMP/cases/privileged-base-checkout.yml" "$TMP/cases/yaml-fence-pinned.md" \
+  "$TMP/cases/prt-github-token.yml" "$TMP/cases/pr-secret.yml" "$TMP/cases/yaml-fence-split.md" >/dev/null
+for bad in pipe.md latest.md unpinned.md mutable.yml unlabeled.yml fork-checkout.yml workflow-run-fork.yml yaml-fence-mutable.md yaml-fence-fork.md \
+    prt-secret.yml prt-bracket.yml workflow-run-tojson.yml prt-inherit.yml yaml-fence-secrets.md; do
   if python3 "$SCANNER" "$TMP/cases/$bad" >/dev/null 2>&1; then
     echo "expected rejection: $bad" >&2
     exit 1
@@ -126,5 +219,17 @@ import json, sys
 data = json.loads(sys.argv[1])
 assert [f["rule"] for f in data["findings"]] == ["mutable-action-ref"], data
 PY
+
+SECRET_OUTPUT="$(python3 "$SCANNER" "$TMP/cases/prt-secret.yml" --json || true)"
+python3 - "$SECRET_OUTPUT" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+assert [f["rule"] for f in data["findings"]] == ["privileged-trigger-secrets"], data
+assert "trigger at line 2" in data["findings"][0]["text"]
+PY
+for case in prt-bracket.yml workflow-run-tojson.yml prt-inherit.yml yaml-fence-secrets.md; do
+  RULES="$(python3 "$SCANNER" "$TMP/cases/$case" --json | python3 -c 'import json,sys; print(sorted({f["rule"] for f in json.load(sys.stdin)["findings"]}))' || true)"
+  [[ "$RULES" == "['privileged-trigger-secrets']" ]] || { echo "expected only privileged-trigger-secrets for $case, got $RULES" >&2; exit 1; }
+done
 
 echo "documentation supply-chain fixtures passed"

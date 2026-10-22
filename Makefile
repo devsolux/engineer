@@ -6,6 +6,7 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,python3)
 export PYTHONDONTWRITEBYTECODE := 1
 export PATH := $(shell "$(PYTHON)" -c 'from pathlib import Path; import sys; print(Path(sys.executable).parent)' 2>/dev/null):$(CURDIR)/node_modules/.bin:$(PATH)
 JOBS ?= 1
+TEST_TIMEOUT ?= 180
 PLUGIN := engineer@devsolux-engineer
 REPOSITORY := devsolux/engineer
 
@@ -32,8 +33,8 @@ check: lint validate evals ## Run static gates without changing source or fixtur
 fixtures: ## Explicitly rebind illustrative skill-eval fixtures after reviewed source changes
 	"$(PYTHON)" scripts/rebind-skill-eval.py
 
-test: ## Run all discovered offline suites in isolated copies (JOBS=4 optional)
-	"$(PYTHON)" scripts/run-tests.py --jobs $(JOBS)
+test: ## Run all discovered offline suites in isolated copies (JOBS=4 and TEST_TIMEOUT=<seconds per suite> optional)
+	"$(PYTHON)" scripts/run-tests.py --jobs $(JOBS) --timeout $(TEST_TIMEOUT)
 
 build: ## Generate the install-ready shared plugin and host-specific adapters
 	"$(PYTHON)" scripts/build-plugin.py

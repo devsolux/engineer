@@ -7,6 +7,8 @@ VALIDATOR="$ROOT/scripts/validate-security-coverage.py"
 ARCHITECTURE="$ROOT/templates/agentic/security-audit-evidence/architecture.md"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# Bash 3.2 (macOS) does not exit on a failing [[ ]] under set -e: every assertion ends in fail.
+fail() { echo "FAIL: $*" >&2; exit 1; }
 
 expect_refusal() {
   local fragment="$1"
@@ -46,7 +48,7 @@ python3 "$TOOL" init --dimensions "$TMP/dims.json" --run-id run-001 --target-nam
 grep -q '"units": 4' "$TMP/out"
 python3 "$VALIDATOR" "$RUN1/coverage.json" --evidence-root "$RUN1" >/dev/null
 IDS=($(unit_ids "$RUN1/coverage.json"))
-[[ "${#IDS[@]}" -eq 4 ]]
+[[ "${#IDS[@]}" -eq 4 ]] || fail "assertion at line $LINENO"
 python3 - "$RUN1/coverage.json" <<'PY'
 import hashlib,json,sys
 d=json.load(open(sys.argv[1]))
@@ -57,13 +59,12 @@ assert d["summary"]["by_status"]["planned"]==4 and d["summary"]["expected_cells"
 PY
 expect_refusal 'refusing to overwrite' python3 "$TOOL" init --dimensions "$TMP/dims.json" --run-id run-001 --target-name fixture --source-ref "$REF1" --architecture architecture.md --receipt-kind illustrative_fixture --output "$RUN1/coverage.json"
 expect_refusal 'need --source-ref' python3 "$TOOL" init --dimensions "$TMP/dims.json" --run-id run-009 --target-name fixture --architecture architecture.md --target-root "$TMP/nogit" --output "$RUN1/other.json"
-[[ ! -e "$RUN1/other.json" ]]
-
+[[ ! -e "$RUN1/other.json" ]] || fail "assertion at line $LINENO"
 # ---- assign: waves, hunters, critic independence ------------------------------
 python3 "$TOOL" assign "$RUN1/coverage.json" --wave 1 --hunter hunter-a --critic critic-a "${IDS[0]}" "${IDS[1]}" >/dev/null
 python3 "$TOOL" assign "$RUN1/coverage.json" --wave 1 --hunter hunter-b --critic critic-a "${IDS[2]}" >/dev/null
-[[ "$(unit_field "$RUN1/coverage.json" "${IDS[0]}" status)" == '"in_progress"' ]]
-[[ "$(unit_field "$RUN1/coverage.json" "${IDS[2]}" owner)" == '"hunter-b"' ]]
+[[ "$(unit_field "$RUN1/coverage.json" "${IDS[0]}" status)" == '"in_progress"' ]] || fail "assertion at line $LINENO"
+[[ "$(unit_field "$RUN1/coverage.json" "${IDS[2]}" owner)" == '"hunter-b"' ]] || fail "assertion at line $LINENO"
 expect_refusal 'must not hunt' python3 "$TOOL" assign "$RUN1/coverage.json" --wave 1 --hunter critic-a --critic critic-a "${IDS[3]}"
 expect_refusal 'already has critic' python3 "$TOOL" assign "$RUN1/coverage.json" --wave 1 --hunter hunter-c --critic critic-z "${IDS[3]}"
 expect_refusal 'only planned, blocked, or deferred' python3 "$TOOL" assign "$RUN1/coverage.json" --wave 1 --hunter hunter-a --critic critic-a "${IDS[0]}"
@@ -89,8 +90,8 @@ result "$TMP/hunter-a.json" hunter-a 1 'c=candidate(ids[1]); r["candidates"]=[c]
 python3 "$TOOL" promote "$RUN1/coverage.json" "$TMP/hunter-a.json" --agent hunter-a --wave 1 >"$TMP/out"
 grep -q '"copied_to"' "$TMP/out"
 cmp "$TMP/hunter-a.json" "$RUN1/agents/hunter-a.json"
-[[ "$(unit_field "$RUN1/coverage.json" "${IDS[0]}" status)" == '"covered"' ]]
-[[ "$(unit_field "$RUN1/coverage.json" "${IDS[1]}" status)" == '"candidate"' ]]
+[[ "$(unit_field "$RUN1/coverage.json" "${IDS[0]}" status)" == '"covered"' ]] || fail "assertion at line $LINENO"
+[[ "$(unit_field "$RUN1/coverage.json" "${IDS[1]}" status)" == '"candidate"' ]] || fail "assertion at line $LINENO"
 python3 "$VALIDATOR" "$RUN1/coverage.json" --evidence-root "$RUN1" >/dev/null
 
 cp "$RUN1/coverage.json" "$TMP/before.json"
@@ -123,17 +124,16 @@ python3 "$TOOL" promote "$RUN1/coverage.json" "$TMP/hunter-b.json" --agent hunte
 grep -q 'a search endpoint outside the declared surfaces' "$TMP/out"
 result "$TMP/hunter-b-legacy.json" hunter-b 1 'r["agent"]="hunter-b"; r["wave"]=1'
 expect_refusal 'exactly units, candidates, hardening, and uncovered' python3 "$TOOL" promote "$RUN1/coverage.json" "$TMP/hunter-b-legacy.json" --agent hunter-b --wave 1
-[[ "$(unit_field "$RUN1/coverage.json" "${IDS[2]}" status)" == '"blocked"' ]]
-
+[[ "$(unit_field "$RUN1/coverage.json" "${IDS[2]}" status)" == '"blocked"' ]] || fail "assertion at line $LINENO"
 # ---- finish: complete only when every cell is terminal --------------------------
 expect_refusal 'planned or in_progress' python3 "$TOOL" finish "$RUN1/coverage.json"
-[[ "$(run_field "$RUN1/coverage.json" status)" == '"incomplete"' ]]
+[[ "$(run_field "$RUN1/coverage.json" status)" == '"incomplete"' ]] || fail "assertion at line $LINENO"
 python3 "$TOOL" finish "$RUN1/coverage.json" --incomplete "wave 2 has not run" >/dev/null
 python3 "$TOOL" assign "$RUN1/coverage.json" --wave 2 --hunter hunter-c --critic critic-b "${IDS[2]}" "${IDS[3]}" >/dev/null
 result "$TMP/hunter-c.json" hunter-c 2 'r["units"]=[{"coverage_id":i,"status":"covered","reviewed_paths":["src/notes/repository.py"],"checks":[check("c-"+i)],"unresolved_reason":None,"candidate_fingerprints":[]} for i in (ids[2],ids[3])]'
 python3 "$TOOL" promote "$RUN1/coverage.json" "$TMP/hunter-c.json" --agent hunter-c --wave 2 >/dev/null
 python3 "$TOOL" finish "$RUN1/coverage.json" >/dev/null
-[[ "$(run_field "$RUN1/coverage.json" status)" == '"complete"' ]]
+[[ "$(run_field "$RUN1/coverage.json" status)" == '"complete"' ]] || fail "assertion at line $LINENO"
 python3 "$VALIDATOR" "$RUN1/coverage.json" --evidence-root "$RUN1" >/dev/null
 
 # ---- gap without a git repository: reported, every shared unit treated as changed
@@ -193,11 +193,11 @@ JSON
   python3 "$TOOL" init --dimensions "$TMP/dims-git.json" --run-id run-004 --target-name fixture --architecture architecture.md --target-root "$TARGET" --output "$RUN4/coverage.json" >/dev/null
   python3 "$TOOL" gap "$RUN4/coverage.json" --prior "$RUN3" --target-root "$TARGET" >"$TMP/out"
   grep -q '1 changed file' "$TMP/out"
-  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[0]}" status)" == '"planned"' ]]
-  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[0]}" carried_from)" == *'"source_changed": true'* ]]
-  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" status)" == '"covered"' ]]
-  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" carried_from)" == *'"source_changed": false'* ]]
-  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" owner)" == 'null' ]]
+  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[0]}" status)" == '"planned"' ]] || fail "assertion at line $LINENO"
+  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[0]}" carried_from)" == *'"source_changed": true'* ]] || fail "assertion at line $LINENO"
+  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" status)" == '"covered"' ]] || fail "assertion at line $LINENO"
+  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" carried_from)" == *'"source_changed": false'* ]] || fail "assertion at line $LINENO"
+  [[ "$(unit_field "$RUN4/coverage.json" "${IDS[1]}" owner)" == 'null' ]] || fail "assertion at line $LINENO"
   python3 "$VALIDATOR" "$RUN4/coverage.json" --evidence-root "$RUN4" --target-root "$TARGET" >/dev/null
 else
   echo "git unavailable; skipped the source-change gap case"

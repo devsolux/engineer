@@ -58,8 +58,15 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 def update_markdown(path: Path, remove: bool) -> str:
+    if remove and not path.exists():
+        return "absent"
     old = path.read_text(encoding="utf-8") if path.exists() else ""
     clean = strip_block(old)
+    if remove and BEGIN in old and not clean.strip() and not path.is_symlink():
+        # Only Engineer's block was in the file, so Engineer created it: delete it rather than
+        # leave a blank rule file behind. A dotfile-managed symlink keeps its link and target.
+        path.unlink()
+        return "removed"
     new = clean if remove else (clean.rstrip() + "\n\n" + BODY)
     if new != old:
         atomic_write(path, new)

@@ -69,6 +69,8 @@ tsc --strict --target ES2022 --module commonjs --lib ES2022,DOM --outDir "$TMP/o
 node "$TMP/out/test.js"
 grep -q 'maxBodyBytes.*32_768' "$ROOT/templates/security/csp-reporting.ts"
 grep -q 'Never echo or log raw payloads' "$ROOT/templates/security/csp-reporting.ts"
-! grep -Eq 'userAgent|user-agent|request\.headers\.get\("cookie"\)|console\.(log|error)|request\.text\(' "$ROOT/templates/security/csp-reporting.ts"
+if grep -Eq 'userAgent|user-agent|request\.headers\.get\("cookie"\)|console\.(log|error)|request\.text\(' "$ROOT/templates/security/csp-reporting.ts"; then
+  echo "FAIL: csp-reporting.ts logs or reads raw request data" >&2; exit 1
+fi
 
 echo "csp reporting fixtures passed"

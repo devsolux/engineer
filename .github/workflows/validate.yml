@@ -32,7 +32,7 @@ jobs:
             typescript: '7.0.2'
             node: '24'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +51,15 @@ jobs:
       - name: Static checks
         run: make check
       - name: All offline fixtures
-        run: make test JOBS=4
+        # GitHub's macOS runners take the repository-validation suite past the 180 s local default.
+        run: make test JOBS=4 TEST_TIMEOUT=600
+      - name: Keep suite logs when fixtures fail
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: offline-suite-logs-${{ matrix.os }}-py${{ matrix.python }}-node${{ matrix.node }}
+          path: .build/tests/
+          retention-days: 7
       - name: Reproducible release check
         run: |
           make verify-build

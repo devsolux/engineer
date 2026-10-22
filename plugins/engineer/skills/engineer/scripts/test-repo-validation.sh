@@ -108,5 +108,13 @@ printf '\nWhen publishing via x_article_publish.py, require personal-brand/resea
   >> "$TMP/operator-leak/SKILL.md"
 expect_fail "operator publishing runbook in SKILL.md" "$TMP/operator-leak"
 
+copy_repo "$TMP/bare-test"
+printf '\n[[ 1 -eq 2 ]]\n' >> "$TMP/bare-test/scripts/test-scan.sh"
+expect_fail "bare [[ ]] assertion that bash 3.2 never enforces" "$TMP/bare-test"
+
+copy_repo "$TMP/bare-not"
+printf '\n! grep -q x /dev/null\n' >> "$TMP/bare-not/scripts/test-scan.sh"
+expect_fail "bare ! assertion that set -e never enforces" "$TMP/bare-not"
+
 echo "---"
 echo "OK — all repository drift fixtures passed"

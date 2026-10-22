@@ -218,14 +218,14 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `scripts/test-eval-bank.sh` | Static eval-bank negative fixtures |
 | `scripts/validate-skill-eval-run.py` | Captured behavioral-run provenance, grader, and promotion validator |
 | `scripts/test-skill-eval-run.sh` | Behavioral-run integrity and adversarial fixtures |
-| `scripts/run-live-evals.py` | Opt-in live model-in-the-loop routing smoke via `claude -p` with skills-off baseline |
+| `scripts/run-live-evals.py` | Opt-in live model-in-the-loop routing smoke via `claude -p` with skills-off baseline; reports record host-reported resolved model ids |
 | `scripts/test-live-evals.sh` | Offline fixtures for the live eval runner |
 | `scripts/grade-skill-eval-capture.py` | Deterministically grade a validated capture with a sealed oracle |
 | `scripts/validate-skill-eval-grade.py` | Canonical replay of a deterministic skill-eval grade receipt |
 | `scripts/compare-skill-eval-grades.py` | Compile paired baseline/candidate grade receipts into a promotion report |
 | `scripts/validate-skill-eval-comparison.py` | Validate and replay a paired skill-eval comparison report |
 | `scripts/test-skill-eval-grading.sh` | Grading determinism, oracle-binding, and comparison adversarial fixtures |
-| `scripts/install-host-activation.py` | Bounded idempotent Engineer routing-rule install for local CLI hosts |
+| `scripts/install-host-activation.py` | Bounded idempotent Engineer routing-rule install for local CLI hosts; removal deletes files that held only Engineer's block |
 | `scripts/test-host-activation.sh` | Host-activation install, idempotency, and boundary fixtures |
 | `scripts/validate-agentic-contract.py` | Agentic execution contract policy validator |
 | `scripts/validate-capability-promotion.py` | Capability ownership and skill-promotion decision validator |
@@ -254,7 +254,7 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `scripts/test-host-capabilities.sh` | Host spoofing, capability, path, leakage, limitation, and false-authorization fixtures |
 | `scripts/engineer-output-gate.sh` | Resolve unmachined and scan human-facing text/UI |
 | `scripts/test-output-gate.sh` | Anti-slop text/UI gate fixtures, including critical-only failures |
-| `scripts/scan-doc-supply-chain.py` | Executable Markdown and immutable GitHub Action policy scanner |
+| `scripts/scan-doc-supply-chain.py` | Executable Markdown and immutable GitHub Action policy scanner; fork checkouts and repository secrets under privileged triggers |
 | `scripts/test-doc-supply-chain.sh` | Remote-pipe, floating-runner, mutable-Action, and false-positive fixtures |
 | `scripts/validate-skill-admission.py` | Candidate tree, provenance, behavior, review, and trust-decision validator |
 | `scripts/test-skill-admission.sh` | Skill admission forgery, shadow behavior, self-review, and symlink fixtures |

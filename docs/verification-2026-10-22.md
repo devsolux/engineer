@@ -160,3 +160,16 @@ Both hosts install from the default branch, so they received 817b950, which diff
 
 Not exercised: the update and removal commands, Claude Code 2.1.307 and Codex 0.164.0-alpha.10, and
 any live model run.
+
+## CI after publication
+
+The first push-triggered runs of "Validate Engineer" failed on all four lanes (runs 39742961104 on
+817b950 and 39743604832 on 052b3c1; 39742646660 on 2713d00 was cancelled by the next push). Causes,
+from the run logs and a local reproduction:
+
+| Lane | Failure | Cause |
+|---|---|---|
+| Linux (three lanes) | `test-host-activation.sh` | `install-host-activation.py --remove` leaves 1-byte files behind. The test's `[[ ! -e … ]]` assertion catches it under the runners' bash 5; this Mac's bash 3.2.57 does not stop on a failing `[[ … ]]` under `set -e`, so the suite passed locally |
+| macOS | `test-repo-validation.sh` | Exceeded the 180-second per-suite limit on the GitHub macOS runner (about 57 seconds on this machine) |
+
+The fixes are recorded in the CHANGELOG "Unreleased" section. CI on the fixed tree has not run yet.

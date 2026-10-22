@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
+## Unreleased
+
+### Added
+
+- `scan-doc-supply-chain.py`: a `privileged-trigger-secrets` rule. A `pull_request_target` or
+  `workflow_run` workflow that references repository secrets (`secrets.NAME`, `secrets['NAME']`,
+  `toJSON(secrets)` or `secrets: inherit`) is rejected; `GITHUB_TOKEN` is exempt because
+  `permissions:` bounds it. Each YAML fence in Markdown is now evaluated as its own workflow.
+- `validate-repo.sh` rejects a bare `[[ … ]]` or `! cmd` statement in `scripts/*.sh`: macOS's
+  bash 3.2 does not stop on a failing `[[ … ]]` under `set -e`, and no bash stops on `! cmd`.
+
+### Changed
+
+- Live-eval reports record `models_observed`, the resolved model ids the host reports in its
+  per-model usage, with `model_resolution` set to `observed` or `not_reported`. The previous guess
+  from a date suffix in the requested name misreported current dateless model ids.
+- `make test` accepts `TEST_TIMEOUT` (seconds per suite, default 180). CI runs with 600 seconds, a
+  30-minute job limit, and uploads `.build/tests/` suite logs when the fixtures step fails.
+
+### Fixed
+
+- `install-host-activation.py --remove` deleted only Engineer's block and left 1-byte files behind,
+  such as `~/AGENTS.md`, `~/.codex/AGENTS.md` and `~/.gemini/GEMINI.md`. A file that held only
+  Engineer's block is now deleted; files with other content and dotfile symlinks are kept.
+- Shell suites asserted with bare `[[ … ]]` and `! grep` statements that never failed on macOS
+  (bash 3.2) or, for `!`, anywhere. All 25 now end in an explicit failure; the activation test
+  fails before the fix above and passes after it.
+
 ## 1.1.0 — 2026-10-22
 
 ### Added

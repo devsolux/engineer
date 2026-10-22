@@ -14,6 +14,15 @@ SHELL_LANGS = {"", "bash", "console", "sh", "shell", "zsh"}
 YAML_LANGS = {"yaml", "yml"}
 PRIVILEGED_TRIGGER = re.compile(r"^\s*(?:-\s*)?(pull_request_target|workflow_run)\s*:?\s*(?:#.*)?$|^\s*on:\s*\[[^\]]*\b(pull_request_target|workflow_run)\b")
 FORK_REF = re.compile(r"^\s*ref:\s*.*\$\{\{\s*github\.(?:event\.pull_request\.head|head_ref|event\.workflow_run\.head)")
+# Repository secrets in a privileged-trigger workflow. GITHUB_TOKEN is exempt: its scope is set by the
+# workflow `permissions:` block, and running fork code is the separate fork-checkout rule.
+SECRET_REF = re.compile(
+    r"\$\{\{[^}]*\b(?:secrets\.(?!GITHUB_TOKEN\b)[A-Za-z_]\w*"
+    r"|secrets\[\s*['\"](?!GITHUB_TOKEN['\"])[^'\"]+['\"]\s*\]"
+    r"|toJSON\(\s*secrets\s*\))",
+    re.IGNORECASE,
+)
+SECRETS_INHERIT = re.compile(r"^\s*secrets:\s*inherit\s*(?:#.*)?$", re.IGNORECASE)
 REMOTE_PIPE = re.compile(r"(?:curl|wget)\b[^\n|]*\|\s*(?:ba)?sh\b", re.IGNORECASE)
 RUNNER = re.compile(r"\b(npx|pnpm\s+dlx|yarn\s+dlx|bunx|uvx)\s+(?:--yes\s+)?([^\s;|&]+)", re.IGNORECASE)
 ACTION = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)@([^\s#]+)")
@@ -33,22 +42,32 @@ def exact_runner_spec(runner: str, spec: str) -> bool:
     return bool(EXACT_VERSION.fullmatch(version)) or bool(SHA40.fullmatch(version))
 
 
-def markdown_fence_lines(path: Path, languages: set[str]) -> Iterable[tuple[int, str]]:
+def markdown_fences(path: Path, languages: set[str]) -> list[list[tuple[int, str]]]:
+    """Numbered lines of each fenced block whose language is in ``languages``, one list per fence."""
+    fences: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] | None = None
     inside = False
-    scan = False
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
         if stripped.startswith("```"):
             if not inside:
                 language = stripped[3:].strip().split(maxsplit=1)[0].lower() if stripped[3:].strip() else ""
                 inside = True
-                scan = language in languages
+                current = [] if language in languages else None
             else:
+                if current is not None:
+                    fences.append(current)
                 inside = False
-                scan = False
+                current = None
             continue
-        if inside and scan:
-            yield number, line
+        if inside and current is not None:
+            current.append((number, line))
+    return fences
+
+
+def markdown_fence_lines(path: Path, languages: set[str]) -> Iterable[tuple[int, str]]:
+    for fence in markdown_fences(path, languages):
+        yield from fence
 
 
 def markdown_shell_lines(path: Path) -> Iterable[tuple[int, str]]:
@@ -65,7 +84,9 @@ def scan_markdown(path: Path) -> list[dict[str, object]]:
             if not exact_runner_spec(runner, spec):
                 findings.append({"file": str(path), "line": line_number, "rule": "floating-package-runner", "text": line.strip()})
     # YAML fences document workflows that readers copy verbatim: hold them to the workflow rules.
-    findings.extend(workflow_findings(path, markdown_fence_lines(path, YAML_LANGS)))
+    # Each fence is its own workflow, so a trigger in one example never pairs with a secret in another.
+    for fence in markdown_fences(path, YAML_LANGS):
+        findings.extend(workflow_findings(path, fence))
     return findings
 
 
@@ -73,6 +94,7 @@ def workflow_findings(path: Path, lines: Iterable[tuple[int, str]]) -> list[dict
     findings: list[dict[str, object]] = []
     privileged_trigger: tuple[int, str] | None = None
     fork_refs: list[tuple[int, str]] = []
+    secret_refs: list[tuple[int, str]] = []
     for line_number, line in lines:
         if line.lstrip().startswith("#"):
             continue
@@ -81,6 +103,8 @@ def workflow_findings(path: Path, lines: Iterable[tuple[int, str]]) -> list[dict
             privileged_trigger = (line_number, line.strip())
         if FORK_REF.match(line):
             fork_refs.append((line_number, line.strip()))
+        if SECRET_REF.search(line) or SECRETS_INHERIT.match(line):
+            secret_refs.append((line_number, line.strip()))
         match = ACTION.match(line)
         if not match:
             continue
@@ -91,12 +115,15 @@ def workflow_findings(path: Path, lines: Iterable[tuple[int, str]]) -> list[dict
             findings.append({"file": str(path), "line": line_number, "rule": "mutable-action-ref", "text": line.strip()})
         elif not re.search(r"#\s*v?\d", line):
             findings.append({"file": str(path), "line": line_number, "rule": "action-pin-missing-release-comment", "text": line.strip()})
-    # A privileged trigger (pull_request_target / workflow_run) that checks out fork-controlled code runs
-    # untrusted code with repository secrets and write tokens in scope. The trigger alone is not flagged.
+    # A privileged trigger (pull_request_target / workflow_run) runs with repository secrets and write tokens
+    # for events that outsiders can cause. Checking out fork-controlled code there runs untrusted code with
+    # that authority; repository secrets there are one script injection away from exfiltration. Keep them in
+    # a separate, approval-gated job or workflow. The trigger alone is not flagged.
     if privileged_trigger is not None:
-        for line_number, text in fork_refs:
-            findings.append({"file": str(path), "line": line_number, "rule": "privileged-trigger-fork-checkout",
-                             "text": f"{text} (trigger at line {privileged_trigger[0]}: {privileged_trigger[1]})"})
+        where = f"(trigger at line {privileged_trigger[0]}: {privileged_trigger[1]})"
+        for rule, refs in (("privileged-trigger-fork-checkout", fork_refs), ("privileged-trigger-secrets", secret_refs)):
+            for line_number, text in refs:
+                findings.append({"file": str(path), "line": line_number, "rule": rule, "text": f"{text} {where}"})
     return findings
 
 
@@ -143,7 +170,7 @@ def main() -> int:
     result = {
         "ok": not findings,
         "findings": findings,
-        "scope": "executable Markdown fences (shell and YAML) and active workflow action references and privileged triggers",
+        "scope": "executable Markdown fences (shell and YAML), workflow action references, and fork checkouts or repository secrets under privileged triggers",
         "limitation": "A clean result is not proof that a skill or dependency is benign.",
     }
     if args.json:

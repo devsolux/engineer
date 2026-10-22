@@ -164,9 +164,10 @@ Server Action auth grep for this pipeline: `enforcement-rules.md`.
   flag an unexpected build path or a newly-absent attestation on a critical dep. Do not fail on
   mere absence.
 - SHA-pin every third-party Action to a full 40-char commit (not a mutable tag); forbid
-  `pull_request_target`/`workflow_run` that check out and run fork code with secrets in scope
-  (`scan-doc-supply-chain.py` rule `privileged-trigger-fork-checkout`; YAML fences in docs are
-  scanned too).
+  `pull_request_target`/`workflow_run` workflows that check out fork code or reference repository
+  secrets (`scan-doc-supply-chain.py` rules `privileged-trigger-fork-checkout` and
+  `privileged-trigger-secrets`; `GITHUB_TOKEN`, bounded by `permissions:`, is exempt). Move secret
+  use to a separate approval-gated job. Each YAML fence in docs is scanned as its own workflow.
 - Dependency hygiene rationale and package-manager defaults: `backend-security.md`.
 
 ### Layer the secrets job (a clean scan does not clear a public push)

@@ -401,6 +401,18 @@ if [[ "$FAILURES" -eq "$SCRIPT_HYGIENE_BEFORE" ]]; then
   pass "Script shebangs + set -euo pipefail + executable bits OK"
 fi
 
+# ─── Shell assertions must stop the script under every bash ─────────────────
+# Bash 3.2 (macOS) ignores a failing [[ ]] under set -e and no bash stops on `! cmd`,
+# so a bare statement of either form is an assertion that silently never fails.
+UNENFORCED="$(grep -nE '^[[:space:]]*(\[\[|![[:space:]])' scripts/*.sh 2>/dev/null | grep -vE '\|\||&&' || true)"
+if [[ -n "$UNENFORCED" ]]; then
+  while IFS= read -r hit; do
+    fail "${hit%%:*} line $(printf '%s' "$hit" | cut -d: -f2): bare [[ ]] or ! statement is not enforced; end it with || fail or use if ...; then fail"
+  done <<< "$UNENFORCED"
+else
+  pass "Shell assertions end in an explicit failure (bash 3.2-safe)"
+fi
+
 # Package fixture scripts must run in first-party CI, not only local health.
 if [[ -f scripts/run-tests.py && -f Makefile && -f .github/workflows/validate.yml ]] \
   && grep -q 'make test' .github/workflows/validate.yml \

@@ -9,7 +9,11 @@ supply-chain, script, reference-budget, and fixture-hash checks.
 `make test` discovers every `scripts/test-*.sh` and `scripts/test-*.py`. Each suite
 runs in an isolated copy of the source. Logs and a machine-readable summary go to
 `.build/tests/`. An unknown selection, missing prerequisite, nonzero exit, or
-timeout cannot count as passing. Set `JOBS` for parallel isolated suites.
+timeout cannot count as passing. Set `JOBS` for parallel isolated suites and
+`TEST_TIMEOUT` (seconds per suite, default 180) on slower machines; CI uses 600.
+Shell suites end every `[[ … ]]` and negated assertion in an explicit failure:
+macOS's bash 3.2 does not stop on a failing `[[ … ]]` under `set -e`, and no bash
+stops on `! cmd`. `make validate` rejects either form written bare.
 
 ```bash
 python3 scripts/run-tests.py --list

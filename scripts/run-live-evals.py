@@ -198,6 +198,11 @@ def run_scenario(scenario: dict, bank: dict, arm: str, args: argparse.Namespace,
         text = str(payload.get("result", ""))
         row["cost_usd"] = payload.get("total_cost_usd")
         row["num_turns"] = payload.get("num_turns")
+        # The JSON result reports token usage keyed by the resolved model id; an alias such as
+        # "haiku" never appears there, so these ids name the model that actually answered.
+        usage = payload.get("modelUsage")
+        if isinstance(usage, dict) and usage:
+            row["models_observed"] = sorted(str(name) for name in usage)
         if payload.get("is_error"):
             row["error"] = "host reported is_error"
     except json.JSONDecodeError:
@@ -338,13 +343,15 @@ def main() -> int:
     for key, val in summary.items():
         print(f"{key}: {val}")
 
+    observed = sorted({name for r in rows for name in r.get("models_observed", [])})
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "bank": str(args.file),
         "model": args.model,
-        # The CLI resolves aliases such as "haiku" at run time and does not echo the dated model id
-        # back to this runner, so a capture records the alias only; pass a dated id to pin a run.
-        "model_resolution": "alias_only" if "-20" not in args.model else "pinned_id",
+        # `model` is what was requested (often an alias). `models_observed` lists the resolved ids the
+        # host reported per run; without them a capture names only the request, never a pinned model.
+        "models_observed": observed,
+        "model_resolution": "observed" if observed else "not_reported",
         "max_turns": args.max_turns,
         "attempts": args.attempts,
         "arms": arms,

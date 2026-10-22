@@ -11,6 +11,8 @@ grep -q 'Require signed commits' "$DOC"
 grep -q 'github.sha' "$GATE"
 grep -q '\.commit\.verification' "$GATE"
 grep -q 'test "$verified" = "true"' "$GATE"
-! grep -Eq 'pull_request_target|permissions:[[:space:]]*write-all|github\.event\.pull_request\.head\.sha' "$GATE"
+if grep -Eq 'pull_request_target|permissions:[[:space:]]*write-all|github\.event\.pull_request\.head\.sha' "$GATE"; then
+  echo "FAIL: verified-deploy gate uses a forbidden trigger, permission or ref" >&2; exit 1
+fi
 
 echo "github signing fixtures: ok"

@@ -29,7 +29,8 @@ text = ("Reproduce first, then root cause via the causal chain. Zod at the bound
         "and non-goals stated; portfolio consumer check.")
 if skills_enabled and "engineer" in lower and "[routing-probe:alpha]" in prompt:
     text += "\n\nENGINEER_ROUTING_ACTIVE_v1"
-json.dump({"type": "result", "result": text, "total_cost_usd": 0.0, "num_turns": 1}, sys.stdout)
+json.dump({"type": "result", "result": text, "total_cost_usd": 0.0, "num_turns": 1,
+           "modelUsage": {"claude-haiku-5-5": {"inputTokens": 1, "outputTokens": 1}}}, sys.stdout)
 SHIM
 chmod +x "$TMP/claude"
 
@@ -46,6 +47,10 @@ assert r["arms"] == ["with-skill", "baseline"], r["arms"]
 assert all(x["passed"] for x in rows if x["arm"] == "with-skill"), "with-skill rows must pass"
 assert not any(x["activation_observed"] for x in rows if x["arm"] == "baseline"), "baseline must never activate"
 assert r["summary"]["lift_strict"] > 0, "positive scenarios must show strict lift"
+assert r["model"] == "haiku", r["model"]
+assert r["models_observed"] == ["claude-haiku-5-5"], r["models_observed"]
+assert r["model_resolution"] == "observed", r["model_resolution"]
+assert all(x["models_observed"] == ["claude-haiku-5-5"] for x in rows), "every row records the resolved id"
 PY
 
 # 3. Leaky shim: marker in the baseline arm must fail the run.
@@ -82,9 +87,15 @@ fi
 
 # 4b. Same shim against the shipped bank: root-cause-retry is a tracked known_gap (xfail),
 #     so the miss reports without gating the exit code.
-OUT="$(python3 "$RUNNER" --scenarios root-cause-retry --claude-bin "$TMP/claude-comply" --report-dir "$TMP/runs")"
+OUT="$(python3 "$RUNNER" --scenarios root-cause-retry --claude-bin "$TMP/claude-comply" --report-dir "$TMP/runs-nousage")"
 echo "$OUT" | grep -q "XFAIL — tracked routing gap" || { echo "known_gap miss must report as XFAIL" >&2; exit 1; }
 echo "$OUT" | grep -q "OK — live eval run passed" || { echo "known_gap miss must not gate exit" >&2; exit 1; }
+# A host result without per-model usage must never be reported as a resolved or pinned model.
+python3 - "$(find "$TMP/runs-nousage" -name '*.json' | head -1)" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1]))
+assert r["models_observed"] == [] and r["model_resolution"] == "not_reported", r
+PY
 
 # 5. Hard cap: a bank with 13 scenarios must refuse to run live.
 python3 - "$BANK" "$TMP/big.json" <<'PY'

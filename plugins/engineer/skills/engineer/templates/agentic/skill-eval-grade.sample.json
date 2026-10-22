@@ -6,7 +6,7 @@
   "model": "default",
   "scenario_id": 12,
   "skill_version": "1.1.0",
-  "skill_sha256": "4175ff217ff567f47812b38106b1a1a9e903f0e010833324e2eae453e30dabbd",
+  "skill_sha256": "7a3e7957a64f49f2c7bf82708c09446ecb310a60390a7cf9cc3d076025653d81",
   "dataset": {
     "split": "capability",
     "visibility": "public",
@@ -15,7 +15,7 @@
   },
   "capture": {
     "path": "templates/agentic/skill-eval-capture.sample.json",
-    "sha256": "82faa4747ef4f6f0985cca644d6748064a416c95b03c136dc88177c15a44d998"
+    "sha256": "cf1a103cad46328430816559769b924638c00bf511adbc9edfdee6af3dbe08e7"
   },
   "oracle": {
     "path": "templates/agentic/skill-eval-oracle.sample.json",
