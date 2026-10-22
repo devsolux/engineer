@@ -192,4 +192,135 @@ if [[ "$code" -ne 2 ]] || ! grep -q 'regular file, not a symlink' "$TMP/linked.e
   exit 1
 fi
 
+# Remediation receipt (--remediated). C, N and R name the sample's records by their original
+# verdicts; E is the receipt's one entry. The findings digest is rebound to the findings file
+# under test before the expression runs, so only the expression's change is under test.
+REMEDIATION="$ROOT/templates/agentic/security-remediation.sample.json"
+python3 "$VALIDATOR" "$SAMPLE" --evidence-root "$ROOT" --remediated "$REMEDIATION" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["valid"] and not d["errors"] and not d["gates"], d'
+
+write_remediation() {
+  local name="$1" expression="$2" findings="$3"
+  python3 - "$REMEDIATION" "$SAMPLE" "$findings" "$TMP/rem-$name.json" "$expression" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+d=json.load(open(sys.argv[1], encoding="utf-8")); sample=json.load(open(sys.argv[2], encoding="utf-8"))
+C=next(r for r in sample["records"] if r["verdict"]=="confirmed")
+N=next(r for r in sample["records"] if r["verdict"]=="needs_validation")
+R=next(r for r in sample["records"] if r["verdict"]=="rejected")
+E=d["entries"][0]
+d["findings"]["sha256"]=hashlib.sha256(Path(sys.argv[3]).read_bytes()).hexdigest()
+exec(sys.argv[5], {"d":d,"C":C,"N":N,"R":R,"E":E}); json.dump(d,open(sys.argv[4],"w",encoding="utf-8"))
+PY
+}
+
+rem_mutate() {
+  local name="$1" expression="$2" findings="${3:-$SAMPLE}"
+  write_remediation "$name" "$expression" "$findings"
+  python3 "$VALIDATOR" "$findings" --evidence-root "$ROOT" --remediated "$TMP/rem-$name.json" --json >"$TMP/rem.out" 2>&1 || true
+  if ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert not d["valid"] and any(m.startswith("remediation") for m in d["errors"]+d["gates"]), d' "$TMP/rem.out" 2>/dev/null; then
+    echo "expected remediation rejection: $name" >&2
+    cat "$TMP/rem.out" >&2
+    exit 1
+  fi
+}
+
+rem_accept() {
+  local name="$1" expression="$2" findings="${3:-$SAMPLE}"
+  write_remediation "$name" "$expression" "$findings"
+  if ! python3 "$VALIDATOR" "$findings" --evidence-root "$ROOT" --remediated "$TMP/rem-$name.json" >"$TMP/rem.out" 2>&1; then
+    echo "expected remediation acceptance: $name" >&2
+    cat "$TMP/rem.out" >&2
+    exit 1
+  fi
+}
+
+# Findings variants: N promoted to a second confirmed record (same root cause, unit and
+# evidence), and C remediated by a directory path.
+python3 - "$SAMPLE" "$TMP" <<'PY'
+import copy,json,sys
+sample=json.load(open(sys.argv[1], encoding="utf-8"))
+d=copy.deepcopy(sample)
+N=next(r for r in d["records"] if r["verdict"]=="needs_validation")
+del N["blockers"], N["validation_plan"]
+N["verdict"]="confirmed"
+N["severity"]={"likelihood":"medium","impact":"high","overall":"medium"}
+N["remediation"]={"summary":"resolve the host and refuse private, loopback, and link-local addresses before the request","layer":"outbound HTTP client","paths":["src/notes/attachments.py"],"regression_test":None}
+d["summary"].update(confirmed=2, needs_validation=0)
+json.dump(d, open(f"{sys.argv[2]}/two-confirmed.json","w",encoding="utf-8"))
+d=copy.deepcopy(sample)
+next(r for r in d["records"] if r["verdict"]=="confirmed")["remediation"]["paths"]=["src/notes"]
+json.dump(d, open(f"{sys.argv[2]}/directory-paths.json","w",encoding="utf-8"))
+PY
+for variant in two-confirmed directory-paths; do
+  python3 "$VALIDATOR" "$TMP/$variant.json" --evidence-root "$ROOT" >/dev/null
+done
+SECOND='S=dict(E, fingerprint=N["fingerprint"], layer="outbound HTTP client", changed_paths=["src/notes/attachments.py"]); d["not_fixed"]=[x for x in d["not_fixed"] if x["fingerprint"]!=N["fingerprint"]]'
+
+rem_accept mitigated_declared 'E["outcome"]="mitigated"; E["mitigation"]={"owner":"notes service owner","expiry":"2026-12-01","follow_up":"tracked issue for the repository owner filter","detection":"alert when GET /notes/{id} returns another owner row in the canary"}'
+rem_accept confirmed_deferred 'd["entries"]=[]; d["not_fixed"].append({"fingerprint":C["fingerprint"],"verdict":"confirmed","disposition":"deferred","reason":"the owner moved this fix to the next change window"})'
+rem_accept severity_order "$SECOND"'; d["entries"]=[E,S]' "$TMP/two-confirmed.json"
+rem_accept directory_remediation_path 'E["changed_paths"]=["src/notes/repository.py","src/notes/service.py"]' "$TMP/directory-paths.json"
+
+rem_mutate severity_order_reversed "$SECOND"'; d["entries"]=[S,E]' "$TMP/two-confirmed.json"
+rem_mutate findings_invalid 'pass' "$TMP/fingerprint_mismatch.json"
+rem_mutate findings_digest_mismatch 'd["findings"]["sha256"]="0"*64'
+rem_mutate findings_run_id_mismatch 'd["findings"]["run_id"]="run-002"'
+rem_mutate receipt_kind_mismatch 'd["receipt_kind"]="captured_run"'
+rem_mutate unknown_fingerprint 'E["fingerprint"]="sa1-0000000000000000"'
+rem_mutate fixes_needs_validation 'E["fingerprint"]=N["fingerprint"]; d["not_fixed"]=[x for x in d["not_fixed"] if x["fingerprint"]!=N["fingerprint"]]+[{"fingerprint":C["fingerprint"],"verdict":"confirmed","disposition":"deferred","reason":"queued"}]'
+rem_mutate fixes_rejected 'E["fingerprint"]=R["fingerprint"]; d["not_fixed"]=[x for x in d["not_fixed"] if x["fingerprint"]!=R["fingerprint"]]+[{"fingerprint":C["fingerprint"],"verdict":"confirmed","disposition":"deferred","reason":"queued"}]'
+rem_mutate duplicate_entry 'd["entries"].append(dict(E))'
+rem_mutate fixed_and_deferred 'd["not_fixed"].append({"fingerprint":C["fingerprint"],"verdict":"confirmed","disposition":"deferred","reason":"queued"})'
+rem_mutate record_unaccounted 'd["not_fixed"]=[x for x in d["not_fixed"] if x["verdict"]!="needs_validation"]'
+rem_mutate needs_validation_skipped 'next(x for x in d["not_fixed"] if x["verdict"]=="needs_validation")["disposition"]="skipped"'
+rem_mutate rejected_handed_back 'next(x for x in d["not_fixed"] if x["verdict"]=="rejected")["disposition"]="handed_back"'
+rem_mutate verdict_mislabeled 'next(x for x in d["not_fixed"] if x["verdict"]=="needs_validation")["verdict"]="rejected"'
+rem_mutate not_fixed_without_reason 'd["not_fixed"][0]["reason"]=""'
+rem_mutate changed_path_outside_remediation 'E["changed_paths"].append("src/notes/service.py")'
+rem_mutate changed_paths_empty 'E["changed_paths"]=[]'
+rem_mutate changed_path_traversal 'E["changed_paths"]=["../outside.py"]'
+rem_mutate layer_mismatch 'E["layer"]="api handler"'
+rem_mutate regression_test_missing 'E["regression_test"]=None'
+rem_mutate regression_test_absolute 'E["regression_test"]["path"]="/tmp/test_notes.py"'
+rem_mutate regression_test_never_failed 'E["regression_test"]["failed_before_fix"]["exit_code"]=0'
+rem_mutate regression_test_still_failing 'E["regression_test"]["passed_after_fix"]["exit_code"]=1'
+rem_mutate regression_test_commands_differ 'E["regression_test"]["passed_after_fix"]["command"]="python3 -m pytest"'
+rem_mutate verification_empty 'E["verification"]=[]'
+rem_mutate verification_failed 'E["verification"][1]["exit_code"]=1'
+rem_mutate exit_code_boolean 'E["verification"][0]["exit_code"]=False'
+rem_mutate unknown_outcome 'E["outcome"]="fixed"'
+rem_mutate mitigated_undeclared 'E["outcome"]="mitigated"'
+rem_mutate mitigated_without_detection 'E["outcome"]="mitigated"; E["mitigation"]={"owner":"o","expiry":"2026-12-01","follow_up":"issue","detection":""}'
+rem_mutate fixed_with_mitigation 'E["mitigation"]={"owner":"o","expiry":"2026-12-01","follow_up":"issue","detection":"alert"}'
+rem_mutate credential_in_command 'E["verification"][0]["command"]="API_KEY=sk-"+"abcdefghijklmnop1234"+" python3 -m pytest"'
+rem_mutate non_fixture_url 'd["not_fixed"][0]["reason"]="owner check at https://203.0.113.10/egress"'
+rem_mutate hidden_entry_field 'E["patch"]="diff"'
+rem_mutate hidden_root_field 'd["approved"]=True'
+
+# Target-root presence: the regression test file must exist under the target.
+touch "$TMP/target/src/notes/service.py"
+python3 "$VALIDATOR" "$SAMPLE" --evidence-root "$ROOT" --target-root "$TMP/target" --remediated "$REMEDIATION" >/dev/null
+rm "$TMP/target/tests/test_notes_isolation.py"
+if python3 "$VALIDATOR" "$SAMPLE" --evidence-root "$ROOT" --target-root "$TMP/target" --remediated "$REMEDIATION" >/dev/null 2>&1; then
+  echo "expected rejection for a regression test missing under the target root" >&2
+  exit 1
+fi
+
+ln -s "$REMEDIATION" "$TMP/linked-remediation.json"
+printf '{"schema_version": 1,' >"$TMP/truncated-remediation.json"
+for input in linked-remediation truncated-remediation; do
+  set +e
+  python3 "$VALIDATOR" "$SAMPLE" --evidence-root "$ROOT" --remediated "$TMP/$input.json" >/dev/null 2>"$TMP/$input.err"
+  code=$?
+  set -e
+  if [[ "$code" -ne 2 ]]; then
+    echo "expected exit 2 for $input" >&2
+    exit 1
+  fi
+done
+if ! grep -q 'remediation must be a regular file, not a symlink' "$TMP/linked-remediation.err"; then
+  echo "symlinked remediation rejected for the wrong reason" >&2
+  exit 1
+fi
+
 echo "security findings fixtures passed"

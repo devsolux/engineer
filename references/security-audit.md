@@ -23,6 +23,7 @@ it. `security-attack-classes.md` (catalog) and `security-audit-domains.md` load 
 - [Artifacts](#artifacts)
 - [Report sections](#report-sections)
 - [Validators](#validators)
+- [From findings to fixes](#from-findings-to-fixes)
 - [Anti-patterns](#anti-patterns)
 
 ## Modes
@@ -175,12 +176,11 @@ candidate is worth nothing; an unhunted unit is at least an honest gap.
 ## Run status
 
 `status: complete` holds only when no unit is `planned` or `in_progress` **and** every surface ×
-boundary × subsystem × attack_class cell exists as a unit (the coverage validator names the
-missing count). Anything else is `incomplete` with an `incomplete_reason` stating the exact
-cause: budget exhausted after wave N, sandbox unavailable, scope cut by the owner, paths
-unreadable. `summary.clean` is true iff `confirmed == 0` and `needs_validation == 0`; a clean
-run with empty `records` is valid, and the report's first line says so next to the coverage
-counts that qualify it.
+boundary × subsystem × attack_class cell exists as a unit (the coverage validator names the missing
+count). Anything else is `incomplete` with an `incomplete_reason` stating the exact cause: budget
+exhausted after wave N, sandbox unavailable, scope cut by the owner, paths unreadable.
+`summary.clean` is true iff `confirmed == 0` and `needs_validation == 0`; a clean run with empty
+`records` is valid, and the report's first line says so next to the coverage counts that qualify it.
 
 ## Multi-run carry-forward
 
@@ -270,28 +270,31 @@ python3 "$ENGINEER/scripts/validate-security-coverage.py" "$RUN/coverage.json" -
 python3 "$ENGINEER/scripts/validate-security-findings.py" "$RUN/findings.json" --evidence-root "$RUN" --target-root . --json
 ```
 
-`init` expands the dimensions file into `planned` units and binds the brief (path relative to
-the run directory); `assign` opens or extends a wave for one hunter with a critic that hunts
-nothing in it; `promote` admits one result after the regular-file, size, JSON, content-screen,
-and assigned-unit checks and copies it to `agents/<agent-id>.json`; `gap` carries a prior run
-forward; `finish` closes the run. The tool never executes target code. The validators exit
-0 valid / 1 invalid / 2 unreadable, print `{valid, errors, gates}` with `--json`, and prove
-record consistency, independence, budget arithmetic, coverage closure, and evidence binding,
-never exploitability, the absence of vulnerabilities, or that the sandbox was enforced.
+`init` binds the brief by a path relative to the run directory; `promote` also screens content and
+copies the result to `agents/<agent-id>.json`. The tool never executes target code. The validators
+exit 0 valid / 1 invalid / 2 unreadable, print `{valid, errors, gates}` with `--json`, and prove
+record consistency, independence, budget arithmetic, coverage closure, and evidence binding, never
+exploitability, the absence of vulnerabilities, or that the sandbox was enforced.
+
+## From findings to fixes
+
+`engineer fix --findings <run>/findings.json` remediates a validating receipt by fingerprint:
+`confirmed` records in severity order (`overall`, then fingerprint), one per atomic change at
+`remediation.layer` inside `remediation.paths`, each behind a regression test built from the trace
+and boundary; `needs_validation` never blind (a sandboxed `local` plan or `owner_observed` steps
+for the owner, then re-verification here); `rejected` skipped and listed. `<run>/remediation.json`
+accounts for every record (`--remediated` checks it); the next run re-verifies each fix.
 
 ## Anti-patterns
 
 - Pasting scanner output, grep hits, or advisory ids as findings; a flag alone is not a finding.
 - Severity on a `needs_validation` record, or impact inflated by hypothetical reachability.
 - A hunter verifying its own candidate; a critic that also hunts; one context playing every role
-  without the disclosure; spending the reserve on one more wave; a budget stop relabelled
-  `complete`.
+  without the disclosure; spending the reserve on one more wave; a budget stop called `complete`.
 - Running the target's test suite on the host "because it is just tests"; probing staging or
   production to "quickly confirm".
 - Carrying a prior confirmation forward without a re-verification record; committing, pushing,
   or pasting the run directory; hand-editing fingerprints or coverage ids.
-- Editing target source "while we are here"; remediation is `engineer fix`'s job, keyed by fingerprint.
-- The word "secure" in a report.
 
 **Related**: `security-attack-classes.md`, `security-audit-domains.md`,
 `multi-agent-orchestration.md`, `agent-red-teaming.md`, `epistemic-honesty.md`, `system-assurance.md`

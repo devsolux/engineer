@@ -21,7 +21,7 @@
   },
   "skill_bundle": {
     "source_root": ".",
-    "sha256": "2cecf9999976be344d76a575fbc510e8d9470641660a57169a2b8846b98c2421",
+    "sha256": "4175ff217ff567f47812b38106b1a1a9e903f0e010833324e2eae453e30dabbd",
     "version": "1.1.0",
     "include": ["SKILL.md", "COMPAT.md", "agents", "commands", "references", "scripts", "templates"],
     "exclude_prefixes": ["scripts/capture-skill-eval.py", "scripts/test-skill-eval-capture", "scripts/validate-skill-eval-capture.py", "templates/agentic/host-capabilities", "templates/agentic/skill-eval", "templates/agentic/engineer-telemetry", "templates/fixtures/skill-eval"],
@@ -37,7 +37,7 @@
       "response_sha256": "709f2acbfcb7c0d2116270a51370509249e45c791c5f589e7be4b0241988e434"
     },
     "source_path": "evals/evals.json",
-    "source_sha256": "edc8dae9cefe1120836071ab756d5a7755e447101a1338b06a3957c8c7f7eb03",
+    "source_sha256": "5f70bf402c38a6459e96e7e5dce519f2012e45fe31c73b49cfe7740aa3264fc1",
     "expectations_exposed": false
   },
   "workspace": "templates/fixtures/skill-eval/workspace",

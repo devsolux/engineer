@@ -27,6 +27,18 @@ a rule in this validator. ``--json`` prints ``{"valid", "errors", "gates"}``.
 Exit 0 valid, 1 invalid, 2 unreadable input. Errors are shape or derivation
 faults; gates are policy or consistency faults. Both block. Each list is capped
 at 100 entries.
+
+``--remediated remediation.json`` cross-checks an ``engineer fix`` receipt
+against a findings document that validates. The receipt binds the findings by
+``{run_id, sha256}``; each entry fixes one ``confirmed`` record, in severity
+order (``overall`` critical to low, then fingerprint), at the record's
+remediation layer, changing only paths inside its ``remediation.paths``, with a
+regression test that ran the same command red before the fix and green after,
+and passing verification commands. Every other record is accounted for exactly
+once under ``not_fixed``: confirmed as ``deferred``, needs_validation as
+``handed_back``, rejected as ``skipped``. Exit codes in the receipt are claims
+recorded by the fixer; this check proves their consistency, never that the
+commands ran or that the fix holds.
 """
 from __future__ import annotations
 
@@ -66,6 +78,10 @@ VERDICT_KEYS = {
     "rejected": {"rejection"},
 }
 OPTIONAL_KEYS = set().union(*VERDICT_KEYS.values())
+REMEDIATION_KEYS = {"schema_version", "receipt_kind", "findings", "entries", "not_fixed"}
+ENTRY_KEYS = {"fingerprint", "outcome", "layer", "changed_paths", "regression_test", "verification", "mitigation"}
+OUTCOMES = {"root_cause_fixed", "mitigated"}
+DISPOSITIONS = {"confirmed": "deferred", "needs_validation": "handed_back", "rejected": "skipped"}
 SPENT_KEYS = {"reconnaissance", "hunting", "critics", "verification", "record_review", "reporting"}
 FORBIDDEN_CONTENT = re.compile(
     r"BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY"
@@ -549,29 +565,163 @@ def validate(data: Any, evidence_root: Path, target_root: Path | None = None) ->
     return cap(errors), cap(gates)
 
 
+def command_run(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == {"command", "exit_code"} and text(value.get("command")) and isinstance(value.get("exit_code"), int) and not isinstance(value.get("exit_code"), bool)
+
+
+def inside(path: str, roots: Any) -> bool:
+    pure = PurePosixPath(path)
+    return isinstance(roots, list) and any(lexical_path(root) and (pure == PurePosixPath(root) or PurePosixPath(root) in pure.parents) for root in roots)
+
+
+def validate_remediation(data: Any, findings: dict[str, Any], findings_sha256: str, target_root: Path | None = None) -> tuple[list[str], list[str]]:
+    """Cross-check an engineer fix receipt against a findings document that already validates."""
+    errors: list[str] = []
+    gates: list[str] = []
+    if not isinstance(data, dict):
+        return ["remediation root must be an object"], []
+    if set(data) != REMEDIATION_KEYS:
+        errors.append(f"remediation root keys must be exactly {sorted(REMEDIATION_KEYS)}")
+    if data.get("schema_version") != 1:
+        errors.append("remediation schema_version must be 1")
+    if data.get("receipt_kind") != findings.get("receipt_kind"):
+        gates.append("remediation receipt_kind must match the findings receipt_kind")
+    screen("remediation", json.dumps(data, ensure_ascii=False), errors)
+    bound = obj(data.get("findings"))
+    if set(bound) != {"run_id", "sha256"} or not isinstance(bound.get("sha256"), str) or not HEX64.fullmatch(bound["sha256"]):
+        errors.append("remediation findings binding must be {run_id, sha256}")
+    else:
+        if bound["sha256"] != findings_sha256:
+            gates.append("remediation binds a different findings document (digest mismatch)")
+        if bound["run_id"] != obj(findings.get("run")).get("run_id"):
+            gates.append("remediation binds a different run_id")
+    records = {record["fingerprint"]: record for record in findings.get("records", [])}
+    accounted: list[str] = []
+    order: list[tuple[int, str]] = []
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        errors.append("remediation entries must be a list")
+        entries = []
+    for index, entry in enumerate(entries):
+        label = f"remediation entry {index}"
+        if not isinstance(entry, dict) or set(entry) != ENTRY_KEYS:
+            errors.append(f"{label} shape invalid")
+            continue
+        fp = entry.get("fingerprint")
+        record = records.get(fp) if isinstance(fp, str) else None
+        if record is None:
+            gates.append(f"{label} cites a fingerprint absent from the findings: {fp}")
+            continue
+        label = f"remediation {fp}"
+        accounted.append(fp)
+        if record["verdict"] != "confirmed":
+            gates.append(f"{label} fixes a {record['verdict']} record; only confirmed records are fixable")
+            continue
+        remediation = record["remediation"]
+        order.append((-LEVELS[record["severity"]["overall"]], fp))
+        outcome = entry.get("outcome")
+        if outcome not in OUTCOMES:
+            errors.append(f"{label} outcome must be root_cause_fixed or mitigated")
+        if entry.get("layer") != remediation["layer"]:
+            gates.append(f"{label} layer differs from the record's remediation layer {remediation['layer']!r}")
+        changed = entry.get("changed_paths")
+        if not isinstance(changed, list) or not changed or any(not target_path_ok(item, target_root) for item in changed) or len(set(changed)) != len(changed):
+            errors.append(f"{label} changed_paths must be a non-empty unique list of target paths")
+        else:
+            outside = [item for item in changed if not inside(item, remediation["paths"])]
+            if outside:
+                gates.append(f"{label} changes paths outside the record's remediation paths: {outside[:5]}")
+        test = obj(entry.get("regression_test"))
+        if set(test) != {"path", "name", "failed_before_fix", "passed_after_fix"} or not target_path_ok(test.get("path"), target_root) or not optional_text(test.get("name")) or not command_run(test.get("failed_before_fix")) or not command_run(test.get("passed_after_fix")):
+            errors.append(f"{label} regression_test must carry path, name|null, and failed_before_fix and passed_after_fix as {{command, exit_code}}")
+        else:
+            before, after = test["failed_before_fix"], test["passed_after_fix"]
+            if before["command"] != after["command"]:
+                gates.append(f"{label} regression test must run the same command before and after the fix")
+            if before["exit_code"] == 0:
+                gates.append(f"{label} regression test did not fail before the fix")
+            if after["exit_code"] != 0:
+                gates.append(f"{label} regression test does not pass after the fix")
+        verification = entry.get("verification")
+        if not isinstance(verification, list) or not verification or any(not command_run(item) for item in verification):
+            errors.append(f"{label} verification must be a non-empty list of {{command, exit_code}}")
+        else:
+            failed = [item["command"] for item in verification if item["exit_code"] != 0]
+            if failed:
+                gates.append(f"{label} verification commands failed: {failed[:5]}")
+        mitigation = entry.get("mitigation")
+        if outcome == "mitigated":
+            if not isinstance(mitigation, dict) or set(mitigation) != {"owner", "expiry", "follow_up", "detection"} or not all(text(mitigation.get(key)) for key in ("owner", "expiry", "follow_up", "detection")):
+                gates.append(f"{label} a mitigation must declare owner, expiry, follow_up, and detection")
+        elif mitigation is not None:
+            errors.append(f"{label} mitigation must be null unless the outcome is mitigated")
+    if order != sorted(order):
+        gates.append("remediation entries must run in severity order (overall critical to low, then fingerprint)")
+    not_fixed = data.get("not_fixed")
+    if not isinstance(not_fixed, list):
+        errors.append("remediation not_fixed must be a list")
+        not_fixed = []
+    for index, item in enumerate(not_fixed):
+        label = f"remediation not_fixed {index}"
+        if not isinstance(item, dict) or set(item) != {"fingerprint", "verdict", "disposition", "reason"} or not text(item.get("reason")):
+            errors.append(f"{label} must carry fingerprint, verdict, disposition, and a reason")
+            continue
+        fp = item["fingerprint"]
+        record = records.get(fp) if isinstance(fp, str) else None
+        if record is None:
+            gates.append(f"{label} cites a fingerprint absent from the findings: {fp}")
+            continue
+        accounted.append(fp)
+        verdict = record["verdict"]
+        if item["verdict"] != verdict:
+            gates.append(f"remediation {fp} lists verdict {item['verdict']!r}, the record says {verdict!r}")
+        elif item["disposition"] != DISPOSITIONS[verdict]:
+            gates.append(f"remediation {fp} {verdict} record must be {DISPOSITIONS[verdict]}, not {item['disposition']!r}")
+    repeated = sorted({fp for fp in accounted if accounted.count(fp) > 1})
+    if repeated:
+        gates.append(f"remediation accounts for a record more than once: {repeated[:5]}")
+    missing = sorted(set(records) - set(accounted))
+    if missing:
+        gates.append(f"remediation leaves records unaccounted for: {missing[:5]}")
+    return cap(errors), cap(gates)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a security-audit findings document.")
     parser.add_argument("findings")
     parser.add_argument("--evidence-root", default=".")
     parser.add_argument("--target-root", default=None)
+    parser.add_argument("--remediated", default=None, metavar="REMEDIATION", help="cross-check an engineer fix remediation receipt against the findings")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-    path = regular_input_file(args.findings)
-    if path is None:
-        print("findings must be a regular file, not a symlink", file=sys.stderr)
-        return 2
-    try:
-        if path.stat().st_size > MAX_FILE_BYTES:
-            print(f"findings exceed {MAX_FILE_BYTES} bytes", file=sys.stderr)
+    inputs = []
+    for label, value in (("findings", args.findings), ("remediation", args.remediated)):
+        if value is None:
+            continue
+        path = regular_input_file(value)
+        if path is None:
+            print(f"{label} must be a regular file, not a symlink", file=sys.stderr)
             return 2
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        print(exc, file=sys.stderr)
-        return 2
+        try:
+            if path.stat().st_size > MAX_FILE_BYTES:
+                print(f"{label} input exceeds {MAX_FILE_BYTES} bytes", file=sys.stderr)
+                return 2
+            raw = path.read_bytes()
+            inputs.append((json.loads(raw.decode("utf-8")), hashlib.sha256(raw).hexdigest()))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+    (data, findings_sha256), *remediation = inputs
     target_root = Path(args.target_root) if args.target_root else None
     errors, gates = validate(data, Path(args.evidence_root), target_root)
+    if remediation and (errors or gates):
+        gates.append("remediation receipt not checked: the findings document must validate first")
+    elif remediation:
+        remediation_errors, remediation_gates = validate_remediation(remediation[0][0], data, findings_sha256, target_root)
+        errors, gates = errors + remediation_errors, gates + remediation_gates
     result = {"valid": not errors and not gates, "errors": errors, "gates": gates}
-    print(json.dumps(result, indent=2) if args.json else ("Security findings valid" if result["valid"] else "\n".join([*(f"error: {item}" for item in errors), *(f"gate: {item}" for item in gates)])))
+    accepted = "Security findings and remediation valid" if remediation else "Security findings valid"
+    print(json.dumps(result, indent=2) if args.json else (accepted if result["valid"] else "\n".join([*(f"error: {item}" for item in errors), *(f"gate: {item}" for item in gates)])))
     return 0 if result["valid"] else 1
 
 

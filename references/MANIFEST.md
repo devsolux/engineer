@@ -201,10 +201,10 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `scripts/test-optimization-run.sh` | Comparative optimization and trial-evidence adversarial fixtures |
 | `scripts/validate-security-eval-catalog.py` | Defensive agent threat-coverage and fixture-safety validator |
 | `scripts/test-security-eval-catalog.sh` | Defensive security-catalog adversarial fixtures |
-| `scripts/validate-security-findings.py` | Security-audit findings receipt validator: three verdicts, derived fingerprints, independence, bound evidence, ledger cross-check |
+| `scripts/validate-security-findings.py` | Security-audit findings receipt validator: three verdicts, derived fingerprints, independence, bound evidence, ledger cross-check; `--remediated` cross-checks an `engineer fix` remediation receipt (confirmed only, severity order, paths inside `remediation.paths`, red-then-green regression test, every record accounted for) |
 | `scripts/validate-security-coverage.py` | Security-audit coverage-ledger validator: derived unit ids, status rules, waves, cross-product completeness, carry-forward |
 | `scripts/security-ledger.py` | Trusted parent-side ledger tool: init, assign, promote (regular-file/size/JSON/assigned-unit checks), gap, finish |
-| `scripts/test-security-findings.sh` / `test-security-coverage.sh` / `test-security-ledger-tool.sh` | Security-audit validator and ledger-tool mutation fixtures |
+| `scripts/test-security-findings.sh` / `test-security-coverage.sh` / `test-security-ledger-tool.sh` | Security-audit validator (findings and remediation receipt) and ledger-tool mutation fixtures |
 | `scripts/test-github-signing.sh` | GitHub signing and exact-SHA deploy-gate fixture checks |
 | `scripts/test-csp-reporting.sh` | CSP parser, minimization, origin-admission, and header fixtures |
 | `scripts/audit-oss-repo.py` | Offline proportional OSS baseline receipt with explicit external-state limits |
@@ -315,6 +315,7 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `templates/agentic/security-eval-catalog.sample.json` | Authorized isolated agent-security evaluation catalog |
 | `templates/agentic/security-findings.sample.json` | Illustrative security-audit findings receipt (one record per verdict, one hardening note) |
 | `templates/agentic/security-coverage.sample.json` | Illustrative security-audit coverage ledger (12 units, one wave, distinct critic) |
+| `templates/agentic/security-remediation.sample.json` | Illustrative `engineer fix --findings` remediation receipt bound to the findings sample by digest (one fixed confirmed record, needs_validation handed back, rejected skipped) |
 | `templates/agentic/security-audit-evidence/` | Bound architecture brief, report, and evidence excerpts for the security-audit samples |
 | `templates/agentic/security-findings.schema.json` / `security-hunter-result.schema.json` | JSON Schema consumer aids for the findings receipt and the hunter result (not the enforcement path) |
 | `templates/github/verified-deploy-gate.yml` | Reusable fail-closed exact-SHA GitHub verification gate |
@@ -398,6 +399,7 @@ python3 scripts/validate-optimization-run.py templates/agentic/optimization-run.
 python3 scripts/validate-security-eval-catalog.py templates/agentic/security-eval-catalog.sample.json
 python3 scripts/validate-security-coverage.py templates/agentic/security-coverage.sample.json --evidence-root .
 python3 scripts/validate-security-findings.py templates/agentic/security-findings.sample.json --evidence-root .
+python3 scripts/validate-security-findings.py templates/agentic/security-findings.sample.json --evidence-root . --remediated templates/agentic/security-remediation.sample.json
 python3 scripts/validate-skill-eval-run.py templates/agentic/skill-eval-run.sample.json
 python3 scripts/capture-skill-eval.py templates/agentic/skill-eval-job.sample.json --print-command
 python3 scripts/prepare-skill-eval-baseline.py --scenarios 121 --hosts codex,claude --activation-modes explicit,implicit

@@ -28,6 +28,7 @@ Never use it to re-sign unreviewed or externally captured evidence. The
 completion sample is also illustrative and its content hashes must match its
 actual checked-in source documents. The same rule applies to the security-audit
 samples (`templates/agentic/security-findings.sample.json`,
-`security-coverage.sample.json`): they bind the coverage ledger, architecture brief
-and evidence excerpts by content hash, and `make fixtures` does not rebind them —
-recompute the digests by hand after editing any bound file.
+`security-coverage.sample.json`, `security-remediation.sample.json`): they bind the
+coverage ledger, architecture brief, evidence excerpts and, for the remediation
+receipt, the findings sample by content hash, and `make fixtures` does not rebind
+them — recompute the digests by hand after editing any bound file.

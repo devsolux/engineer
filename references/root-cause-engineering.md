@@ -2,7 +2,7 @@
 
 **Last verified**: 2026-07-16 · **Review cadence**: 3 months
 **Related**: `system-assurance.md`, `coding-principles.md`, `refactoring.md`,
-`implementation-completeness.md`, `agent-incident-response.md`
+`implementation-completeness.md`, `agent-incident-response.md`, `security-audit.md`
 
 Use this module for every bug fix, hotfix, workaround request, "quick fix," or recurring
 incident. A fix is a repair of the first causal divergence from a stated invariant, verified
@@ -28,6 +28,15 @@ first divergence). Do not duplicate it; this contract adds the fix-side obligati
 5. **Confirm the mechanism.** The patch must explain the observed failure. If the fix works
    but you cannot say why the bug happened, the diagnosis is incomplete - keep digging or
    report the uncertainty explicitly.
+
+## Security-audit findings as input
+
+A `confirmed` record in a validated security-audit `findings.json` arrives diagnosed: its
+`boundary` is the violated invariant, its `trace` the causal chain, its `root_cause` the first
+divergence. Still reproduce it as a failing regression test, then repair at `remediation.layer`.
+A `needs_validation` record is an unreproduced failure (item 1): validate or hand back, never
+patch. Verdict rules and the `remediation.json` receipt: `security-audit.md` ("From findings to
+fixes"); the procedure: `engineer fix --findings`.
 
 ## Symptom-patch prohibition
 
