@@ -52,3 +52,23 @@ ceilings with `SKILL.md` at 356 lines; the `visual` verb sits exactly at its 800
 - No host install or `make host-validate`; the plugin manifests did not change.
 - The Pragmatic Rust Guidelines single-file agent text (`agents/all.txt`) was not fetched; the
   print view was used, and no module cites an identifier beyond the part that was read.
+
+## Release gates for 1.3.0
+
+1.3.0 packages the Rust modules, lint template, scanner tier and evals recorded above (4163a0f),
+which is everything merged on `main` after the `v1.2.0` tag. Same machine; Claude Code 2.1.282 and
+Codex CLI 0.163.0-alpha.11.
+
+| Check | Result |
+|---|---|
+| `python3 scripts/report-module-currency.py` | 120 of 120 modules current as of 2026-10-26; nothing redated |
+| `make fixtures` | Rebound the skill-eval chain from version 1.2.0 to 1.3.0 with the new bundle and `SKILL.md` digests; grader-verified |
+| `make build` → `make lint` | Plugin manifests and the bundled skill at 1.3.0; lint passed (282 files) |
+| `make host-validate` | `claude plugin validate --strict` passed for the marketplace and the plugin on Claude Code 2.1.282 |
+| `python3 scripts/scan-doc-supply-chain.py` | Passed |
+| `bash scripts/check-oss-leaks.sh` on the staged changeset | Clean (24 files; the private-marker layer was off, so only the generic layer ran) |
+| `make release-check JOBS=4` | Static gates passed (220 static eval scenarios); 56/56 isolated offline suites passed; no bundle drift |
+
+Not executed before the release commit: publishing (push, `v1.3.0` tag, GitHub release),
+`make package` (it runs inside `make github-release`), the install-from-GitHub check, and any live
+model run. CI results for the Rust commit and the release commit are recorded under Publication.

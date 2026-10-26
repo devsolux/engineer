@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
-## Unreleased
+## 1.3.0 — 2026-10-26
 
 ### Added
 
