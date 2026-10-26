@@ -29,3 +29,7 @@ __pycache__/
 .build/
 dist/
 plugins/.engineer-stage-*/
+
+# Rust lint check crate: cargo writes here only when run by hand (the test uses a temp dir)
+scripts/fixtures/rust-lints/target/
+scripts/fixtures/rust-lints/Cargo.lock

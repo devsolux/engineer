@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
+## Unreleased
+
+### Added
+
+- Rust language modules: `rust-idioms.md` (ownership, naming, domain types, standard traits,
+  constructors and visibility, traits and macros, errors and panics, everyday idioms,
+  checklist), `rust-systems.md` (concurrency and async, unsafe and FFI, crates and
+  dependencies, rustdoc, tests, performance, lint enforcement and scan IDs),
+  `rust-review.md` (scope, tools first, five-tier priority order, audit-shaped report with
+  rule citations and code fixes) and `rust-port.md` (behavior list, tests first, C/C++,
+  Python and Go/JS/TS mapping tables, proportionality, verification, porting notes). Every
+  rule cites a primary source (Rust API Guidelines, Effective Rust, Rust Design Patterns,
+  Pragmatic Rust Guidelines, Google Rust Style Guide, clippy and Cargo references); the
+  sources and the local lint verification are recorded in `docs/verification-2026-10-26-rust.md`.
+- `templates/rust/lints.toml` and `templates/rust/clippy.toml`: a drop-in Cargo `[lints]`
+  table and clippy thresholds (unwrap outside tests, undocumented unsafe, suppressions without
+  a reason, bool parameters, lossy casts, missing `# Errors` / `# Panics` docs, debug
+  leftovers). `scripts/test-rust-lints.sh` assembles a check crate with one tagged violation
+  per lint and asserts that exactly the tagged set fires; it skips with a notice when cargo
+  clippy is not installed.
+- `engineer-scan.sh --rust` (auto-enabled when a `Cargo.toml` is present): `RS-LINTS`,
+  `RS-DENY-WARNINGS`, `RS-UNWRAP`, `RS-UNSAFE-SAFETY` and `RS-DEBUG-LEFTOVER`, with
+  pass / warn / fail fixtures in `scripts/fixtures/{pass,warn,fail}-rust/` covered by
+  `test-scan.sh`. Unwrap, unsafe and leftover signals warn by default and fail under `--strict`;
+  the unwrap and leftover checks stop at a `#[cfg(test)] mod` and skip `tests/`, `benches/`,
+  `examples/` and `build.rs`.
+- Four routing evals (217-220): Rust library API, Rust refactor, Rust review, Python-to-Rust port.
+
+### Changed
+
+- `SKILL.md` routes Rust code, review and port work to the new modules (service work stays on
+  `rust.md`), adds the Rust and port pattern rows to the verb table, and widens the Rust hard
+  gate to no `unwrap` outside tests, `// SAFETY:` on every `unsafe` block, no
+  `#![deny(warnings)]` in source, and clippy `-D warnings` in CI. `rust.md`, `refactoring.md`,
+  `coding-principles.md`, `project-detect.md` and `enforcement-rules.md` cross-link the modules
+  and the lint template.
+
 ## 1.2.0 — 2026-10-22
 
 ### Added

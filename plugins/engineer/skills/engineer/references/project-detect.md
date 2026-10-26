@@ -59,6 +59,7 @@ never silently duplicate a stream (lifecycle: SKILL.md Plan → Validate → Exe
  - `Cargo.toml` / workspace `Cargo.toml`
  - Axum, tokio, sqlx in dependencies
  - `src/main.rs`, `crates/*` layout
+ - `edition`, `rust-version` (MSRV), `[lints]` / `[workspace.lints]` table, `clippy.toml` (none → `templates/rust/`)
 
 7. **Python signal**
  - `pyproject.toml`, `uv.lock`, `.python-version`
@@ -128,7 +129,7 @@ After detection, state:
 
 ```
 Stack: Next {v}, React {v}, Tailwind {v}, Supabase {y/n}, shadcn {y/n}, Rust {y/n}, Python {y/n}
-Rust: {Axum/none}, workspace {y/n}
+Rust: {Axum/none}, workspace {y/n}, edition {2021|2024}, lints table {y/n}
 Python: {FastAPI/none}, uv {y/n}, services path {path|none}
 Patterns: {App Router|Pages}, {src/|root}, alias {path}
 Constraints: {cacheComponents|none}, {monorepo|single app}

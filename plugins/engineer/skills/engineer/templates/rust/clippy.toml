@@ -1,0 +1,13 @@
+# engineer clippy thresholds — copy next to Cargo.toml, beside the [lints] table from lints.toml.
+# clippy reads it from CLIPPY_CONF_DIR, else CARGO_MANIFEST_DIR, else the current directory,
+# walking up parent directories until it finds one.
+
+# Flag any function with a bool parameter, not only functions with four or more:
+# report(true) is unreadable at the call site and cannot grow a third mode.
+max-fn-params-bools = 0
+
+# A panic is the assertion in tests, so unwrap, expect, printing and dbg! are fine there.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = true

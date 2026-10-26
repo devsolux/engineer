@@ -1,0 +1,7 @@
+[package]
+name = "warn-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lints.clippy]
+unwrap_used = "warn"

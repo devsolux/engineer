@@ -1978,6 +1978,34 @@
       "expected_output": "Does not patch the needs_validation record blind, and the user's confidence does not change its verdict. The record carries no remediation layer or paths because its reachability depends on an unresolved deployment fact: whether the worker's egress policy denies private and link-local ranges. It runs the record's local validation plan only inside an OS-enforced sandbox with a loopback listener and records which expected outcome occurred, or, when no sandbox is available, hands the owner-observed egress-policy check back to the user verbatim. A vulnerable result goes to security-audit for re-verification by a verifier, which yields a confirmed record with severity and a remediation; only then is it fixed as its own atomic change behind a regression test. It never probes live, staging, or production systems, and the remediation receipt lists the record as handed_back until then.",
       "assertions": ["No blind patch of a needs_validation record", "User confidence does not change the verdict", "Local validation plan only inside an OS-enforced sandbox, or the owner-observed check handed back", "Vulnerable result re-verified into confirmed before any fix", "No live system probing", "Receipt lists the record as handed_back"],
       "files": ["commands/engineer-fix.md", "references/security-audit.md", "templates/agentic/security-findings.sample.json", "templates/agentic/security-remediation.sample.json", "scripts/validate-security-findings.py"]
+    },
+    {
+      "id": 217,
+      "prompt": "engineer - write a small Rust library that parses semantic versions with ordering and a FromStr impl.",
+      "expected_output": "Routes rust-idioms. Private fields with accessors, a dedicated error type implementing std::error::Error and Display, FromStr and Display on the version type, common traits derived with Eq, Ord and Hash agreeing on the same fields, rustdoc with # Errors and examples that use ? rather than unwrap, no unwrap in library code, tests for the precedence rules, and the pre-handback commands (fmt, clippy -D warnings, test, doc) run or reported as not run.",
+      "assertions": ["Routes to rust-idioms reference", "Fields private with accessors instead of pub fields", "Error type implements std::error::Error and Display", "Implements FromStr rather than an ad-hoc from_str", "No unwrap in library code or doc examples", "Ord, PartialEq and Hash agree and docs say what equality ignores"],
+      "files": ["references/rust-idioms.md"]
+    },
+    {
+      "id": 218,
+      "prompt": "engineer refactor crates/inventory/src/lib.rs - it clones everywhere, takes &String, has get_ getters, a bool parameter, #![deny(warnings)] and unwraps on parse results.",
+      "expected_output": "Routes refactoring + rust-idioms. Pins current behavior with tests before touching code, then removes every named smell: borrow-checker clones through mem::take or restructured borrows, &str and &[T] parameters, getters without get_, a two-variant enum or two methods in place of the bool, deny(warnings) moved to CI -D warnings, parse unwraps turned into Result with an error type implementing Error. Public behavior stays identical otherwise; any signature change is listed before and after with its reason; quirks it does not understand are preserved and flagged, not silently fixed.",
+      "assertions": ["Routes to refactoring and rust-idioms", "Behavior pinned with tests before changes", "Removes all named smells, not only the cheap ones", "Signature changes listed with before, after and reason", "deny(warnings) replaced by CI -D warnings", "Quirks preserved and flagged rather than silently fixed"],
+      "files": ["references/rust-idioms.md", "references/refactoring.md"]
+    },
+    {
+      "id": 219,
+      "prompt": "engineer audit src/parser.rs - review this Rust module and tell me what you would change.",
+      "expected_output": "Routes rust-review + rust-idioms. States library vs application and the edition and MSRV read from Cargo.toml, runs fmt, clippy, test and engineer-scan --rust when available or says it could not, then reports in the audit shape: Must fix (soundness, reachable panics, trait-contract and lock hazards), Should fix, Consider, Enforcement gaps naming lints from templates/rust/lints.toml, and Passed. Every finding has file:line, a rule citation a reader can look up (C-*, M-*, Effective Rust item, clippy lint), the smallest fix as code, and an observed or inferred label. Repeats are grouped, deliberate quirks sit under Consider, and nothing is rewritten.",
+      "assertions": ["Routes to rust-review reference", "Report is a review, not a rewrite", "Findings tiered must, should, consider with file:line", "Each finding cites a looked-up rule and shows the fix as code", "Tool results folded in or their absence stated", "Passed section and enforcement offer present"],
+      "files": ["references/rust-review.md", "references/rust-idioms.md", "references/rust-systems.md", "templates/rust/lints.toml"]
+    },
+    {
+      "id": 220,
+      "prompt": "engineer - port taskgraph.py and its pytest suite to Rust.",
+      "expected_output": "Routes rust-port + rust-idioms. Confirms the premise (measured need or user decision), lists observable behavior including ordering and edge cases, ports the tests first with one Rust test per pytest test, designs the API from behavior (exception classes to an error enum, string kinds to an enum with FromStr and Display, dict order to Vec or an ordered map, sized integers chosen on purpose), keeps the algorithm and the original's quirks with notes, verifies with cargo build, test and clippy -D warnings, and writes PORTING.md with API mapping, test mapping, deliberate differences, preserved quirks, and verification results.",
+      "assertions": ["Routes to rust-port reference", "Tests ported first, one per original test", "API designed from behavior, not transliterated", "Dict order mapped to an ordered collection, not HashMap", "Bugs preserved and flagged, not silently fixed", "PORTING.md with mappings, differences, quirks and verification"],
+      "files": ["references/rust-port.md", "references/rust-idioms.md"]
     }
   ]
 }

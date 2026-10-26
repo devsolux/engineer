@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # engineer policy scanner — run from repo root
-# Usage: engineer-scan.sh [--strict] [--design] [--backend] [--python] [--fix-hints] [--json] [--quiet]
+# Usage: engineer-scan.sh [--strict] [--design] [--backend] [--python] [--rust] [--fix-hints] [--json] [--quiet]
 set -euo pipefail
 
 STRICT=0
 DESIGN=0
 BACKEND=0
 PYTHON=0
+RUST=0
 HINTS=0
 JSON_OUT=0
 QUIET=0
@@ -20,11 +21,12 @@ for arg in "$@"; do
     --design) DESIGN=1 ;;
     --backend) BACKEND=1 ;;
     --python) PYTHON=1 ;;
+    --rust) RUST=1 ;;
     --fix-hints) HINTS=1 ;;
     --json) JSON_OUT=1 ;;
     --quiet) QUIET=1 ;;
     -h|--help)
-      echo "Usage: engineer-scan.sh [--strict] [--design] [--backend] [--python] [--fix-hints] [--json] [--quiet]"
+      echo "Usage: engineer-scan.sh [--strict] [--design] [--backend] [--python] [--rust] [--fix-hints] [--json] [--quiet]"
       exit 0
       ;;
     *) echo "Unknown argument: $arg" >&2; exit 2 ;;
@@ -32,7 +34,7 @@ for arg in "$@"; do
 done
 
 # Default: run design + backend baseline unless flags specified
-if [[ "$DESIGN" -eq 0 && "$BACKEND" -eq 0 && "$PYTHON" -eq 0 ]]; then
+if [[ "$DESIGN" -eq 0 && "$BACKEND" -eq 0 && "$PYTHON" -eq 0 && "$RUST" -eq 0 ]]; then
   DESIGN=1
   BACKEND=1
 fi
@@ -40,6 +42,11 @@ fi
 # Auto-enable Python checks when a Python project is present
 if [[ "$PYTHON" -eq 0 ]] && { [[ -f pyproject.toml ]] || [[ -f uv.lock ]] || compgen -G 'services/**/*.py' >/dev/null 2>&1; }; then
   PYTHON=1
+fi
+
+# Auto-enable Rust checks when a crate or Cargo workspace is present
+if [[ "$RUST" -eq 0 ]] && { [[ -f Cargo.toml ]] || compgen -G 'crates/*/Cargo.toml' >/dev/null 2>&1 || compgen -G 'services/*/Cargo.toml' >/dev/null 2>&1; }; then
+  RUST=1
 fi
 
 RED='\033[0;31m'
@@ -442,6 +449,86 @@ if [[ "$PYTHON" -eq 1 ]]; then
     fi
   else
     pass "Python scan enabled but no Python project files found"
+  fi
+fi
+
+# ─── Rust (crates / Cargo workspaces) ───────────────────────────────────────
+
+if [[ "$RUST" -eq 1 ]]; then
+  echo ""
+  echo "[rust]"
+
+  RS_MANIFESTS=$(find . -name Cargo.toml -not -path '*/target/*' -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | sort || true)
+  if [[ -n "$RS_MANIFESTS" ]]; then
+    RS_LINTS=0
+    while IFS= read -r m; do
+      [[ -z "$m" ]] && continue
+      if grep -Eq '^[[:space:]]*\[(workspace\.)?lints' "$m" 2>/dev/null; then
+        RS_LINTS=1
+      fi
+    done <<< "$RS_MANIFESTS"
+    if [[ "$RS_LINTS" -eq 1 ]]; then
+      pass "Cargo [lints] table present"
+    else
+      warn "RS-LINTS: no [lints] table in any Cargo.toml — clippy policy is unenforced"
+      hint "Paste templates/rust/lints.toml into Cargo.toml and copy templates/rust/clippy.toml beside it (references/rust-systems.md)"
+    fi
+
+    RS_DENY=$(grep_rg '#!\[deny\(warnings\)\]' --glob '*.rs' --glob '!**/target/**' . || true)
+    if [[ -n "$RS_DENY" ]]; then
+      fail "RS-DENY-WARNINGS: #![deny(warnings)] in source — a new toolchain breaks the build; pass -D warnings to clippy in CI instead"
+      echo "$RS_DENY" | sed -n '1,10p'
+    else
+      pass "No #![deny(warnings)] in source"
+    fi
+
+    # Non-test code only: skip tests/, benches/, examples/, build.rs, comment lines, and
+    # everything from a `#[cfg(test)] mod` to the end of the file.
+    : > "$SCAN_TMP/rs-unwrap"
+    : > "$SCAN_TMP/rs-unsafe"
+    : > "$SCAN_TMP/rs-leftover"
+    while IFS= read -r f; do
+      [[ -z "$f" ]] && continue
+      case "$f" in
+        */tests/*|*/benches/*|*/examples/*|*/build.rs) continue ;;
+      esac
+      awk -v file="$f" -v out="$SCAN_TMP" '
+        pending && /^[[:space:]]*(pub(\([a-z]+\))?[[:space:]]+)?mod[[:space:]]/ { exit }
+        { pending = 0 }
+        /^[[:space:]]*#\[cfg\(test\)\]/ { pending = 1; next }
+        /^[[:space:]]*\/\// { p3 = p2; p2 = p1; p1 = $0; next }
+        /\.unwrap\(\)/ { printf "%s:%d: %s\n", file, NR, $0 >> (out "/rs-unwrap") }
+        /(^|[^A-Za-z0-9_])(dbg|todo|unimplemented)!\(/ { printf "%s:%d: %s\n", file, NR, $0 >> (out "/rs-leftover") }
+        $0 !~ /SAFETY:/ && /(^|[^A-Za-z0-9_])unsafe[[:space:]]*(\{|impl[[:space:]<])/ {
+          if ((p1 p2 p3) !~ /SAFETY:/) printf "%s:%d: %s\n", file, NR, $0 >> (out "/rs-unsafe")
+        }
+        { p3 = p2; p2 = p1; p1 = $0 }
+      ' "$f"
+    done < <(find . -name '*.rs' -not -path '*/target/*' -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | sort || true)
+
+    RS_CLEAN=1
+    for check in unwrap unsafe leftover; do
+      case "$check" in
+        unwrap) RS_ID="RS-UNWRAP"; RS_MSG='.unwrap() outside tests — use ? or expect("why this cannot fail")' ;;
+        unsafe) RS_ID="RS-UNSAFE-SAFETY"; RS_MSG="unsafe block or impl without a // SAFETY: comment above it" ;;
+        *) RS_ID="RS-DEBUG-LEFTOVER"; RS_MSG="dbg!/todo!/unimplemented! outside tests" ;;
+      esac
+      if [[ -s "$SCAN_TMP/rs-$check" ]]; then
+        RS_CLEAN=0
+        if [[ "$STRICT" -eq 1 ]]; then
+          fail "$RS_ID: $RS_MSG"
+        else
+          warn "$RS_ID: $RS_MSG"
+        fi
+        sed -n '1,10p' "$SCAN_TMP/rs-$check"
+        hint "references/rust-systems.md (Enforcement); templates/rust/lints.toml makes clippy enforce this"
+      fi
+    done
+    if [[ "$RS_CLEAN" -eq 1 ]]; then
+      pass "No unwrap, undocumented unsafe, or debug leftovers outside tests"
+    fi
+  else
+    pass "Rust scan enabled but no Cargo.toml found"
   fi
 fi
 

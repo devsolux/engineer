@@ -141,7 +141,7 @@ See `system-architecture.md`.
 | Domain | Typed errors / Result types |
 | Server Action | `{ ok, data \| error }` - user-safe messages |
 | Route Handler | HTTP status + JSON `{ error, code? }` |
-| Rust | `AppError` → `IntoResponse` |
+| Rust | Library: `std::error::Error` enum or struct (`rust-idioms.md`); service edge: `AppError` → `IntoResponse` |
 | Client | Error boundary + retry where appropriate |
 
 Rules:

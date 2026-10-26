@@ -8,7 +8,9 @@
 | `python.md` | Prefer Python for AI/workers; Rust after measured need |
 | `system-architecture.md` | When to split services |
 | `observability.md` | Tracing, health checks |
-| `enforcement-rules.md` | clippy, no-unwrap CI |
+| `enforcement-rules.md` | clippy, no-unwrap CI; `templates/rust/` lint config |
+| `rust-idioms.md` / `rust-systems.md` | The Rust itself: ownership, API design, errors; async, unsafe, crates, docs, tests |
+| `rust-review.md` / `rust-port.md` | Reviewing existing Rust; porting other languages to Rust |
 
 Default stack: **Axum 0.8+ / Tokio / SQLx / Tower**. Match existing project
 crates before applying defaults.

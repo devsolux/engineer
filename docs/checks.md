@@ -22,7 +22,12 @@ python3 scripts/run-tests.py --select test-plugin-build.py
 
 Tests exercise synthetic positive and negative cases. Some test fake host binaries
 and temporary Git workspaces; those are not real host or marketplace acceptance.
-TypeScript template tests use controlled API stubs. No authenticated live model
+TypeScript template tests use controlled API stubs. `scripts/test-rust-lints.sh` needs a
+Rust toolchain with clippy: it assembles a check crate from `templates/rust/` and
+`scripts/fixtures/rust-lints/` in a temporary directory, runs `cargo clippy --offline` on a
+crate without dependencies, and asserts that exactly the tagged lints fire. Without
+`cargo clippy` it prints a skip notice and exits 0, so a machine without Rust has not
+verified that fixture; say so when it matters. No authenticated live model
 runs, browser session, GitHub action execution, deployment, or publishing is
 implicit in these targets.
 

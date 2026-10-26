@@ -118,6 +118,7 @@ Failed or unavailable verification is a blocker, never success; select existing 
 | Commit signing / Verified badge / signed-only deploy | git-signing-deploy → deploy-ops → enforcement | git-signing-deploy, deploy-ops |
 | CSP rollout / violation reporting / XSS telemetry | backend-security → observability → enforcement | backend-security, observability |
 | Public/OSS repository detected or named | oss-maintainer → leak+dropper gate: `agent-security` scan-repo when installed, else `scripts/check-oss-leaks.sh`, on the changeset → git-signing-deploy → enforcement → output-quality | oss-maintainer |
+| Rust written, reviewed, or ported (`.rs`, Cargo, clippy, borrow checker) | rust-idioms rules → rust-review priority pass and audit-shaped report for existing code → rust-port (behavior list → tests first → Rust-shaped API → porting notes) → clippy `-D warnings` with `templates/rust/` | rust-idioms |
 
 Optional native command aliases: `commands/*.md` → `scripts/install-commands.sh`. Codex aliases require `/prompts:engineer-*`. Index: `docs/slash-commands.md`. Pipelines: `references/workflows.md`.
 
@@ -151,7 +152,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 | Metered / usage billing | `billing-metered.md` + webhooks + jobs |
 | Stripe / billing | `billing-stripe.md`, `backend-webhooks.md` |
 | Feature flags / kill switch | `feature-flags.md` |
-| Rust / Axum | `rust.md` |
+| Rust code / crate API / errors / clippy / borrow checker; review a crate or diff; port C / C++ / Python / Go / JS / TS to Rust; Axum service | `rust-idioms.md` (+ `rust-systems.md` for async, `unsafe`, crates, docs, tests, perf) → `rust-review.md` (existing code), `rust-port.md` (ports), `rust.md` (services) |
 | Python / FastAPI / workers / AI service | `python.md` |
 | Refactor / tech-debt structure | `refactoring.md` |
 | Skill package authoring | `skill-authoring.md` |
@@ -206,7 +207,7 @@ Load **1 router + 2-4 leaf modules** max per task. Full table: **`references/MAN
 | Greenfield SaaS | `workflows.md` + system-architecture |
 | Stack / library / competitor research | `deep-research.md` (outline → deep → report) |
 
-**Disambiguation**: "design a schema" → backend-database (not design-system). "design the dashboard" → design-patterns + frontend. "make it look good" / "too generic" → design-taste. "research X libraries" → deep-research (not growth). "audit the security of X" (rubric score) → audit; "find vulnerabilities in X" → security-audit; "attack our agent" → red-team.
+**Disambiguation**: "design a schema" → backend-database (not design-system). "design the dashboard" → design-patterns + frontend. "make it look good" / "too generic" → design-taste. "research X libraries" → deep-research (not growth). "audit the security of X" (rubric score) → audit; "find vulnerabilities in X" → security-audit; "attack our agent" → red-team. "review this crate" / "make it idiomatic" → rust-review (not security-audit); "port X to Rust" → rust-port (not deep-research).
 
 ## End-to-end flows (summary)
 
@@ -266,7 +267,7 @@ supabase test db
 
 Maintainer/CI validator and evidence-tool invocations: **`references/MANIFEST.md`** (Maintainer / CI catalog). Deep-research validator invocations: **`references/deep-research.md`**.
 
-Copy from `templates/github/`, `templates/playwright/`, `templates/agentic/`, `templates/product-metrics/`, `templates/lib/`, `templates/supabase/tests/`, `templates/research/`.
+Copy from `templates/github/`, `templates/playwright/`, `templates/agentic/`, `templates/product-metrics/`, `templates/lib/`, `templates/supabase/tests/`, `templates/rust/`, `templates/research/`.
 
 ## Composition
 
@@ -334,7 +335,7 @@ Skip full artifacts for one-line typos and pure docs-only edits.
 - WCAG 2.2 AA; 44px targets; focus visible; reduced-motion
 - Semantic tokens only; no hardcoded palette
 - Supabase RLS; `getUser()` + Zod on mutations
-- Rust: no unwrap in handlers; I/O timeouts
+- Rust: no `unwrap` outside tests (`expect` / `assert` / `panic` carry a reason), `// SAFETY:` on every `unsafe` block, no `#![deny(warnings)]` in source, clippy `-D warnings` in CI (`templates/rust/`); services: no unwrap in handlers, I/O timeouts
 - Python: `uv.lock`; ruff + basedpyright + pytest; lifespan (not `on_event`); PyJWT `algorithms=`; no secrets in logs; durable jobs for money paths
 - Loading, error, empty states on async UI
 - Form labels visible; on-blur validation

@@ -49,6 +49,47 @@ run_expect "fail-design hardcoded palette" "$FIX/fail-design" 1 "--design --quie
 run_expect "fail-taste tells warn-only" "$FIX/fail-taste" 0 "--design --quiet"
 run_expect "fail-taste tells fail --strict" "$FIX/fail-taste" 1 "--design --strict --quiet"
 
+# Rust fixtures: lints table, deny(warnings), unwrap/unsafe/leftover tiers, auto-enable
+run_expect "pass-rust --rust" "$FIX/pass-rust" 0 "--rust --quiet"
+run_expect "pass-rust --rust --strict" "$FIX/pass-rust" 0 "--rust --strict --quiet"
+run_expect "warn-rust unwrap/unsafe/dbg warn-only" "$FIX/warn-rust" 0 "--rust --quiet"
+run_expect "warn-rust fails --strict" "$FIX/warn-rust" 1 "--rust --strict --quiet"
+run_expect "fail-rust deny(warnings) fails" "$FIX/fail-rust" 1 "--rust --quiet"
+run_expect "fail-rust auto-enabled by Cargo.toml" "$FIX/fail-rust" 1 "--quiet"
+
+RS_WARN_OUT=$(cd "$FIX/warn-rust" && bash "$SCAN" --rust 2>&1 || true)
+for id in RS-UNWRAP RS-UNSAFE-SAFETY RS-DEBUG-LEFTOVER; do
+  if echo "$RS_WARN_OUT" | grep -q "$id"; then
+    echo "  ✓ warn-rust reports $id"
+  else
+    echo "  ✗ warn-rust missing $id"
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+if echo "$RS_WARN_OUT" | grep -q 'v\.unwrap()'; then
+  echo "  ✗ warn-rust reported the unwrap inside #[cfg(test)] mod tests"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "  ✓ warn-rust ignores unwrap inside #[cfg(test)] mod tests"
+fi
+RS_FAIL_OUT=$(cd "$FIX/fail-rust" && bash "$SCAN" --rust 2>&1 || true)
+for id in RS-LINTS RS-DENY-WARNINGS; do
+  if echo "$RS_FAIL_OUT" | grep -q "$id"; then
+    echo "  ✓ fail-rust reports $id"
+  else
+    echo "  ✗ fail-rust missing $id"
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+RS_PASS_OUT=$(cd "$FIX/pass-rust" && bash "$SCAN" --rust --strict 2>&1 || true)
+if echo "$RS_PASS_OUT" | grep -q 'RS-'; then
+  echo "  ✗ pass-rust raised an RS-* signal"
+  echo "$RS_PASS_OUT" | grep 'RS-'
+  FAILURES=$((FAILURES + 1))
+else
+  echo "  ✓ pass-rust raises no RS-* signal"
+fi
+
 # JSON mode produces ok field
 JSON=$(cd "$FIX/pass" && bash "$SCAN" --backend --json 2>/dev/null | tail -1)
 if echo "$JSON" | grep -q '"ok":true'; then

@@ -1,0 +1,12 @@
+[package]
+name = "pass-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"

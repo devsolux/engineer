@@ -118,6 +118,10 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `code-quality.md` | Pre-ship review checklist |
 | `system-architecture.md` | Monolith, services |
 | `rust.md` | Axum services |
+| `rust-idioms.md` | Idiomatic Rust: ownership, naming, domain types, standard traits, constructors, generics, errors and panics, everyday idioms |
+| `rust-systems.md` | Rust concurrency and async, unsafe and FFI, crates and dependencies, rustdoc, tests, performance, lint enforcement, RS-* scan IDs |
+| `rust-review.md` | Reviewing Rust: scope, tools first, five-tier priority order, audit-shaped report with rule citations and code fixes |
+| `rust-port.md` | Porting C / C++ / Python / Go / JS / TS to Rust: behavior list, tests first, mapping tables, proportionality, porting notes |
 | `python.md` | FastAPI services, workers, AI boundary, uv/ruff |
 | `api-data-flows.md` | Cross-service flows |
 | `architecture.md` | Single-app layout |
@@ -183,10 +187,11 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 
 | Path | Load when |
 |---|---|
-| `scripts/engineer-scan.sh` | Policy scan (`--strict` `--backend` `--json` `--quiet`) |
+| `scripts/engineer-scan.sh` | Policy scan (`--strict` `--design` `--backend` `--python` `--rust` `--json` `--quiet`) |
 | `scripts/scan-false-done.sh` | False-done scanner on the changeset (`--base` `--staged` `--strict` `--json`); BLOCKs skipped tests + not-implemented markers |
 | `scripts/rebind-skill-eval.py` | Rebind the skill-eval sample hash chain to the current SKILL.md/runtime after a version bump (`--check` gates drift; `--root` for tests) |
-| `scripts/test-scan.sh` | Fixture tests for scanner |
+| `scripts/test-scan.sh` | Fixture tests for scanner (design, backend, Rust pass/warn/fail tiers) |
+| `scripts/test-rust-lints.sh` | Assembles the check crate in `scripts/fixtures/rust-lints/` with `templates/rust/` and proves exactly the tagged lints fire; skips without cargo clippy |
 | `scripts/test-scan-false-done.sh` | Fixture tests for the false-done scanner |
 | `scripts/test-rebind-skill-eval.sh` | Fixture tests for the skill-eval rebinder |
 | `scripts/test-research.sh` | Research validator/report fixtures |
@@ -350,6 +355,7 @@ Agents: prefer this manifest over bulk-loading `docs/`.
 | `templates/plan-artifact.schema.json` | Plan artifact shape (lifecycle: stream, origin incl. sidequest, interrupts, resume_context, verification, integration) |
 | `templates/plan.sample.json` | Example multi-file plan (copy to `.engineer/plan.json`, or `.engineer/plans/<slug>.json` per stream) |
 | `templates/eslint.config.mjs` | Next flat ESLint config for CI `--max-warnings=0` |
+| `templates/rust/lints.toml` / `templates/rust/clippy.toml` | Cargo `[lints]` table and clippy thresholds enforcing the rust-idioms rules under `cargo clippy -- -D warnings` |
 | `templates/lib/rate-limit.ts` | Upstash sliding-window helper for Server Actions |
 | `templates/research/*` | Engineering research field/outline presets |
 | `composition.md` | Partner skill ownership (incl. the business knowledge/strategy/artifact skill boundary) + portage + gstack loop catalog |

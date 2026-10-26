@@ -16,9 +16,9 @@
     "max_steps": 24,
     "network_policy": "deny",
     "skill_path": "SKILL.md",
-    "skill_sha256": "05e27a0085c8a6403b5cbd9ae9a790b4e1be1ebb7f4ee839a1420f30883c312f",
+    "skill_sha256": "b1cb42c25679ca95587e7f65bc9fd1624f4b6ea250ecf23f3508fa841cc122ee",
     "bank_path": "evals/evals.json",
-    "bank_sha256": "c0420adeb328afa412451ffeac07972dbc1da587b51ba3a04e0799c2cd73ac39",
+    "bank_sha256": "f7efdba688eaf225bd998ed74603fc4ef3102032ab7bf7e79625622a6be31ae8",
     "instructions_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "tools_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "fixture_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"

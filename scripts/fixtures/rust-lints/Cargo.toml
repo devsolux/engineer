@@ -1,0 +1,11 @@
+# Check-crate skeleton for scripts/test-rust-lints.sh. The test appends templates/rust/lints.toml
+# to this file in a temporary directory, so the lint table can never drift from the template.
+[package]
+name = "engineer-rust-lint-check"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.81"
+publish = false
+
+[lib]
+path = "src/lib.rs"

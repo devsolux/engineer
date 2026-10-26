@@ -97,7 +97,15 @@ Local: husky/lint-staged optional. CI: run `lint:ci` on every PR with typecheck 
 |---|---|---|
 | `strict: true` | tsc | tsc in CI |
 | No `any` | ESLint `@typescript-eslint/no-explicit-any` | `--max-warnings=0` |
-| Rust no unwrap | clippy `deny(unwrap_used)` | `cargo clippy -- -D warnings` |
+| Rust no `unwrap` outside tests | clippy `unwrap_used` via `templates/rust/lints.toml`; engineer-scan `--rust` RS-UNWRAP | `cargo clippy --all-targets --all-features -- -D warnings` |
+| Rust `unsafe` justified | clippy `undocumented_unsafe_blocks` + `missing_safety_doc`; RS-UNSAFE-SAFETY | same clippy gate |
+| Rust API shape (`bool` params, `&String`, missing `Debug` / docs) | clippy pedantic + `missing_docs` + `clippy.toml` `max-fn-params-bools = 0` | same clippy gate |
+| No `#![deny(warnings)]` in Rust source | engineer-scan RS-DENY-WARNINGS | `-D warnings` on the CI command line instead |
+
+Rust baseline: paste `templates/rust/lints.toml` into `Cargo.toml` (or `[workspace.lints]` plus
+`[lints] workspace = true` per member) and copy `templates/rust/clippy.toml` beside it;
+`rust-version = "1.81"` or later. `scripts/test-rust-lints.sh` proves every lint fires. Rules:
+`rust-idioms.md` and `rust-systems.md` (Enforcement, RS-* scan IDs).
 
 ---
 

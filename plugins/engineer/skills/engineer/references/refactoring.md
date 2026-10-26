@@ -45,7 +45,8 @@ Change **structure** to improve changeability and clarity **without** changing o
 | Duplicate Zod | One schema shared by form + action | typescript, backend-api |
 | Fat Server Action | Extract use-case; keep auth at edge | backend-api, backend-auth |
 | Color / spacing chaos | Semantic tokens only | design-system |
-| Unwrap / panic paths | `AppError` / Result | rust, backend-api |
+| Unwrap / panic paths | `AppError` / Result | rust-idioms, rust, backend-api |
+| Rust borrow-checker clones, `&String` params, `get_` getters, `bool` params | Pin behavior with tests, then the rust-idioms refactor pass | rust-idioms, rust-review |
 | Cross-cutting copy | Shared module, not paste | coding-principles |
 
 ### PR hygiene
