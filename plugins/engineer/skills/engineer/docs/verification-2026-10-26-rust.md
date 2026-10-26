@@ -72,3 +72,17 @@ Codex CLI 0.163.0-alpha.11.
 Not executed before the release commit: publishing (push, `v1.3.0` tag, GitHub release),
 `make package` (it runs inside `make github-release`), the install-from-GitHub check, and any live
 model run. CI results for the Rust commit and the release commit are recorded under Publication.
+
+## Publication of 1.3.0
+
+| Check | Result |
+|---|---|
+| `git push origin main` | `main` pushed to `origin` as a fast-forward, 4163a0f..c45425d |
+| GitHub Actions | Run 40382698617 on 4163a0f (the Rust commit) and run 40383502978 on c45425d (the release commit) each passed all four lanes before the tag was created |
+| `make github-release` | Release "Engineer 1.3.0" published 2026-10-26T19:09:43Z, marked Latest, not a draft or prerelease, with `engineer-1.3.0-plugin.zip` and its SHA-256 sidecar |
+| `git ls-remote --tags origin` | `v1.3.0` → c45425d; `v1.2.0` → 157992b; `v1.1.0` → 2713d00; `v1.0.0` → 5ac51a3 |
+| Release assets | The uploaded ZIP (1,194,262 bytes, digest `ebbad38f655c87e85a26504afcc61bf31aa2642216f78d2744daeeb2a3863806`) and the sidecar (92 bytes) equal the locally packaged files; the digests were read from the release API asset records rather than by downloading the assets again |
+
+Not executed: installing 1.3.0 from GitHub into throwaway Claude Code and Codex profiles to
+confirm both hosts resolve `engineer@devsolux-engineer` at the new version (release procedure
+step 6), and any live model run. Existing host installs stay at their earlier version until updated.
