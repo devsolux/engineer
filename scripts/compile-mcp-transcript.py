@@ -9,6 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from evidence_path import create_new_bytes,regular_input_file,safe_path
 SENSITIVE_KEY=re.compile(r'(?i)(authorization|cookie|password|passwd|secret|token|api[-_]?key|private[-_]?key)')
 SENSITIVE_VALUE=re.compile(r'(?i)(bearer\s+[a-z0-9._~+/-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)')
+SCHEMA_MAPS={'properties','patternProperties','$defs','definitions','dependentSchemas','dependentRequired'};TOOL_SCHEMAS=('inputSchema','outputSchema')
 HEX=re.compile(r'^[0-9a-f]{64}$'); LISTS={'tools/list':'tools','resources/list':'resources','resources/templates/list':'resourceTemplates','prompts/list':'prompts'}
 OPS=set(LISTS)|{'resources/read','prompts/get','completion/complete'}
 SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}  # initialize-handshake revisions
@@ -26,6 +27,18 @@ def secret(v:Any)->bool:
     if isinstance(v,dict):return any(SENSITIVE_KEY.search(str(k)) or secret(x) for k,x in v.items())
     if isinstance(v,list):return any(secret(x) for x in v)
     return isinstance(v,str) and bool(SENSITIVE_VALUE.search(v))
+def schema_secret(v:Any,names:bool=False)->bool:
+    '''Scan a tool schema: a key inside a schema map names a parameter, so only what it holds can leak.'''
+    if isinstance(v,dict):return any((not names and bool(SENSITIVE_KEY.search(str(k)))) or schema_secret(x,not names and k in SCHEMA_MAPS) for k,x in v.items())
+    if isinstance(v,list):return any(schema_secret(x) for x in v)
+    return secret(v)
+def envelope_secret(x:dict)->bool:
+    '''Scan one envelope; only the schemas a server lists in result.tools are read as declarations.'''
+    message=x['message'];result=message.get('result');tools=result.get('tools') if isinstance(result,dict) else None
+    if x['direction']!='server_to_client' or not isinstance(tools,list):return secret(x)
+    listed=[t for t in tools if isinstance(t,dict)]
+    plain=[{k:v for k,v in t.items() if k not in TOOL_SCHEMAS} if isinstance(t,dict) else t for t in tools]
+    return secret({**x,'message':{**message,'result':{**result,'tools':plain}}}) or any(schema_secret(t.get(k)) for t in listed for k in TOOL_SCHEMAS)
 def confined(root:Path,value:str)->Path:
     path=safe_path(value,root)
     if path is None:raise ValueError('path escapes evidence root or traverses a symlink')
@@ -105,7 +118,7 @@ def compile_transcript(raw:bytes)->tuple[dict[str,Any],dict[str,Any],dict[str,An
         except json.JSONDecodeError as ex:raise ValueError(f'line {n} JSON invalid: {ex}')
         keys={'seq','at','direction','transport','protocol_version_header','session_id_sha256','message'}
         if not isinstance(x,dict) or set(x)!=keys:errors.append(f'line {n} envelope invalid');continue
-        if x['seq']!=len(events)+1 or not stamp(x['at']) or x['direction'] not in {'client_to_server','server_to_client'} or x['transport'] not in {'streamable_http','stdio'} or not isinstance(x['message'],dict) or x['message'].get('jsonrpc')!='2.0' or secret(x):errors.append(f'line {n} identity or redaction invalid')
+        if x['seq']!=len(events)+1 or not stamp(x['at']) or x['direction'] not in {'client_to_server','server_to_client'} or x['transport'] not in {'streamable_http','stdio'} or not isinstance(x['message'],dict) or x['message'].get('jsonrpc')!='2.0' or envelope_secret(x):errors.append(f'line {n} identity or redaction invalid')
         events.append(x)
         if len(events)>10_000:raise ValueError('transcript exceeds 10000-message limit')
     if not events:errors.append('transcript empty')

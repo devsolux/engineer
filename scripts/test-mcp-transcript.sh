@@ -139,6 +139,18 @@ stateless_mutate server_identity_change 'd[5]["message"]["result"]["_meta"]["io.
 stateless_mutate client_identity_change 'meta(4)["io.modelcontextprotocol/clientInfo"]["name"]="other-client"' 'client identity invalid or changes'
 stateless_mutate stdio_with_header '[x.__setitem__("transport","stdio") for x in d]' 'stdio transcript cannot carry HTTP version metadata'
 stateless_mutate stateless_bearer 'meta(2)["note"]="Bearer abcdefghijklmnop"' 'identity or redaction invalid'
+# A schema's parameter names are declarations, not captured values, so only their contents are scanned.
+TOOL='d[3]["message"]["result"]["tools"][0]'
+stateless_accept tool_parameter_names "$TOOL[\"inputSchema\"][\"properties\"].update(page_token={\"type\":\"string\"},max_tokens={\"type\":\"integer\"})" 'p["era"]=="stateless"'
+stateless_accept tool_definition_names "$TOOL[\"outputSchema\"].update({\"\$defs\":{\"secret_ref\":{\"type\":\"string\"}}})" 'p["era"]=="stateless"'
+stateless_mutate tool_schema_bearer_default "$TOOL[\"inputSchema\"][\"properties\"][\"page_token\"]={\"type\":\"string\",\"default\":\"Bearer abcdefghijklmnop\"}" 'identity or redaction invalid'
+stateless_mutate tool_schema_secret_keyword "$TOOL[\"inputSchema\"][\"password\"]=\"hunter2\"" 'identity or redaction invalid'
+stateless_mutate tool_schema_nested_secret "$TOOL[\"inputSchema\"][\"properties\"][\"page\"]={\"password\":\"hunter2\"}" 'identity or redaction invalid'
+stateless_mutate tool_parameter_named_properties "$TOOL[\"inputSchema\"][\"properties\"][\"properties\"]={\"password\":\"hunter2\"}" 'identity or redaction invalid'
+stateless_mutate tool_field_secret "$TOOL[\"password\"]=\"hunter2\"" 'identity or redaction invalid'
+stateless_mutate properties_outside_tool_schema 'd[11]["message"]["result"]["properties"]={"password":"hunter2"}' 'identity or redaction invalid'
+stateless_mutate schema_shape_in_client_request 'd[2]["message"]["params"]["inputSchema"]={"properties":{"password":"hunter2"}}' 'identity or redaction invalid'
+stateless_mutate schema_shape_in_client_tools 'd[2]["message"]["result"]={"tools":[{"inputSchema":{"properties":{"password":"hunter2"}}}]}' 'identity or redaction invalid'
 # server/discover is optional; without it the manifest records that capabilities were not discovered.
 stateless_accept without_discover 'del d[0:2];renumber()' 'p["capabilities"] is None and p["discovered_seq"] is None and p["era"]=="stateless"'
 # Deprecated Roots, Sampling and Logging exposure compiles but is flagged for the receipt to acknowledge.

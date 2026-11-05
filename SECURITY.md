@@ -5,7 +5,7 @@
 | Version | Supported |
 |---|---|
 | 1.3.x (latest) | Yes |
-| 1.2.x | Until 1.3.0 is published |
+| 1.2.x | No |
 | 1.1.x | No |
 | 1.0.x | No |
 

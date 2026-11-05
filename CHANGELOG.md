@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); the single release version lives in
 `SKILL.md` metadata.
 
+## 1.3.1 — 2026-11-05
+
+### Fixed
+
+- `validate-mcp-session.py` held every MCP tool to one fixed key set and failed spec-valid
+  definitions with a bare `tools snapshot item N invalid`. Each definition is now judged against
+  the Tool shape of its negotiated revision (2025-06-18, 2025-11-25, 2026-07-28), and the gate
+  names the reason. `title`, `annotations`, `icons`, `execution`, and `_meta` are accepted where
+  their revision defines them; `description` and `outputSchema` are optional; `properties` and
+  `required` are optional, so the spec's recommended no-parameter schema passes; tool names follow
+  the spec's characters and 128-character limit instead of the stricter server-name pattern.
+- On 2026-07-28, `outputSchema` may be any JSON Schema (arrays, scalars, unions), and composition
+  and references are read: `oneOf`, `anyOf`, local `$ref`, and `unevaluatedProperties: false` all
+  count towards a closed schema. A malformed `required` entry no longer crashes the validator.
+- `compile-mcp-transcript.py` rejected any capture of a tool with a parameter such as `page_token`
+  or `max_tokens`, because its secret scan matched schema property names. Names inside a schema map
+  of a listed tool are now read as declarations. Everything else is still scanned, including the
+  values under those names, and the same shapes elsewhere in a transcript stay rejected.
+
+### Changed
+
+- Receipts record a null `description_sha256` or `output_schema_sha256` when the tool omits that
+  field; a null digest for a field the tool has, or a stale digest for one it dropped, is gated.
+  A tool without `outputSchema` must record `output_validated: false`. Receipt keys are unchanged.
+- New gates for what these keys make visible: annotations that contradict the reviewed risk (a
+  read-only claim on a mutating tool, or a destructive one on a read tool), any non-local `$ref`, a
+  schema that constrains nothing, icons that are not HTTPS or Base64 image data, task-augmented
+  execution without its own review, and `x-mcp-header` violations on 2026-07-28 Streamable HTTP.
+  Unknown tool keys stay refused, and `{ "type": "object" }` remains spec-valid but gated.
+- `references/mcp-security.md` states which rules are the spec's and which are local admission
+  policy. Sources and results are in `docs/verification-2026-11-05-mcp-tools.md`.
+- `SECURITY.md` marks 1.2.x unsupported now that 1.3.0 is published.
+
 ## 1.3.0 — 2026-10-26
 
 ### Added

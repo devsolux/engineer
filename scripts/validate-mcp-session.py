@@ -9,6 +9,14 @@ from urllib.parse import urlparse
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from evidence_path import regular_input_file
 HEX=re.compile(r'^[0-9a-f]{64}$');NAME=re.compile(r'^[a-z][a-z0-9_.-]{1,63}$')
+TOOL_NAME=re.compile(r'^[A-Za-z0-9_.-]{1,128}$')  # the spec's SHOULD for tool names, held here as an admission rule
+HEADER_NAME=re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")  # RFC 9110 field-name token
+DATA_IMAGE=re.compile(r'^data:image/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}$')
+JSON_TYPES={'object','array','string','number','integer','boolean','null'}
+COMPOSITION={'$ref','$dynamicRef','allOf','anyOf','oneOf','if','then','else','dependentSchemas','dependentRequired'}
+TOOL_HINTS={'readOnlyHint','destructiveHint','idempotentHint','openWorldHint'}
+TOOL_KEYS={'name','title','description','inputSchema','outputSchema','annotations','_meta'}
+REVISION_TOOL_KEYS={'2025-06-18':TOOL_KEYS,'2025-11-25':TOOL_KEYS|{'icons','execution'},'2026-07-28':TOOL_KEYS|{'icons'}}  # execution left the core with Tasks
 MUTATING={'write','money','auth','admin','external_message','production','network'}
 STATELESS_PROTOCOL_VERSIONS={'2026-07-28'}  # stateless core: per-request _meta version, no initialize or session
 SUPPORTED_PROTOCOL_VERSIONS={'2025-06-18','2025-11-25'}|STATELESS_PROTOCOL_VERSIONS
@@ -23,8 +31,78 @@ def https(v:Any)->bool:
     except ValueError:return False
 def sha_bytes(v:bytes)->str:return hashlib.sha256(v).hexdigest()
 def canonical_sha(v:Any)->str:return sha_bytes(json.dumps(v,sort_keys=True,separators=(',',':')).encode())
-def safe_schema(v:Any)->bool:
-    return isinstance(v,dict) and v.get('type')=='object' and isinstance(v.get('properties'),dict) and isinstance(v.get('required'),list) and set(v['required']).issubset(v['properties']) and v.get('additionalProperties') is False
+def resolve_ref(doc:dict,ref:Any)->Any:
+    '''The target of a local JSON Pointer reference, or None when it does not resolve.'''
+    if ref=='#':return doc
+    if not isinstance(ref,str) or not ref.startswith('#/'):return None
+    node:Any=doc
+    for part in ref[2:].split('/'):node=node.get(part.replace('~1','/').replace('~0','~')) if isinstance(node,dict) else None
+    return node
+def local_refs(v:Any)->bool:
+    '''MCP forbids dereferencing a network $ref, so every reference must stay inside the captured schema.'''
+    if isinstance(v,dict):return not any(isinstance(v.get(k),str) and not v[k].startswith('#') for k in ('$ref','$dynamicRef')) and all(local_refs(x) for x in v.values())
+    return all(local_refs(x) for x in v) if isinstance(v,list) else True
+def closed_schema(v:Any,doc:dict,seen:frozenset=frozenset())->bool:
+    '''True when no instance of this schema can carry an undeclared object property.'''
+    if not isinstance(v,dict):return False
+    kind=v.get('type');kinds=kind if isinstance(kind,list) else [kind]
+    if kind is not None:
+        if not all(isinstance(x,str) and x in JSON_TYPES for x in kinds):return False
+        if 'object' not in kinds:return closed_schema(v.get('items'),doc,seen) if 'array' in kinds else True
+    if v.get('additionalProperties') is False or v.get('unevaluatedProperties') is False:return True
+    ref=v.get('$ref')
+    if ref is not None:return isinstance(ref,str) and ref not in seen and closed_schema(resolve_ref(doc,ref),doc,seen|{ref})
+    branches=v.get('oneOf',v.get('anyOf'))
+    return isinstance(branches,list) and bool(branches) and all(closed_schema(x,doc,seen) for x in branches)
+def safe_schema(v:Any,object_root:bool=True)->bool:
+    '''The spec's shape for this position plus the local rule: closed, with local references only.'''
+    if not isinstance(v,dict) or (object_root and v.get('type')!='object') or not isinstance(v.get('$schema',''),str):return False
+    props=v.get('properties',{});required=v.get('required',[])
+    if not isinstance(props,dict) or not isinstance(required,list) or not all(isinstance(x,str) for x in required):return False
+    if not COMPOSITION&set(v) and not set(required).issubset(props):return False
+    return local_refs(v) and closed_schema(v,v)
+def annotated_headers(v:Any)->int:
+    '''Every x-mcp-header in a schema, wherever it sits.'''
+    if isinstance(v,dict):return ('x-mcp-header' in v)+sum(annotated_headers(x) for x in v.values())
+    return sum(annotated_headers(x) for x in v) if isinstance(v,list) else 0
+def reachable_headers(v:Any)->list[dict]:
+    '''Annotated properties reachable from the root through a chain of properties keys alone.'''
+    props=v.get('properties') if isinstance(v,dict) else None
+    if not isinstance(props,dict):return []
+    found:list[dict]=[]
+    for x in props.values():
+        if isinstance(x,dict):found+=[x]*('x-mcp-header' in x)+reachable_headers(x)
+    return found
+def headers_valid(schema:Any)->bool:
+    '''The x-mcp-header rules of the 2026-07-28 Streamable HTTP transport; a client must drop a tool that breaks them.'''
+    found=reachable_headers(schema);names=[x['x-mcp-header'] for x in found]
+    if len(found)!=annotated_headers(schema) or not all(isinstance(n,str) and HEADER_NAME.fullmatch(n) for n in names):return False
+    return len({n.lower() for n in names})==len(names) and all(x.get('type') in ('integer','string','boolean') for x in found)
+def annotations_valid(v:Any)->bool:
+    return isinstance(v,dict) and not set(v)-TOOL_HINTS-{'title'} and isinstance(v.get('title',''),str) and all(isinstance(v[k],bool) for k in TOOL_HINTS&set(v))
+def icons_valid(v:Any)->bool:
+    '''The spec's Icon shape, with sources held to HTTPS or Base64 image data so an icon cannot point a client at javascript:, file:, or cleartext URLs.'''
+    if not isinstance(v,list):return False
+    for x in v:
+        if not isinstance(x,dict) or set(x)-{'src','mimeType','sizes','theme'} or not (https(x.get('src')) or DATA_IMAGE.fullmatch(str(x.get('src','')))):return False
+        sizes=x.get('sizes',[])
+        if not isinstance(x.get('mimeType',''),str) or x.get('theme','light') not in ('light','dark') or not isinstance(sizes,list) or not all(isinstance(s,str) for s in sizes):return False
+    return True
+def tool_problem(v:Any,version:Any,http:bool)->str|None:
+    '''Why one tools/list entry fails its revision's Tool shape or the local admission rules, or None.'''
+    if not isinstance(v,dict):return 'not an object'
+    stateless=version in STATELESS_PROTOCOL_VERSIONS;unknown=set(v)-REVISION_TOOL_KEYS.get(version,TOOL_KEYS)
+    if unknown:return 'unreviewed keys for this revision: '+', '.join(sorted(map(str,unknown)))
+    if not isinstance(v.get('name'),str) or not TOOL_NAME.fullmatch(v['name']):return 'name is outside the MCP tool-name characters or length'
+    if any(k in v and not isinstance(v[k],str) for k in ('title','description')):return 'title and description must be strings'
+    if not safe_schema(v.get('inputSchema')):return 'inputSchema must be a closed object schema with local references'
+    if 'outputSchema' in v and not safe_schema(v['outputSchema'],not stateless):return 'outputSchema must be a closed schema with local references'+('' if stateless else ' and an object root')
+    if 'annotations' in v and not annotations_valid(v['annotations']):return 'annotations must carry only title and boolean hints'
+    if 'icons' in v and not icons_valid(v['icons']):return 'icons must follow the Icon shape with HTTPS or Base64 image sources'
+    if '_meta' in v and not isinstance(v['_meta'],dict):return '_meta must be an object'
+    if 'execution' in v and (not isinstance(v['execution'],dict) or set(v['execution'])-{'taskSupport'} or v['execution'].get('taskSupport','forbidden')!='forbidden'):return 'task-augmented execution needs an extension-specific review'
+    if stateless and http and not headers_valid(v['inputSchema']):return 'x-mcp-header breaks the Streamable HTTP rules'
+    return None
 def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
     e=[];g=[];root={'schema_version','receipt_kind','server','authorization','capabilities','tools','calls','tests','review','decision'}
     if not isinstance(d,dict):return ['root must be an object'],[]
@@ -100,7 +178,8 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
                 snap=json.loads(raw); listed=snap.get('tools',[]) if isinstance(snap,dict) and set(snap)=={'tools'} else []
                 if not listed:g.append('tools snapshot shape invalid')
                 for i,item in enumerate(listed):
-                    if not isinstance(item,dict) or set(item)!={'name','description','inputSchema','outputSchema'} or not NAME.fullmatch(str(item.get('name',''))) or not text(item.get('description')) or not safe_schema(item.get('inputSchema')) or not safe_schema(item.get('outputSchema')) or item.get('name') in snapshot:g.append(f'tools snapshot item {i} invalid')
+                    problem=tool_problem(item,s.get('protocol_version'),remote) or ('duplicate name' if item['name'] in snapshot else None)
+                    if problem:g.append(f'tools snapshot item {i} invalid: {problem}')
                     else:snapshot[item['name']]=item
             except (OSError,json.JSONDecodeError) as ex:g.append(f'tools snapshot unreadable: {ex}')
     if manifest and snapshot:
@@ -111,14 +190,18 @@ def validate(d:Any,evidence_root:Path)->tuple[list[str],list[str]]:
     for i,t in enumerate(tools):
         if not isinstance(t,dict) or set(t)!=tkeys:e.append(f'tool {i} keys invalid');continue
         name=t.get('name')
-        if not NAME.fullmatch(str(name or '')) or name in tmap or any(not HEX.fullmatch(str(t.get(k,''))) for k in ('description_sha256','input_schema_sha256','output_schema_sha256')) or t.get('risk') not in {'read'}|MUTATING or not isinstance(t.get('scopes'),list) or not t.get('scopes') or not isinstance(t.get('destinations'),list) or not t.get('destinations') or any(not https(x) for x in t.get('destinations',[])) or not isinstance(t.get('timeout_ms'),int) or not 1<=t.get('timeout_ms',0)<=120000 or not text(t.get('rate_limit')):e.append(f'tool {i} identity or bounds invalid');continue
+        if not TOOL_NAME.fullmatch(str(name or '')) or name in tmap or not HEX.fullmatch(str(t.get('input_schema_sha256',''))) or any(t.get(k) is not None and not HEX.fullmatch(str(t[k])) for k in ('description_sha256','output_schema_sha256')) or t.get('risk') not in {'read'}|MUTATING or not isinstance(t.get('scopes'),list) or not t.get('scopes') or not isinstance(t.get('destinations'),list) or not t.get('destinations') or any(not https(x) for x in t.get('destinations',[])) or not isinstance(t.get('timeout_ms'),int) or not 1<=t.get('timeout_ms',0)<=120000 or not text(t.get('rate_limit')):e.append(f'tool {i} identity or bounds invalid');continue
         tmap[name]=t
         captured=snapshot.get(name)
         if not captured:g.append(f'tool {name} missing from captured snapshot')
-        elif t.get('description_sha256')!=sha_bytes(captured['description'].encode()) or t.get('input_schema_sha256')!=canonical_sha(captured['inputSchema']) or t.get('output_schema_sha256')!=canonical_sha(captured['outputSchema']):g.append(f'tool {name} metadata differs from captured snapshot')
+        elif t.get('description_sha256')!=(sha_bytes(captured['description'].encode()) if 'description' in captured else None) or t.get('input_schema_sha256')!=canonical_sha(captured['inputSchema']) or t.get('output_schema_sha256')!=(canonical_sha(captured['outputSchema']) if 'outputSchema' in captured else None):g.append(f'tool {name} metadata differs from captured snapshot')
+        hints=captured.get('annotations',{}) if captured else {};read_only=hints.get('readOnlyHint')
+        if (t.get('risk') in MUTATING-{'network'} and read_only is True) or (t.get('risk')=='read' and (read_only is False or (read_only is not True and hints.get('destructiveHint') is True))):g.append(f'tool {name} annotations contradict the reviewed risk')
         if not set(t.get('scopes',[])).issubset(set(a.get('granted_scopes',[]))):g.append(f'tool {name} scopes exceed grant')
         if any(x not in s.get('egress',[]) and not any(x.startswith(base.rstrip('/')+'/') for base in s.get('egress',[])) for x in t.get('destinations',[])):g.append(f'tool {name} destination outside server egress')
-        if any(t.get(k) is not True for k in ('input_validated','output_validated','output_sanitized')):g.append(f'tool {name} validation incomplete')
+        unstructured=bool(captured) and 'outputSchema' not in captured
+        if any(t.get(k) is not True for k in ('input_validated','output_sanitized')+(() if unstructured else ('output_validated',))):g.append(f'tool {name} validation incomplete')
+        if unstructured and t.get('output_validated') is not False:g.append(f'tool {name} claims output validation without an outputSchema')
         if t.get('risk') in MUTATING and (t.get('confirmation_required') is not True or t.get('idempotency_required') is not True):g.append(f'tool {name} mutation lacks confirmation or idempotency')
     if set(tmap)!=set(snapshot):g.append('receipt tool set differs from captured snapshot')
     calls=d.get('calls',[]);ids=set();callkeys={'id','tool','user_id','tenant_id','scopes','args_sha256','result_sha256','destination','root_uri','started_at','completed_at','authorized','schema_matched','confirmed','confirmation_id','idempotency_key','timed_out','rate_limited','sensitive_input','sensitive_output','source_trust','is_error','audit_event'}

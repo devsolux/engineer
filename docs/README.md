@@ -1,4 +1,4 @@
-# Engineer documentation — 1.3.0
+# Engineer documentation — 1.3.1
 
 Start with [installation](getting-started.md), then [architecture](architecture.md)
 and [verification](checks.md). Browse [modules](modules.md) only as needed; do not

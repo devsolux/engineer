@@ -2,7 +2,7 @@
 
 **Last verified**: 2026-10-22 · **Review cadence**: 2 months
 
-**Spec pin**: MCP revision **2026-07-28** at modelcontextprotocol.io (re-checked 2026-10-22). Treat that dated spec as current. Do not quote 2025-11-25 as the live revision. The core is stateless: no `Mcp-Session-Id`, no `initialize` handshake; every request carries its protocol version and client capabilities in `_meta`, `server/discover` advertises versions and identity, every result carries `resultType`, and server-initiated requests are replaced by multi-round-trip `input_required` results. **Deprecated** (twelve-month window, new implementations must not add them): Roots, Sampling, Logging, the HTTP+SSE transport, and OAuth Dynamic Client Registration. **Tasks** moved to the optional `io.modelcontextprotocol/tasks` extension — quarantine them unless the deployment opted in. Elicitation no longer requires a long-lived open stream.
+**Spec pin**: MCP revision **2026-07-28** at modelcontextprotocol.io (re-checked 2026-10-22; tool-definition rules re-checked 2026-11-05). Treat that dated spec as current. Do not quote 2025-11-25 as the live revision. The core is stateless: no `Mcp-Session-Id`, no `initialize` handshake; every request carries its protocol version and client capabilities in `_meta`, `server/discover` advertises versions and identity, every result carries `resultType`, and server-initiated requests are replaced by multi-round-trip `input_required` results. **Deprecated** (twelve-month window, new implementations must not add them): Roots, Sampling, Logging, the HTTP+SSE transport, and OAuth Dynamic Client Registration. **Tasks** moved to the optional `io.modelcontextprotocol/tasks` extension — quarantine them unless the deployment opted in. Elicitation no longer requires a long-lived open stream.
 
 Use this module before enabling an MCP server in a trusted host, after a server/tool upgrade, or
 when reviewing captured tool calls. `skill-supply-chain.md` owns package provenance; this module
@@ -70,7 +70,14 @@ Negotiate only what the workflow needs:
 - **tools**: retain the captured `tools/list` response in a confined artifact, hash that file, derive
   description and input/output-schema hashes from its canonical content, and require exact name-set
   equality with the reviewed policy. Then bind risk, destinations, scopes, timeout, rate limit,
-  idempotency, confirmation, and validation policy. Added, removed, or changed tools quarantine;
+  idempotency, confirmation, and validation policy. Added, removed, or changed tools quarantine.
+  Judge each definition against its negotiated revision: `title`, `annotations`, and `_meta` exist
+  from 2025-06-18, `icons` and `execution` arrive in 2025-11-25, and `execution` leaves the core with
+  Tasks in 2026-07-28, when `outputSchema` also stops being limited to an object root. Only `name` and
+  `inputSchema` are required. A tool that omits `description` or `outputSchema` records a null digest,
+  and one without `outputSchema` records `output_validated: false` because nothing can validate it;
+  its output is still sanitized. Annotations stay untrusted hints, so a read-only claim never replaces
+  the reviewed risk and a contradiction between them gates the tool;
 - **roots** (deprecated in 2026-07-28; migrate to tool parameters, resource URIs, or server config):
   while still exposed, consent per `file://` root, canonicalize every path, and handle root changes;
 - **sampling** (deprecated in 2026-07-28; integrate with the provider API directly): while still
@@ -142,8 +149,28 @@ python3 scripts/validate-mcp-session.py mcp-session.json --evidence-root . --jso
 python3 scripts/validate-mcp-content.py mcp-content.json --evidence-root . --json
 ```
 
-The validator checks the captured tool snapshot's confined path and file digest, safe object schemas,
-exact tool set, and derived description/schema digests. A 2026-07-28 receipt also needs a capture
+The validator checks the captured tool snapshot's confined path and file digest, the Tool shape of
+the negotiated revision, exact tool set, and derived description/schema digests. Its admission rules
+are deliberately stricter than the spec, and a spec-valid tool can still be gated by them:
+
+- Unknown tool keys are refused as unreviewed, and tool names are held to the spec's recommended
+  characters and 128-character limit.
+- Schemas must be closed. `additionalProperties: false` or `unevaluatedProperties: false` closes an
+  object; `oneOf`, `anyOf`, and local `$ref` are followed, and an array is judged by its `items`. So
+  `{ "type": "object" }` is spec-valid but gated, while the recommended no-parameter schema
+  `{ "type": "object", "additionalProperties": false }` passes.
+- Every `$ref` must be local. Implementations must not dereference a network URI.
+- Icons must use HTTPS or Base64 image data; `http:`, `javascript:`, and `file:` sources are refused.
+- A tool declaring `execution.taskSupport` other than `forbidden` is gated until an extension-specific
+  review.
+- On 2026-07-28 Streamable HTTP, a tool that breaks the `x-mcp-header` rules is refused, as the spec
+  requires of clients: token syntax, case-insensitive uniqueness, primitive type, and a path of
+  `properties` keys alone.
+
+The transcript compiler reads a parameter name in a listed tool schema as a declaration, so
+`page_token` and `max_tokens` compile; values and all other keys are still scanned for secrets.
+
+A 2026-07-28 receipt also needs a capture
 with `server/discover` (otherwise server capabilities and instructions are unverified), client
 capabilities that match the transcript, and a `capabilities.deprecated_feature_exposure` list equal to
 the deprecated features actually exposed (Roots, Sampling, Logging, or dynamic client registration).

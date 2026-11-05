@@ -77,5 +77,6 @@ captured evidence. `research/` dates are not refreshed by a release bump.
 
 Sources and exact review scope: [2026-10-11 ledger](docs/verification-2026-10-11.md),
 [2026-10-22 ledger](docs/verification-2026-10-22.md),
-[2026-10-22 module ledger](docs/verification-2026-10-22-modules.md) and
-[2026-10-26 Rust module ledger](docs/verification-2026-10-26-rust.md).
+[2026-10-22 module ledger](docs/verification-2026-10-22-modules.md),
+[2026-10-26 Rust module ledger](docs/verification-2026-10-26-rust.md) and
+[2026-11-05 MCP tool ledger](docs/verification-2026-11-05-mcp-tools.md).
