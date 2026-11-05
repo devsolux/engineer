@@ -80,3 +80,17 @@ backs these rules; a local install into a disposable host profile, which this re
 separate authorization for; Codex validation, because the Codex CLI is not installed on this
 machine; and any live model run. CI results, the tag, and the release assets are recorded under
 Publication once they exist.
+
+## Publication of 1.3.1
+
+| Check | Result |
+|---|---|
+| `make github-push` | `main` pushed to `origin` as a fast-forward, e978d2b..fc6c45c |
+| GitHub Actions | Run 42034650169 on fc6c45c passed all four lanes before the tag was created |
+| `make github-release` | Release "Engineer 1.3.1" published 2026-11-05T13:21:53Z, marked Latest, not a draft or prerelease, with `engineer-1.3.1-plugin.zip` and its SHA-256 sidecar |
+| `git ls-remote --tags origin` | `v1.3.1` → fc6c45c; `v1.3.0` → c45425d; `v1.2.0` → 157992b; `v1.1.0` → 2713d00; `v1.0.0` → 5ac51a3 |
+| Release assets | The uploaded ZIP (1,204,803 bytes, digest `cc15a5ad37bc57061a1a95b6825ec266162934439f1abbf67374703382e09e60`) and the sidecar (92 bytes) equal the locally packaged files; the digests were read from the release API asset records rather than by downloading the assets again |
+
+Not executed: installing 1.3.1 from GitHub into throwaway Claude Code and Codex profiles to confirm
+both hosts resolve `engineer@devsolux-engineer` at the new version (release procedure step 6), and
+any live model run. Existing host installs stay at their earlier version until updated.
